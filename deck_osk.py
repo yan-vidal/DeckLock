@@ -93,12 +93,29 @@ DPAD_ACTION = "dpad({}, {}, {}, {})".format(
 )
 
 # STEAM + botao. O valor e o comando; o default de cada botao muda conforme o
-# perfil, por isso fica fora daqui.
+# perfil, por isso fica fora daqui. O B nao entra aqui: o que ele faz com o
+# STEAM depende do perfil (abre o teclado no normal, fecha no proprio teclado).
 ATALHOS_STEAM = {
 	"A": "fuzzel",
 	"Y": "footclient",
 	"X": f"{HYPR} killactive",
 }
+
+# STEAM + grip esquerdo + botao: menus rapidos. Grips esquerdos porque os
+# direitos ja servem ao "..." para levar janela entre workspaces.
+MENU = os.path.expanduser("~/.config/scripts/deck-menu")
+GRIPS_ESQ = ("LGRIP", "LGRIP2")
+MENUS = {"A": "wifi", "B": "bluetooth", "Y": "audio", "X": "brilho"}
+
+
+def camadas(botao: str, cmd_steam: str, padrao: str) -> str:
+	"""Tres camadas no mesmo botao: puro, STEAM+botao, STEAM+grip esq+botao.
+
+	O name() no default interno e obrigatorio: o ModeModifier trata um
+	ShellCommandAction sem botao antes como se fosse uma condicao.
+	"""
+	cond = "".join(f'{g}, shell("{MENU} {MENUS[botao]}"), ' for g in GRIPS_ESQ)
+	return f'mode(C, mode({cond}name("steam", shell("{cmd_steam}"))), {padrao})'
 
 def load_config() -> dict:
 	cfg = dict(DEFAULTS)
@@ -353,10 +370,6 @@ class GhostKeyboard(Keyboard):
 		from scc.osd.osk_actions import CloseOSKAction
 		from scc.uinput import Keys
 
-		self.profile.buttons[SCButtons.B] = ModeModifier(
-			SCButtons.C, CloseOSKAction(), ButtonAction(Keys.KEY_ESC),
-		)
-
 		# R2/L2 pressionam a tecla sob o cursor do lado correspondente, espelhando
 		# o clique do pad. O padrao era LEFTSHIFT no L2 (maiuscula) e LEFTCTRL no R2.
 		# R2/L2 com dois papeis: com o dedo no pad do respectivo lado pressionam
@@ -383,13 +396,34 @@ class GhostKeyboard(Keyboard):
 		from scc.parser import TalkingActionParser
 		from scc.special_actions import ShellCommandAction
 
+		from scc.modifiers import NameModifier
+
 		self.profile.pads[SCPads.DPAD] = TalkingActionParser().restart(DPAD_ACTION).parse().compress()
+
+		def _camada_menu(botao: str, com_steam):
+			"""STEAM+grip esquerdo abre o menu; so STEAM faz `com_steam`."""
+			menu = ShellCommandAction(f"{MENU} {MENUS[botao]}")
+			cond = []
+			for g in GRIPS_ESQ:
+				cond += [getattr(SCButtons, g), menu]
+			return ModeModifier(*cond, com_steam)
+
 		for nome, cmd in ATALHOS_STEAM.items():
 			btn = getattr(SCButtons, nome)
 			original = self.profile.buttons.get(btn) or NoAction()
-			self.profile.buttons[btn] = ModeModifier(
-				SCButtons.C, ShellCommandAction(cmd), original,
-			).compress()
+			interno = _camada_menu(nome, NameModifier("steam", ShellCommandAction(cmd)))
+			self.profile.buttons[btn] = ModeModifier(SCButtons.C, interno, original).compress()
+
+		# B: aqui o STEAM fecha o teclado, em vez de abri-lo como no modo normal
+		self.profile.buttons[SCButtons.B] = ModeModifier(
+			SCButtons.C,
+			_camada_menu("B", CloseOSKAction()),
+			ButtonAction(Keys.KEY_ESC),
+		).compress()
+
+		# L1/R1 iguais nos dois modos: backspace e espaco
+		self.profile.buttons[SCButtons.LB] = ButtonAction(Keys.KEY_BACKSPACE)
+		self.profile.buttons[SCButtons.RB] = ButtonAction(Keys.KEY_SPACE)
 
 		journal("gatilhos: " + " | ".join(
 			f"{k.name}={v.describe(0).replace(chr(10), ' / ')}"
@@ -397,7 +431,7 @@ class GhostKeyboard(Keyboard):
 		))
 		journal("atalhos: " + " | ".join(
 			f"{n}={self.profile.buttons[getattr(SCButtons, n)].describe(0).replace(chr(10), ' / ')}"
-			for n in ATALHOS_STEAM
+			for n in ("A", "B", "X", "Y", "LB", "RB")
 		) + f" | DPAD={self.profile.pads[SCPads.DPAD].describe(0).replace(chr(10), ' / ')}")
 		self.set_help()
 
