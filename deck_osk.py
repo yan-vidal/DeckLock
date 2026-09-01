@@ -253,6 +253,28 @@ class GhostKeyboard(Keyboard):
 		Keyboard.set_cursor_position(self, x, y, cursor, limit)
 		self._schedule_redraw()
 
+	def load_profile(self) -> None:
+		"""Injeta STEAM+B no perfil do teclado.
+
+		Enquanto o teclado esta aberto ele captura o controle e usa o proprio
+		perfil, entao o atalho que o abriu (definido no perfil de desktop) nao
+		chega aqui. Sem isso, STEAM+B abre mas nao fecha.
+
+		O parser rejeita OSK.close() aninhado em mode(), por isso o modificador
+		e montado em Python.
+		"""
+		Keyboard.load_profile(self)
+		from scc.actions import ButtonAction
+		from scc.constants import SCButtons
+		from scc.modifiers import ModeModifier
+		from scc.osd.osk_actions import CloseOSKAction
+		from scc.uinput import Keys
+
+		self.profile.buttons[SCButtons.B] = ModeModifier(
+			SCButtons.C, CloseOSKAction(), ButtonAction(Keys.KEY_ESC),
+		)
+		self.set_help()
+
 	def on_event(self, daemon, what, data) -> None:
 		Keyboard.on_event(self, daemon, what, data)
 		self._schedule_redraw()
