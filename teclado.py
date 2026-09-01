@@ -60,6 +60,9 @@ class TecladoWidget(KeyboardImage):
 		# hospedeiro - e o OPERATOR_SOURCE apaga o fundo dele.
 		self.limpar_fundo = True
 		KeyboardImage.__init__(self, image)
+		# Precisa vir antes de a DrawingArea ser realizada, senao o widget
+		# nasce sem mascara de botao e nenhum clique chega ate ele.
+		self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
 
 	def _falloff(self, d: float) -> float:
 		"""1.0 no centro do dedo, 0.0 na borda do raio."""

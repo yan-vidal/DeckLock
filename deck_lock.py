@@ -86,6 +86,9 @@ PREVIEW = "--preview" in sys.argv
 # Forca o teclado embutido a ficar opaco. Sem isto ele e invisivel em
 # repouso (modo fantasma) e nao da para conferir se esta no lugar certo.
 DEBUG_ALPHA = "--debug-alpha" in sys.argv
+# Forca o teclado clicavel mesmo com controle ligado. Serve para testar o
+# modo sem desconectar nada, e para quem prefere o mouse.
+FORCA_MOUSE = "--mouse" in sys.argv
 # Entra direto no modo ocioso (formulario escondido). So faz sentido com
 # --preview: sem isso teria que esperar MINUTOS_BLOQUEIO_ATE_OCIOSO pra
 # conferir qualquer ajuste visual dessa tela.
@@ -96,6 +99,10 @@ CORES_CSS = os.path.join(CONFIG_DIR, "desktop-theme", "cores.css")
 THEME_CONF = os.path.join(CONFIG_DIR, "desktop-theme", "theme.conf")
 DIR_BLOQUEIO = os.path.join(CONFIG_DIR, "midias", "bloqueio")
 DIR_OCIOSO = os.path.join(CONFIG_DIR, "midias", "ocioso")
+# Como o deck-osk descobre que ha uma tela de bloqueio no ar: existindo este
+# arquivo com um processo vivo, o atalho vira SIGUSR1 em vez de abrir o
+# teclado do desktop - que ficaria escondido atras da tela de bloqueio.
+PID_LOCK = os.path.join(CONFIG_DIR, "scc", "deck-lock.pid")
 EXT_VIDEO = (".mp4", ".mkv", ".webm", ".mov")
 EXT_FOTO = (".jpg", ".jpeg", ".png", ".webp", ".avif", ".bmp")
 # getpass.getuser() consulta a senha do processo, e nao so a variavel de
@@ -275,11 +282,15 @@ class TelaBloqueio(Gtk.Window):
         self.senha.set_visibility(False)
         self.senha.set_input_purpose(Gtk.InputPurpose.PASSWORD)
         self.senha.set_placeholder_text("Senha")
-        # O placeholder do GTK3 nao aceitou cor por CSS aqui (nem via estado
-        # insensitive, nem forcando tema escuro) e sai invisivel sobre o preto.
-        # O cadeado comunica a funcao do campo sem depender dele.
+        # O icone da esquerda mostra/oculta o que foi digitado. Comeca oculto;
+        # serve para conferir a senha antes de enviar, util quando se digita
+        # pelo controle, onde errar uma tecla e facil e nao da para ver.
         self.senha.set_icon_from_icon_name(
-            Gtk.EntryIconPosition.PRIMARY, "system-lock-screen-symbolic"
+            Gtk.EntryIconPosition.PRIMARY, "view-reveal-symbolic"
+        )
+        self.senha.set_icon_activatable(Gtk.EntryIconPosition.PRIMARY, True)
+        self.senha.set_icon_tooltip_text(
+            Gtk.EntryIconPosition.PRIMARY, "Mostrar a senha"
         )
         self.senha.set_halign(Gtk.Align.CENTER)
         self.senha.set_alignment(0.5)
@@ -297,7 +308,7 @@ class TelaBloqueio(Gtk.Window):
             lambda _e, pos, *_: (
                 self.alternar_teclado()
                 if pos == Gtk.EntryIconPosition.SECONDARY
-                else None
+                else self._alternar_visibilidade()
             ),
         )
         self.senha.connect("activate", self._tentar)
@@ -310,6 +321,7 @@ class TelaBloqueio(Gtk.Window):
         # Onde o teclado entra quando chamado. Fica ancorado embaixo para
         # nao cobrir o campo de senha, que e o que se precisa enxergar.
         self.teclado = None
+        self.modo_mouse = False
         self.caixa_teclado = Gtk.Box()
         self.caixa_teclado.set_valign(Gtk.Align.END)
         self.caixa_teclado.set_halign(Gtk.Align.CENTER)
@@ -563,9 +575,17 @@ class TelaBloqueio(Gtk.Window):
                 self.teclado = None
                 self.aviso.set_text("nao consegui montar o teclado")
                 return
-            widget = self.teclado.montar()
+            # Sem controle, o teclado precisa estar visivel e clicavel; com
+            # controle, e o modo fantasma de sempre.
+            self.modo_mouse = FORCA_MOUSE or not TecladoEmbutido.ha_controle()
+            widget = self.teclado.montar(
+                ao_teclar=self._tecla_clicada if self.modo_mouse else None,
+            )
             self.caixa_teclado.add(widget)
-            self.teclado.ligar()
+            # Sem controle nao ha o que travar nem pads que ler: conectar ao
+            # daemon so renderia um erro de lock e um teclado inerte.
+            if not self.modo_mouse:
+                self.teclado.ligar()
             carregar_css()  # o teclado registrou CSS proprio no meio do caminho
             self.caixa_teclado.show_all()
             self._compactar(True)
@@ -576,6 +596,48 @@ class TelaBloqueio(Gtk.Window):
         else:
             self.caixa_teclado.show_all()
             self._compactar(True)
+
+    def _alternar_visibilidade(self) -> None:
+        """Mostra ou oculta a senha digitada."""
+        visivel = not self.senha.get_visibility()
+        self.senha.set_visibility(visivel)
+        self.senha.set_icon_from_icon_name(
+            Gtk.EntryIconPosition.PRIMARY,
+            "view-conceal-symbolic" if visivel else "view-reveal-symbolic",
+        )
+        self.senha.set_icon_tooltip_text(
+            Gtk.EntryIconPosition.PRIMARY,
+            "Ocultar a senha" if visivel else "Mostrar a senha",
+        )
+
+    def _tecla_clicada(self, nome: str) -> None:
+        """Aplica no campo de senha a tecla clicada no modo mouse.
+
+        Escreve direto no Gtk.Entry em vez de emitir por uinput: aqui o
+        destino do texto e conhecido, e o caminho mais curto para a senha e
+        tambem o mais simples de auditar.
+        """
+        if nome == "KEY_BACKSPACE":
+            texto = self.senha.get_text()
+            self.senha.set_text(texto[:-1])
+            self.senha.set_position(-1)
+            return
+        if nome in ("KEY_ENTER", "KEY_KPENTER"):
+            self._tentar(self.senha)
+            return
+        if nome == "KEY_SPACE":
+            self.senha.set_text(self.senha.get_text() + " ")
+            self.senha.set_position(-1)
+            return
+        # As demais vem do rotulo que o proprio teclado ja calcula a partir
+        # do layout ativo - assim acentos e simbolos seguem o teclado do
+        # sistema, sem tabela paralela aqui.
+        botao = next(
+            (b for b in self.teclado.background.buttons if b.name == nome), None
+        )
+        if botao is not None and botao.label and len(botao.label) == 1:
+            self.senha.set_text(self.senha.get_text() + botao.label)
+            self.senha.set_position(-1)
 
     def _compactar(self, ligado: bool) -> None:
         """Abre espaco para o teclado escondendo o que nao e essencial.
@@ -688,9 +750,44 @@ def carregar_css():
     )
 
 
+def _marcar_ativo():
+    """Registra o pid e apaga na saida, aconteca o que acontecer."""
+    import atexit
+
+    try:
+        os.makedirs(os.path.dirname(PID_LOCK), exist_ok=True)
+        with open(PID_LOCK, "w") as f:
+            f.write(str(os.getpid()))
+    except OSError as e:
+        print(f"aviso: nao consegui gravar {PID_LOCK} ({e})", file=sys.stderr)
+        return
+
+    def limpar():
+        try:
+            os.unlink(PID_LOCK)
+        except OSError:
+            pass
+
+    atexit.register(limpar)
+    for s in (signal.SIGTERM, signal.SIGINT):
+        anterior = signal.getsignal(s)
+        signal.signal(
+            s, lambda sig, frm, a=anterior: (limpar(), a(sig, frm) if callable(a) else sys.exit(0)),
+        )
+
+
 def main():
     carregar_css()
-    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, _alternar_pelo_sinal)
+    _marcar_ativo()
+    # GLib.unix_signal_add esta depreciado em favor de GLibUnix.signal_add,
+    # que nao existe em versoes mais antigas do PyGObject.
+    try:
+        gi.require_version("GLibUnix", "2.0")
+        from gi.repository import GLibUnix
+
+        GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, _alternar_pelo_sinal)
+    except (ImportError, ValueError):
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, _alternar_pelo_sinal)
 
     if PREVIEW:
         # Janela layer-shell comum: cobre a tela e mostra o mesmo visual,

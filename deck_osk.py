@@ -17,7 +17,7 @@ gi.require_version("Gdk", "3.0")
 gi.require_version("Rsvg", "2.0")
 gi.require_version("GdkX11", "3.0")
 
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import Gdk, Gtk  # noqa: E402
 
 from scc.constants import SCLeftRight  # noqa: E402
 from scc.osd.keyboard import Keyboard  # noqa: E402
@@ -27,6 +27,8 @@ from scc.tools import init_logging  # noqa: E402
 from teclado import CONFIG_PATH, TecladoWidget, load_config  # noqa: E402
 
 PID_PATH = os.path.expanduser("~/.config/scc/ghost-osk.pid")
+# Gravado pelo deck-lock enquanto a tela de bloqueio esta no ar.
+PID_LOCK = os.path.expanduser("~/.config/scc/deck-lock.pid")
 COOLDOWN_PATH = os.path.expanduser("~/.config/scc/ghost-osk.cooldown")
 COOLDOWN_S = 1.0
 LOG_PATH = os.path.expanduser("~/.config/scc/ghost-osk.log")
@@ -339,15 +341,74 @@ class TecladoEmbutido(GhostKeyboard):
 		proprio fundo. Quem cuida do fundo e a tela de bloqueio.
 		"""
 
-	def montar(self):
-		"""Devolve o conteudo do teclado para o hospedeiro adicionar."""
+	@staticmethod
+	def ha_controle() -> bool:
+		"""Ha um controle na mao do daemon do sc-controller?
+
+		Olha os devices virtuais que o daemon cria (SCController Keyboard/Mouse):
+		eles so existem enquanto ele esta gerenciando um controle de verdade.
+
+		NAO serve perguntar ao DaemonManager recem-criado: a conexao dele e
+		assincrona, e is_alive() responde "nao" no instante seguinte a
+		construcao - o que fazia o teclado cair no modo mouse mesmo com o
+		controle na mao.
+		"""
+		try:
+			with open("/proc/bus/input/devices", encoding="utf-8") as f:
+				return "SCController" in f.read()
+		except OSError:
+			return False
+
+	def montar(self, ao_teclar=None):
+		"""Devolve o conteudo do teclado para o hospedeiro adicionar.
+
+		Com `ao_teclar`, entra no modo mouse: teclado solido e clicavel, para
+		quando nao ha controle. O callback recebe o nome da tecla (KEY_A...).
+		"""
 		if self.background is None:
 			self._create_background()
 		# Embutido, a DrawingArea divide o buffer com a janela do hospedeiro.
 		self.background.limpar_fundo = False
+		if ao_teclar is not None:
+			self._ao_teclar = ao_teclar
+			# Sem pads nao ha gradiente que faca sentido: o teclado tem de
+			# estar inteiro visivel para ser clicado.
+			self.background.debug_alpha = True
+			self.background.connect("button-press-event", self._clique)
+			for cursor in self.cursors.values():
+				cursor.hide()
 		filho = self.c
 		self.remove(filho)
 		return filho
+
+	def _clique(self, _widget, evento) -> bool:
+		"""Descobre a tecla sob o ponteiro. Mesmo hit-test dos cursores."""
+		journal(f"clique em ({evento.x:.0f}, {evento.y:.0f})")
+		for botao in self.background.buttons:
+			if botao.contains(evento.x, evento.y):
+				journal(f"  -> tecla {botao.name}")
+				self._ao_teclar(botao.name)
+				return True
+		journal("  -> nenhuma tecla nessa posicao")
+		return False
+
+	@staticmethod
+	def _liberar_pads() -> None:
+		"""Encerra o teclado de desktop, se estiver aberto.
+
+		Ele trava LPAD/RPAD no daemon, e o lock so consegue os pads se
+		alguem soltar. Acontece de verdade: com o teclado aberto quando a
+		tela bloqueia, o teclado do lock subia inerte com "Cannot lock LPAD".
+		"""
+		pid = running_pid()
+		if pid is None:
+			return
+		journal(f"encerrando o teclado de desktop (pid={pid}) para liberar os pads")
+		try:
+			os.kill(pid, signal.SIGTERM)
+			time.sleep(1.0)
+		except OSError as e:
+			journal(f"nao consegui encerrar: {e}")
 
 	def ligar(self) -> None:
 		"""Conecta ao daemon e prepara o mapper, sem abrir janela nenhuma.
@@ -357,6 +418,7 @@ class TecladoEmbutido(GhostKeyboard):
 		"""
 		from scc.gui.daemon_manager import DaemonManager
 
+		self._liberar_pads()
 		self.daemon = DaemonManager()
 		self._cononect_handlers()
 		self.load_profile()
@@ -386,6 +448,17 @@ class TecladoEmbutido(GhostKeyboard):
 	def quit(self, code: int = -1) -> None:
 		"""No modo embutido, fechar o teclado NAO pode encerrar o hospedeiro."""
 		journal(f"quit({code}) ignorado: teclado embutido")
+
+
+def lock_ativo() -> int | None:
+	"""PID da tela de bloqueio, se houver uma no ar."""
+	try:
+		pid = int(open(PID_LOCK).read().strip())
+		with open(f"/proc/{pid}/cmdline", "rb") as f:
+			cmd = f.read().decode("utf-8", "replace")
+	except (OSError, ValueError):
+		return None
+	return pid if "deck" in cmd and "lock" in cmd else None
 
 
 def running_pid() -> int | None:
@@ -442,6 +515,14 @@ def main() -> int:
 
 	if "--toggle" in argv:
 		argv.remove("--toggle")
+		# Com a tela de bloqueio no ar, o teclado tem de aparecer DENTRO dela:
+		# uma janela layer-shell propria ficaria escondida atras da superficie
+		# de bloqueio. O lock alterna o teclado embutido ao receber o sinal.
+		pid_lock = lock_ativo()
+		if pid_lock is not None:
+			journal(f"lock ativo (pid={pid_lock}) -> SIGUSR1")
+			os.kill(pid_lock, signal.SIGUSR1)
+			return 0
 		if in_cooldown():
 			journal("toggle IGNORADO (cooldown)")
 			return 0
