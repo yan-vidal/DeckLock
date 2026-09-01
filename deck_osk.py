@@ -28,7 +28,17 @@ from scc.tools import init_logging  # noqa: E402
 CONFIG_PATH = os.path.expanduser("~/.config/scc/ghost-osk.json")
 PID_PATH = os.path.expanduser("~/.config/scc/ghost-osk.pid")
 COOLDOWN_PATH = os.path.expanduser("~/.config/scc/ghost-osk.cooldown")
-COOLDOWN_S = 0.6
+COOLDOWN_S = 1.0
+LOG_PATH = os.path.expanduser("~/.config/scc/ghost-osk.log")
+
+
+def journal(msg: str) -> None:
+	"""Diario do ciclo de vida: distingue relancamento de ressurreicao."""
+	try:
+		with open(LOG_PATH, "a") as f:
+			f.write(f"{time.strftime('%H:%M:%S')} pid={os.getpid():<7} {msg}\n")
+	except OSError:
+		pass
 
 # O sc-controller pinta #osd-keyboard com osd_colors["background"] (101010, quase preto).
 # Registrado acima de PRIORITY_USER para vencer aquele provider.
@@ -232,7 +242,17 @@ class GhostKeyboard(Keyboard):
 		for side, cursor in self.cursors.items():
 			cursor.set_visible(side in touching)
 
+	def quit(self, code: int = -1) -> None:
+		journal(f"quit(code={code}) - fechando")
+		# O mesmo aperto de STEAM+B e consumido duas vezes: fecha o teclado
+		# aqui e, quando o controle volta ao perfil de desktop com o B ainda
+		# pressionado, dispara o shell() que reabriria. O cooldown gravado na
+		# ABERTURA nao protege - ja expirou. Tem de ser gravado agora.
+		touch_cooldown()
+		Keyboard.quit(self, code)
+
 	def show(self, *a) -> None:
+		journal("show() - janela aparecendo")
 		Keyboard.show(self, *a)
 		self._sync_cursor_visibility()
 		ls = getattr(self, "layer_shell", None)
@@ -311,22 +331,39 @@ def touch_cooldown() -> None:
 		pass
 
 
+def _on_signal(signum, frame):
+	"""SIGTERM vem do --toggle. Sem isto o processo morre deixando o pidfile
+	orfao, e o indicador da waybar passa a mentir."""
+	journal(f"recebeu sinal {signum} - encerrando")
+	try:
+		os.unlink(PID_PATH)
+	except OSError:
+		pass
+	sys.exit(0)
+
+
 def main() -> int:
-	signal.signal(signal.SIGINT, lambda *a: sys.exit(0))
+	signal.signal(signal.SIGINT, _on_signal)
+	signal.signal(signal.SIGTERM, _on_signal)
 	argv = list(sys.argv)
 	debug_alpha = "--debug-alpha" in argv
 	if debug_alpha:
 		argv.remove("--debug-alpha")
 
+	journal(f"invocado argv={argv[1:]}")
+
 	if "--toggle" in argv:
 		argv.remove("--toggle")
 		if in_cooldown():
+			journal("toggle IGNORADO (cooldown)")
 			return 0
 		touch_cooldown()
 		pid = running_pid()
 		if pid is not None:
+			journal(f"toggle -> matando pid={pid}")
 			os.kill(pid, signal.SIGTERM)
 			return 0
+		journal("toggle -> nenhuma instancia, vai abrir")
 
 	init_logging()
 	try:
@@ -343,6 +380,7 @@ def main() -> int:
 		os.unlink(PID_PATH)
 	except OSError:
 		pass
+	journal(f"saindo (exit={k.get_exit_code()})")
 	return k.get_exit_code()
 
 
