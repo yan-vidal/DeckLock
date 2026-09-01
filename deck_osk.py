@@ -60,6 +60,45 @@ DEFAULTS = {
 }
 
 
+# --- Atalhos compartilhados entre o modo normal e o modo teclado ---------------
+# Definidos aqui num lugar so para os dois perfis nao divergirem.
+
+HYPR = "hyprctl dispatch"
+# L4/L5: a nomenclatura varia entre aparelhos, entao os dois grips esquerdos
+# servem de modificador para "levar a janela junto".
+GRIPS_ESQ = ("LGRIP", "LGRIP2")
+
+
+def _dpad_dir(n: int, tecla: str) -> str:
+	"""DOTS+seta troca de workspace; DOTS+grip esquerdo+seta leva a janela junto.
+
+	Sem o DOTS a seta e so a seta. O name() no default e para o shell nao ser
+	confundido com uma condicao: o ModeModifier aceita ShellCommandAction como
+	condicao quando ela aparece sem botao antes.
+	"""
+	sinal = f"+{n}" if n > 0 else str(n)
+	nav = f'shell("{HYPR} workspace e{sinal}")'
+	mov = f'shell("{HYPR} movetoworkspace e{sinal}")'
+	cond = "".join(f"{g}, {mov}, " for g in GRIPS_ESQ)
+	return f'mode(DOTS, mode({cond}name("ws {sinal}", {nav})), button(Keys.{tecla}))'
+
+
+# cima/baixo pulam 2; direita/esquerda pulam 1
+DPAD_ACTION = "dpad({}, {}, {}, {})".format(
+	_dpad_dir(2, "KEY_UP"),
+	_dpad_dir(-2, "KEY_DOWN"),
+	_dpad_dir(-1, "KEY_LEFT"),
+	_dpad_dir(1, "KEY_RIGHT"),
+)
+
+# STEAM + botao. O valor e o comando; o default de cada botao muda conforme o
+# perfil, por isso fica fora daqui.
+ATALHOS_STEAM = {
+	"A": "fuzzel",
+	"Y": "footclient",
+	"X": f"{HYPR} killactive",
+}
+
 def load_config() -> dict:
 	cfg = dict(DEFAULTS)
 	try:
@@ -335,10 +374,30 @@ class GhostKeyboard(Keyboard):
 				50, ModeModifier(toque, OSKPressAction(lado), ButtonAction(botao)),
 			)
 
+		# Os mesmos atalhos do modo normal, para nao mudarem de comportamento
+		# quando o teclado esta aberto. O default de cada botao aqui e o que ele
+		# ja fazia no teclado (X e Y fecham, A e Enter), entao nada se perde.
+		from scc.actions import NoAction
+		from scc.constants import SCPads
+		from scc.parser import TalkingActionParser
+		from scc.special_actions import ShellCommandAction
+
+		self.profile.pads[SCPads.DPAD] = TalkingActionParser().restart(DPAD_ACTION).parse().compress()
+		for nome, cmd in ATALHOS_STEAM.items():
+			btn = getattr(SCButtons, nome)
+			original = self.profile.buttons.get(btn) or NoAction()
+			self.profile.buttons[btn] = ModeModifier(
+				SCButtons.C, ShellCommandAction(cmd), original,
+			).compress()
+
 		journal("gatilhos: " + " | ".join(
 			f"{k.name}={v.describe(0).replace(chr(10), ' / ')}"
 			for k, v in self.profile.triggers.items()
 		))
+		journal("atalhos: " + " | ".join(
+			f"{n}={self.profile.buttons[getattr(SCButtons, n)].describe(0).replace(chr(10), ' / ')}"
+			for n in ATALHOS_STEAM
+		) + f" | DPAD={self.profile.pads[SCPads.DPAD].describe(0).replace(chr(10), ' / ')}")
 		self.set_help()
 
 	def on_event(self, daemon, what, data) -> None:
