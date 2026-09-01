@@ -8,6 +8,7 @@ import json
 import os
 import signal
 import sys
+import time
 from math import hypot
 
 import gi
@@ -26,6 +27,8 @@ from scc.tools import init_logging  # noqa: E402
 
 CONFIG_PATH = os.path.expanduser("~/.config/scc/ghost-osk.json")
 PID_PATH = os.path.expanduser("~/.config/scc/ghost-osk.pid")
+COOLDOWN_PATH = os.path.expanduser("~/.config/scc/ghost-osk.cooldown")
+COOLDOWN_S = 0.6
 
 # O sc-controller pinta #osd-keyboard com osd_colors["background"] (101010, quase preto).
 # Registrado acima de PRIORITY_USER para vencer aquele provider.
@@ -219,7 +222,27 @@ class GhostKeyboard(Keyboard):
 
 	def _redraw_now(self) -> None:
 		self._sync_cursor_points()
+		self._sync_cursor_visibility()
 		self.background.queue_draw()
+
+	def _sync_cursor_visibility(self) -> None:
+		"""As bolinhas dos pads sao widgets GTK, nao passam pelo Cairo do on_draw -
+		precisam ser escondidas na mao, senao ficam visiveis com o teclado invisivel."""
+		touching = self._touching_sides()
+		for side, cursor in self.cursors.items():
+			cursor.set_visible(side in touching)
+
+	def show(self, *a) -> None:
+		Keyboard.show(self, *a)
+		self._sync_cursor_visibility()
+		ls = getattr(self, "layer_shell", None)
+		if ls is None:
+			return
+		# Sem ancora horizontal, o layer-shell centraliza a janela sozinho.
+		ls.set_anchor(self, ls.Edge.LEFT, False)
+		ls.set_anchor(self, ls.Edge.RIGHT, False)
+		ls.set_margin(self, ls.Edge.LEFT, 0)
+		ls.set_margin(self, ls.Edge.RIGHT, 0)
 
 	def _schedule_redraw(self) -> None:
 		"""Coalesce redraws: o pad reporta a ~87 Hz, nao precisamos redesenhar tudo isso."""
@@ -250,6 +273,22 @@ def running_pid() -> int | None:
 	return pid if "deck" in cmdline and "osk" in cmdline else None
 
 
+def in_cooldown() -> bool:
+	"""Evita que dois disparos seguidos do botao fechem e reabram o teclado."""
+	try:
+		return (time.time() - os.path.getmtime(COOLDOWN_PATH)) < COOLDOWN_S
+	except OSError:
+		return False
+
+
+def touch_cooldown() -> None:
+	try:
+		with open(COOLDOWN_PATH, "w"):
+			pass
+	except OSError:
+		pass
+
+
 def main() -> int:
 	signal.signal(signal.SIGINT, lambda *a: sys.exit(0))
 	argv = list(sys.argv)
@@ -259,6 +298,9 @@ def main() -> int:
 
 	if "--toggle" in argv:
 		argv.remove("--toggle")
+		if in_cooldown():
+			return 0
+		touch_cooldown()
 		pid = running_pid()
 		if pid is not None:
 			os.kill(pid, signal.SIGTERM)
