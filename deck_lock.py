@@ -1,0 +1,712 @@
+#!/usr/bin/env python3
+"""Tela de bloqueio do Steam Deck, com teclado virtual pelo controle.
+
+DE ONDE VEIO: adaptado do video_lock.py do projeto home-server/desktop,
+que ja resolvia tela de bloqueio de verdade em Python. O que se ganha de
+graca: relogio, fundo de foto ou video, tema por cores.css, avatar,
+modo ocioso, uma surface por monitor com hotplug e o modo --preview.
+
+O QUE MUDA AQUI: o teclado fantasma entra como widget DENTRO desta
+janela. Um teclado em layer-shell nao serve - verificado com captura de
+tela durante o bloqueio: as layers continuam existindo, mas a superficie
+de lock e composta acima de todas. Dentro da janela do lock nao ha essa
+disputa.
+
+--- docstring original ---
+
+Tela de bloqueio com video de fundo, relogio grande e campo de senha.
+
+POR QUE ESCREVER UMA: nenhuma tela de bloqueio pronta toca video.
+Verificado uma a uma - swaylock (so imagem estatica, e sem relogio),
+gtklock, hyprlock e waylock aceitam imagem de fundo, nenhuma aceita
+video.
+
+E POR QUE DA PRA FAZER EM PYTHON: o pacote gtk-session-lock instala
+GtkSessionLock-0.1.typelib, ou seja, binding GObject Introspection. Uma
+tela de bloqueio de verdade (protocolo ext-session-lock-v1) e um app GTK
+normal que registra suas janelas no compositor por essa biblioteca.
+O video entra via GStreamer com "gtksink", que desenha dentro de um
+widget GTK como qualquer outro.
+
+    video_lock.py            bloqueia de verdade
+    video_lock.py --preview  MESMA tela, porem como janela comum
+
+O --preview existe por seguranca e nao e detalhe: uma tela de bloqueio
+com defeito prende a sessao, e a unica saida vira "docker exec" de fora.
+Ajuste o visual sempre no preview; so depois arme o bloqueio real.
+
+A midia vem de ~/.config/midias/bloqueio/ (fotos ou videos).
+As cores saem do tema (cores.css), como no menu iniciar.
+"""
+import getpass
+import os
+import subprocess
+import sys
+import random
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gst", "1.0")
+gi.require_version("GtkLayerShell", "0.1")
+from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, Gst, GtkLayerShell  # noqa: E402
+
+# MODO DE AUTENTICACAO ISOLADO - precisa vir antes de qualquer import
+# pesado, e e chamado pela propria tela num subprocesso.
+#
+# POR QUE NAO AUTENTICAR NO PROCESSO PRINCIPAL: o pam_unix faz fork() do
+# helper unix_chkpwd, e fork() num processo com varias threads (o
+# GStreamer cria as suas) e uma armadilha classica - o filho herda so a
+# thread que chamou, e se outra segurava um lock interno no instante do
+# fork, o filho trava e o pai fica esperando em do_wait pra sempre.
+# Foi exatamente o que aconteceu: a senha era aceita e a tela congelava
+# ao dar Enter.
+#
+# Aqui o subprocesso nasce por fork+exec (execve limpa o estado), com uma
+# thread so e sem GStreamer - o fork do PAM acontece em terreno seguro.
+if "--auth" in sys.argv:
+    import pam
+
+    usuario = sys.argv[sys.argv.index("--auth") + 1]
+    senha = sys.stdin.readline().rstrip("\n")
+    autenticador = pam.pam()
+    ok = autenticador.authenticate(usuario, senha, service="system-auth")
+    if not ok:
+        print(autenticador.reason or "PAM recusou a autenticacao", file=sys.stderr)
+    sys.exit(0 if ok else 1)
+
+PREVIEW = "--preview" in sys.argv
+# Entra direto no modo ocioso (formulario escondido). So faz sentido com
+# --preview: sem isso teria que esperar MINUTOS_BLOQUEIO_ATE_OCIOSO pra
+# conferir qualquer ajuste visual dessa tela.
+PREVIEW_OCIOSO = "--preview-ocioso" in sys.argv
+
+CONFIG_DIR = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+CORES_CSS = os.path.join(CONFIG_DIR, "desktop-theme", "cores.css")
+THEME_CONF = os.path.join(CONFIG_DIR, "desktop-theme", "theme.conf")
+DIR_BLOQUEIO = os.path.join(CONFIG_DIR, "midias", "bloqueio")
+DIR_OCIOSO = os.path.join(CONFIG_DIR, "midias", "ocioso")
+EXT_VIDEO = (".mp4", ".mkv", ".webm", ".mov")
+EXT_FOTO = (".jpg", ".jpeg", ".png", ".webp", ".avif", ".bmp")
+# getpass.getuser() consulta a senha do processo, e nao so a variavel de
+# ambiente - com a sessao bloqueada o USER pode nao estar no ambiente.
+USUARIO = getpass.getuser()
+TAM_AVATAR = 96
+
+
+def ler_minutos_bloqueio_ate_ocioso():
+    """MINUTOS_BLOQUEIO_ATE_OCIOSO do theme.conf (0 = desliga o modo)."""
+    try:
+        with open(THEME_CONF, encoding="utf-8") as f:
+            for linha in f:
+                if linha.startswith("MINUTOS_BLOQUEIO_ATE_OCIOSO="):
+                    return max(0, int(linha.split("=", 1)[1].strip()))
+    except (OSError, ValueError):
+        pass
+    return 10
+
+# Sem estas, qualquer regra que use @cor e DESCARTADA pelo GTK quando o
+# cores.css do usuario nao existe - regra a regra, em silencio. Foi o que
+# escondeu o estilo do campo de senha: #relogio (sem @cor) aplicava e
+# #senha (com @rosa_translucido) nao. Ficam antes do tema, que sobrescreve.
+CORES_PADRAO = """
+@define-color primaria #7aa2f7;
+@define-color primaria_escura #3d59a1;
+@define-color texto #e6e6e6;
+@define-color texto_sobre_rosa #1a1b26;
+@define-color fundo_barra rgba(26, 27, 38, 0.45);
+@define-color fundo_vidro rgba(20, 21, 30, 0.73);
+@define-color rosa_translucido rgba(122, 162, 247, 0.80);
+@define-color realce rgba(122, 162, 247, 0.55);
+@define-color hover rgba(230, 230, 230, 0.14);
+"""
+
+CSS_BASE = """
+window, #fundo { background-color: black; }
+
+/* Veu escuro por cima do video: sem ele o texto some nas cenas claras. */
+#veu {
+    background-image: linear-gradient(to bottom,
+                                      rgba(0,0,0,0.45),
+                                      rgba(0,0,0,0.15) 40%,
+                                      rgba(0,0,0,0.65));
+}
+
+#relogio {
+    color: #ffffff;
+    font-size: 96px;
+    font-weight: 300;
+    text-shadow: 0 2px 12px rgba(0,0,0,0.8);
+}
+
+#data {
+    color: #ffffff;
+    font-size: 22px;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+}
+
+#avatar {
+    /* A moldura clara separa a foto do video de fundo, que pode ter
+       qualquer cor atras. */
+    border: 2px solid rgba(255,255,255,0.55);
+    border-radius: 50%;
+    margin-bottom: 8px;
+}
+
+#usuario {
+    color: #ffffff;
+    font-size: 20px;
+    font-weight: bold;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+}
+
+#senha {
+    background-color: rgba(255,255,255,0.15);
+    color: #ffffff;
+    border: 1px solid @rosa_translucido;
+    border-radius: 20px;
+    padding: 10px 18px;
+    min-width: 260px;
+    font-size: 16px;
+}
+
+#senha:focus { border-color: @primaria; }
+
+/* O GTK3 desenha o texto do placeholder com a cor do estado INSENSITIVE do
+   proprio campo - nao ha no CSS um no "placeholder" como no GTK4. Sem isto
+   ele sai no cinza do tema e some no fundo preto desta tela. */
+#senha:disabled { color: rgba(255,255,255,0.55); }
+
+
+#aviso {
+    color: #ffd9e2;
+    font-size: 14px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.9);
+}
+"""
+
+
+def escolher_midia(categoria_dir):
+    """Sorteia UM item de midias/<categoria> e devolve (tipo, caminho)."""
+    candidatos = []
+    for sub, exts, tipo in (
+        ("videos", EXT_VIDEO, "video"),
+        ("fotos", EXT_FOTO, "foto"),
+    ):
+        pasta = os.path.join(categoria_dir, sub)
+        if not os.path.isdir(pasta):
+            continue
+        for nome in os.listdir(pasta):
+            if nome.lower().endswith(exts):
+                candidatos.append((tipo, os.path.join(pasta, nome)))
+    return random.choice(candidatos) if candidatos else (None, None)
+
+
+class TelaBloqueio(Gtk.Window):
+    def __init__(self, ao_desbloquear):
+        super().__init__()
+        self.ao_desbloquear = ao_desbloquear
+        self.pipeline = None
+        self.modo_ocioso = False
+        self._timer_ocioso_id = None
+        self._widget_fundo = None
+        self.pilha = None
+
+        self.pilha = Gtk.Overlay()
+        self.pilha.set_name("fundo")
+        self.add(self.pilha)
+
+        self._widget_fundo = self._montar_video(DIR_BLOQUEIO)
+        self.pilha.add(self._widget_fundo if self._widget_fundo is not None else Gtk.Box())
+
+        veu = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        veu.set_name("veu")
+        self.veu = veu
+        self.pilha.add_overlay(veu)
+
+        # Relogio grande no topo, credenciais embaixo - a disposicao que
+        # Windows e macOS usam.
+        # Relogio e data vao JUNTOS numa caixa so. Se a data for empacotada
+        # solta no "veu", ela gruda no fim da area do relogio - e no modo
+        # ocioso (rodape escondido) essa area passa a ser a tela inteira,
+        # jogando a data pra ultima linha de pixels. Medido: relogio y=1042,
+        # data terminando em y=1080, zero folga. Agrupados, mover o bloco
+        # move os dois. O modo normal fica igualzinho (y=419 nos dois casos).
+        self.bloco_relogio = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.bloco_relogio.set_valign(Gtk.Align.END)
+        veu.pack_start(self.bloco_relogio, True, True, 0)
+
+        self.relogio = Gtk.Label(label="")
+        self.relogio.set_name("relogio")
+        self.bloco_relogio.pack_start(self.relogio, False, False, 0)
+
+        self.data = Gtk.Label(label="")
+        self.data.set_name("data")
+        self.bloco_relogio.pack_start(self.data, False, False, 0)
+
+        self.rodape = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.rodape.set_valign(Gtk.Align.CENTER)
+        self.rodape.set_margin_top(60)
+        self.rodape.set_margin_bottom(80)
+        veu.pack_start(self.rodape, True, True, 0)
+
+        self.rodape.pack_start(self._avatar(), False, False, 0)
+
+        # get_real_name() devolve a string "Unknown" quando o GECOS esta
+        # vazio - nao None nem "" - entao um `or` simples nao resolve.
+        real = GLib.get_real_name()
+        nome = Gtk.Label(label=USUARIO if not real or real == "Unknown" else real)
+        nome.set_name("usuario")
+        self.rodape.pack_start(nome, False, False, 0)
+
+        self.senha = Gtk.Entry()
+        self.senha.set_name("senha")
+        self.senha.set_visibility(False)
+        self.senha.set_input_purpose(Gtk.InputPurpose.PASSWORD)
+        self.senha.set_placeholder_text("Senha")
+        # O placeholder do GTK3 nao aceitou cor por CSS aqui (nem via estado
+        # insensitive, nem forcando tema escuro) e sai invisivel sobre o preto.
+        # O cadeado comunica a funcao do campo sem depender dele.
+        self.senha.set_icon_from_icon_name(
+            Gtk.EntryIconPosition.PRIMARY, "system-lock-screen-symbolic"
+        )
+        self.senha.set_halign(Gtk.Align.CENTER)
+        self.senha.set_alignment(0.5)
+        self.senha.connect("activate", self._tentar)
+        self.rodape.pack_start(self.senha, False, False, 0)
+
+        self.aviso = Gtk.Label(label="")
+        self.aviso.set_name("aviso")
+        self.rodape.pack_start(self.aviso, False, False, 0)
+
+        self._tique()
+        GLib.timeout_add_seconds(1, self._tique)
+
+        # Depois de N minutos parado na tela de bloqueio: some o formulario
+        # e troca a midia pra pasta ocioso (ainda trancado). Qualquer
+        # tecla/mouse volta o formulario.
+        minutos = ler_minutos_bloqueio_ate_ocioso()
+        if minutos > 0 and not PREVIEW:
+            self._timer_ocioso_id = GLib.timeout_add_seconds(
+                minutos * 60, self._entrar_modo_ocioso
+            )
+        elif PREVIEW_OCIOSO:
+            # Depois do show_all() do preview, senao o hide() do rodape
+            # nao pega. Ver PREVIEW_OCIOSO no topo do arquivo.
+            GLib.idle_add(self._entrar_modo_ocioso)
+        self.add_events(
+            Gdk.EventMask.KEY_PRESS_MASK
+            | Gdk.EventMask.BUTTON_PRESS_MASK
+            | Gdk.EventMask.POINTER_MOTION_MASK
+        )
+        self.connect("key-press-event", self._atividade)
+        self.connect("button-press-event", self._atividade)
+        self.connect("motion-notify-event", self._atividade)
+
+    def _avatar(self):
+        """Foto do usuario, recortada em circulo.
+
+        Procura ~/.face, que e a convencao usada por praticamente todos
+        os gerenciadores de sessao do Linux (GDM, SDDM, LightDM) - assim
+        a mesma foto serve pra ca e pra qualquer um deles depois.
+        Sem o arquivo, usa o icone generico do tema.
+        """
+        caminho = os.path.join(GLib.get_home_dir(), ".face")
+        if not os.path.isfile(caminho):
+            caminho = os.path.join(GLib.get_home_dir(), ".face.icon")
+
+        imagem = Gtk.Image()
+        imagem.set_name("avatar")
+        # Sem isto o widget ocupa a largura toda do container e a borda
+        # arredondada do CSS vira uma elipse atravessando a tela - a
+        # borda segue a AREA do widget, nao o tamanho da imagem.
+        imagem.set_halign(Gtk.Align.CENTER)
+        imagem.set_size_request(TAM_AVATAR, TAM_AVATAR)
+        if os.path.isfile(caminho):
+            try:
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                    caminho, TAM_AVATAR, TAM_AVATAR, False
+                )
+                imagem.set_from_surface(self._circular(pixbuf))
+            except GLib.Error:
+                imagem.set_from_icon_name("avatar-default", Gtk.IconSize.DIALOG)
+                imagem.set_pixel_size(TAM_AVATAR)
+        else:
+            imagem.set_from_icon_name("avatar-default", Gtk.IconSize.DIALOG)
+            imagem.set_pixel_size(TAM_AVATAR)
+        return imagem
+
+    def _circular(self, pixbuf):
+        """Recorta o pixbuf num circulo.
+
+        O GTK3 nao tem borda circular pra imagem: "border-radius" no CSS
+        so afeta o fundo do widget, nao o conteudo. Por isso o recorte e
+        feito na mao com cairo.
+        """
+        import cairo
+
+        lado = TAM_AVATAR
+        superficie = cairo.ImageSurface(cairo.FORMAT_ARGB32, lado, lado)
+        ctx = cairo.Context(superficie)
+        ctx.arc(lado / 2, lado / 2, lado / 2, 0, 2 * 3.141592653589793)
+        ctx.clip()
+        Gdk.cairo_set_source_pixbuf(ctx, pixbuf, 0, 0)
+        ctx.paint()
+        return superficie
+
+    def _montar_video(self, categoria_dir, escolha=None):
+        tipo, caminho = escolha if escolha is not None else escolher_midia(categoria_dir)
+        if not caminho:
+            return None
+        if tipo == "foto":
+            # Foto nao precisa de GStreamer nenhum - so um Gtk.Image que
+            # se estica pra tela toda.
+            imagem = Gtk.Image()
+
+            def encaixar(widget, alocacao):
+                try:
+                    pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                        caminho, alocacao.width, alocacao.height, False
+                    )
+                    widget.set_from_pixbuf(pixbuf)
+                except GLib.Error:
+                    pass
+
+            imagem.connect("size-allocate", encaixar)
+            return imagem
+        Gst.init(None)
+        # O sink entrega um widget GTK pronto; sem ele o video abriria numa
+        # janela propria, fora da nossa.
+        #
+        # PREFERIMOS gtkglsink (dentro de um glsinkbin) e NAO o gtksink.
+        # Os dois desenham num widget, mas o gtksink exige o quadro em
+        # memoria de SISTEMA: com o decode acontecendo na GPU (vaav1dec /
+        # vavp9dec / vah264dec), cada quadro tem que ser baixado da GPU e
+        # convertido de cor na CPU, 60x por segundo. Medido em 10/08/2026
+        # com a tela bloqueada de verdade: video_lock.py em 133% de CPU -
+        # 199 minutos de CPU em 2h de tela trancada, mais que o desktop
+        # inteiro somado. O gtkglsink mantem o quadro na GPU.
+        #
+        # O gtksink continua como plano B: se o GL nao negociar (driver,
+        # container sem /dev/dri), melhor tela de bloqueio pesada do que
+        # tela de bloqueio preta.
+        widget_sink = Gst.ElementFactory.make("gtkglsink")
+        if widget_sink is not None:
+            sink = Gst.ElementFactory.make("glsinkbin")
+            if sink is not None:
+                sink.set_property("sink", widget_sink)
+            else:
+                widget_sink = None
+        if widget_sink is None:
+            print("gtkglsink/glsinkbin indisponivel - caindo pro gtksink", file=sys.stderr)
+            sink = Gst.ElementFactory.make("gtksink")
+            widget_sink = sink
+        if sink is None:
+            return None
+        self.pipeline = Gst.ElementFactory.make("playbin")
+        if self.pipeline is None:
+            return None
+        self.pipeline.set_property("video-sink", sink)
+        self.pipeline.set_property("uri", GLib.filename_to_uri(caminho, None))
+        # Papel de parede nao dispute o som do sistema.
+        self.pipeline.set_property("mute", True)
+
+        barramento = self.pipeline.get_bus()
+        barramento.add_signal_watch()
+        barramento.connect("message::eos", self._reiniciar)
+        barramento.connect("message::error", self._erro_gst)
+
+        # O widget vem do gtkglsink/gtksink, nunca do glsinkbin (que e so
+        # o involucro GL e nao tem essa propriedade).
+        widget = widget_sink.get_property("widget")
+        # NAO damos PLAY aqui: o sink so tem superficie depois que o
+        # widget e realizado na tela. Comecando antes, o pipeline roda mas
+        # nao ha onde desenhar - o fundo fica preto, e sem erro nenhum,
+        # que foi exatamente o sintoma.
+        widget.connect("realize", lambda *_: self.pipeline.set_state(Gst.State.PLAYING))
+        return widget
+
+    def _trocar_fundo(self, categoria_dir):
+        """Para o fundo atual e coloca midia da categoria (bloqueio/ocioso)."""
+        escolha = escolher_midia(categoria_dir)
+        tipo, caminho = escolha
+        if not caminho:
+            return
+
+        # VIDEO -> VIDEO NAO RECONSTROI WIDGET NENHUM, so troca a URI do
+        # playbin. Destruir o widget do gtkglsink e montar outro no lugar
+        # e o caminho mais curto pra derrubar a tela de bloqueio inteira:
+        #
+        #   gstreamer: gst-resource-error-quark: Failed to initialize
+        #              OpenGL with Gtk (3)
+        #   Gdk-WARNING **: eglMakeCurrent failed
+        #   ... core dump
+        #
+        # O contexto GL do widget velho ainda nao foi solto quando o novo
+        # pede o dele. E como isso acontece justamente na virada pro modo
+        # ocioso (10 min depois de bloquear), a sessao ficava trancada
+        # sem cliente de bloqueio - a tela vermelha do sway. Reproduzido
+        # com `--preview --preview-ocioso`.
+        if tipo == "video" and self.pipeline is not None:
+            self.pipeline.set_state(Gst.State.READY)
+            self.pipeline.set_property("uri", GLib.filename_to_uri(caminho, None))
+            self.pipeline.set_state(Gst.State.PLAYING)
+            return
+
+        # Sobra a troca de TIPO (foto <-> video), que exige widget novo.
+        # Aqui nao ha dois sinks GL disputando: ou o antigo era foto (sem
+        # GL), ou o novo e foto (idem).
+        self.parar_video()
+        if self._widget_fundo is not None and self.pilha is not None:
+            self.pilha.remove(self._widget_fundo)
+            self._widget_fundo.destroy()
+            self._widget_fundo = None
+        self.pipeline = None
+        novo = self._montar_video(categoria_dir, escolha)
+        if novo is None:
+            novo = Gtk.Box()
+        self._widget_fundo = novo
+        # Gtk.Overlay: add() define o filho principal (fundo); overlays
+        # (veu, formulario) ja estao em add_overlay e permanecem.
+        self.pilha.add(novo)
+        novo.show_all()
+        # ...permanecem no arvore, mas iam parar ATRAS do video. O widget
+        # do gtkglsink tem GdkWindow propria, e no GTK3 quem e realizado
+        # depois fica por cima dentro do mesmo pai - o fundo novo nasce
+        # depois do veu. Sintoma: ao entrar no modo ocioso o relogio e a
+        # data sumiam (nao "mudavam de lugar"), e voltavam sozinhos ao
+        # sair. Reancorar o veu recria a janela dele no topo da pilha.
+        # Nada de show_all() aqui: no modo ocioso o rodape esta escondido
+        # de proposito e show_all() o traria de volta.
+        self.pilha.remove(self.veu)
+        self.pilha.add_overlay(self.veu)
+        if self.pipeline is not None and novo.get_realized():
+            self.pipeline.set_state(Gst.State.PLAYING)
+
+    def _entrar_modo_ocioso(self):
+        """Esconde formulario e toca midia de ocioso; sessao continua trancada."""
+        if self.modo_ocioso:
+            return False
+        self.modo_ocioso = True
+        self.rodape.hide()
+        # Sem o rodape, o espaco dele volta pro bloco do relogio. Alinhado
+        # ao FIM, o bloco afundava pro pe da tela (a data ficava na ultima
+        # linha de pixels). Centralizado, relogio+data ficam no meio - o
+        # lugar certo numa tela sem formulario.
+        self.bloco_relogio.set_valign(Gtk.Align.CENTER)
+        self.aviso.set_text("")
+        # Pasta ocioso vazia: o _trocar_fundo sai sem mexer no fundo atual.
+        self._trocar_fundo(DIR_OCIOSO)
+        self._timer_ocioso_id = None
+        return False  # nao repetir o timeout
+
+    def _sair_modo_ocioso(self):
+        """Volta o formulario de senha (ainda bloqueado)."""
+        if not self.modo_ocioso:
+            return
+        self.modo_ocioso = False
+        self.rodape.show_all()
+        # Volta o bloco do relogio pro lugar de sempre (ver _entrar_modo_ocioso).
+        self.bloco_relogio.set_valign(Gtk.Align.END)
+        self.senha.grab_focus()
+        # Volta midia de bloqueio (convencao da tela de login/lock).
+        self._trocar_fundo(DIR_BLOQUEIO)
+        minutos = ler_minutos_bloqueio_ate_ocioso()
+        if minutos > 0:
+            if self._timer_ocioso_id is not None:
+                GLib.source_remove(self._timer_ocioso_id)
+            self._timer_ocioso_id = GLib.timeout_add_seconds(
+                minutos * 60, self._entrar_modo_ocioso
+            )
+
+    def _atividade(self, _w, _evento):
+        if self.modo_ocioso:
+            self._sair_modo_ocioso()
+            return True
+        # Reinicia o timer de ocioso enquanto digita/mexe no formulario.
+        minutos = ler_minutos_bloqueio_ate_ocioso()
+        if minutos > 0 and not PREVIEW:
+            if self._timer_ocioso_id is not None:
+                GLib.source_remove(self._timer_ocioso_id)
+            self._timer_ocioso_id = GLib.timeout_add_seconds(
+                minutos * 60, self._entrar_modo_ocioso
+            )
+        return False
+
+    def _erro_gst(self, _bus, msg):
+        erro, _debug = msg.parse_error()
+        print(f"gstreamer: {erro}", file=sys.stderr)
+
+    def _reiniciar(self, *_):
+        # Sem isto o video congela no ultimo quadro ao terminar.
+        self.pipeline.seek_simple(
+            Gst.Format.TIME, Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT, 0
+        )
+
+    def _tique(self):
+        agora = GLib.DateTime.new_now_local()
+        self.relogio.set_text(agora.format("%H:%M"))
+        self.data.set_text(agora.format("%A, %d de %B").capitalize())
+        return GLib.SOURCE_CONTINUE
+
+    def _tentar(self, _entry):
+        senha = self.senha.get_text()
+        self.senha.set_text("")
+        if PREVIEW:
+            self.aviso.set_text("(pre-visualizacao: senha nao e verificada)")
+            return
+
+        resultado = subprocess.run(
+            [sys.executable, os.path.abspath(__file__), "--auth", USUARIO],
+            input=senha + "\n",
+            capture_output=True,
+            text=True,
+        )
+        if resultado.returncode == 0:
+            self.parar_video()
+            self.ao_desbloquear()
+        else:
+            self.aviso.set_text("Senha incorreta")
+
+    def parar_video(self):
+        if self.pipeline is not None:
+            self.pipeline.set_state(Gst.State.NULL)
+
+
+def carregar_css():
+    # O placeholder do Gtk.Entry NAO usa a cor do nosso CSS: ele vem do tema
+    # do sistema. Com tema claro sai cinza escuro - invisivel sobre o fundo
+    # preto desta tela, e o campo parece uma caixa vazia sem rotulo nenhum.
+    Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", True)
+
+    css = CORES_PADRAO + CSS_BASE
+    if os.path.isfile(CORES_CSS):
+        with open(CORES_CSS, encoding="utf-8") as f:
+            css = CORES_PADRAO + f.read() + CSS_BASE
+    provedor = Gtk.CssProvider()
+    try:
+        provedor.load_from_data(css.encode())
+    except GLib.Error as erro:
+        print(f"CSS invalido: {erro}", file=sys.stderr)
+        return
+    Gtk.StyleContext.add_provider_for_screen(
+        Gdk.Screen.get_default(), provedor, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+    )
+
+
+def main():
+    carregar_css()
+
+    if PREVIEW:
+        # Janela layer-shell comum: cobre a tela e mostra o mesmo visual,
+        # mas o compositor NAO esta bloqueado - da pra sair matando o
+        # processo, ou pelo Esc abaixo.
+        janela = TelaBloqueio(Gtk.main_quit)
+        GtkLayerShell.init_for_window(janela)
+        GtkLayerShell.set_layer(janela, GtkLayerShell.Layer.OVERLAY)
+        for borda in (GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT,
+                      GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM):
+            GtkLayerShell.set_anchor(janela, borda, True)
+        GtkLayerShell.set_keyboard_mode(
+            janela, GtkLayerShell.KeyboardMode.EXCLUSIVE
+        )
+        janela.connect(
+            "key-press-event",
+            lambda _w, e: Gtk.main_quit() if e.keyval == Gdk.KEY_Escape else None,
+        )
+        janela.show_all()
+        janela.senha.grab_focus()
+        Gtk.main()
+        return
+
+    gi.require_version("GtkSessionLock", "0.1")
+    from gi.repository import GtkSessionLock
+
+    # A API do gtk-session-lock NAO tem sinais - confirmado com
+    # GObject.signal_list_names(), que devolve tupla vazia, e no
+    # cabecalho C (gtk-session-lock.h). A primeira versao deste arquivo
+    # conectava "locked" e "failed" e quebrava com
+    # "unknown signal name: failed"; pior, mesmo sem o erro as surfaces
+    # nunca teriam sido criadas, porque eram criadas dentro do handler.
+    # O fluxo correto e direto: prepare -> lock -> new_surface por
+    # monitor.
+    if not GtkSessionLock.is_supported():
+        print("compositor nao suporta ext-session-lock", file=sys.stderr)
+        sys.exit(1)
+
+    trava = GtkSessionLock.prepare_lock()
+    trava.lock_lock()
+
+    # UMA SURFACE POR MONITOR, E O CONJUNTO MUDA EM TEMPO DE EXECUCAO.
+    #
+    # Criar as surfaces so uma vez, no inicio, foi o bug que deixou a
+    # maquina inutilizavel na noite de 09/08/2026: o monitor (LG por HDMI)
+    # se desconectou e reconectou sozinho durante a madrugada - da pra ver
+    # no log do container, "Bar removed from output: HDMI-A-1" seguido de
+    # "Bar configured" um segundo depois. O output novo nasceu SEM surface
+    # de bloqueio, e o sway, com a sessao trancada e nada pra desenhar,
+    # pinta a saida inteira de VERMELHO. Pior: o processo ainda morria
+    # junto, e ai a trava virava orfa - matar o que sobrou nao destravava
+    # nada, porque quem manda no estado e o compositor.
+    #
+    # Por isso o ciclo de vida das surfaces acompanha os sinais do
+    # GdkDisplay. O unmap antes de destruir a janela e exigencia da
+    # propria lib (gtk-session-lock.h: "must be called before the window
+    # is unmapped"); sem ele o cliente segue mexendo numa surface que o
+    # compositor ja invalidou, o que derruba o processo por erro de
+    # protocolo.
+    janelas = {}
+
+    def destravar():
+        for j in list(janelas.values()):
+            j.parar_video()
+        trava.unlock_and_destroy()
+        # Sem o sync o compositor pode ainda nao ter processado o
+        # desbloqueio quando o processo morre, e a sessao fica travada.
+        Gdk.Display.get_default().sync()
+        Gtk.main_quit()
+
+    def cobrir(monitor):
+        """Poe uma tela de bloqueio no monitor (novo ou ja existente)."""
+        if monitor in janelas:
+            return
+        janela = TelaBloqueio(destravar)
+        janelas[monitor] = janela
+        # "You must only ever call this method once for a given lock and
+        # monitor" - o monitor que volta depois de um reconecte e outro
+        # objeto GdkMonitor, entao isto e legitimo.
+        trava.new_surface(janela, monitor)
+        janela.show_all()
+        janela.senha.grab_focus()
+
+    def descobrir(monitor):
+        """Monitor sumiu: solta a surface dele sem derrubar o processo."""
+        janela = janelas.pop(monitor, None)
+        if janela is None:
+            return
+        janela.parar_video()
+        GtkSessionLock.unmap_lock_window(janela)
+        janela.destroy()
+
+    tela = Gdk.Display.get_default()
+    tela.connect("monitor-added", lambda _d, monitor: cobrir(monitor))
+    tela.connect("monitor-removed", lambda _d, monitor: descobrir(monitor))
+    for i in range(tela.get_n_monitors()):
+        cobrir(tela.get_monitor(i))
+
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    # Qualquer excecao aqui tem que virar SAIDA DIFERENTE DE ZERO e texto
+    # no log: e por esse codigo que o lock_screen.sh sabe distinguir
+    # "desbloqueou" de "caiu com a sessao trancada" - e so no segundo caso
+    # ele sobe a tela de novo, em vez de deixar a saida vermelha do sway.
+    try:
+        main()
+    except Exception:
+        import traceback
+
+        traceback.print_exc()
+        sys.stderr.flush()
+        sys.exit(1)
