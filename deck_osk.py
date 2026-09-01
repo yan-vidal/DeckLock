@@ -4,13 +4,11 @@
 Herda o teclado na tela do sc-controller e o torna invisivel em repouso, revelando
 apenas as teclas ao redor do dedo. Nada do pacote sc-controller e modificado.
 """
-import json
 import os
 import signal
 import subprocess
 import sys
 import time
-from math import hypot
 
 import gi
 
@@ -19,14 +17,14 @@ gi.require_version("Gdk", "3.0")
 gi.require_version("Rsvg", "2.0")
 gi.require_version("GdkX11", "3.0")
 
-import cairo  # noqa: E402
-from gi.repository import Gdk, Gtk  # noqa: E402
+from gi.repository import Gtk  # noqa: E402
 
 from scc.constants import SCLeftRight  # noqa: E402
-from scc.osd.keyboard import Keyboard, KeyboardImage  # noqa: E402
+from scc.osd.keyboard import Keyboard  # noqa: E402
 from scc.tools import init_logging  # noqa: E402
 
-CONFIG_PATH = os.path.expanduser("~/.config/scc/ghost-osk.json")
+from teclado import CONFIG_PATH, TecladoWidget, load_config  # noqa: E402
+
 PID_PATH = os.path.expanduser("~/.config/scc/ghost-osk.pid")
 COOLDOWN_PATH = os.path.expanduser("~/.config/scc/ghost-osk.cooldown")
 COOLDOWN_S = 1.0
@@ -51,13 +49,6 @@ GHOST_CSS = b"""
 	box-shadow: none;
 }
 """
-DEFAULTS = {
-	"raio": 180,
-	"curva": "smoothstep",
-	"altura_tela": 0.35,
-	"alpha_repouso": 0.15,
-	"fps": 60,
-}
 
 
 # --- Atalhos compartilhados entre o modo normal e o modo teclado ---------------
@@ -117,116 +108,6 @@ def camadas(botao: str, cmd_steam: str, padrao: str) -> str:
 	cond = "".join(f'{g}, shell("{MENU} {MENUS[botao]}"), ' for g in GRIPS_ESQ)
 	return f'mode(C, mode({cond}name("steam", shell("{cmd_steam}"))), {padrao})'
 
-def load_config() -> dict:
-	cfg = dict(DEFAULTS)
-	try:
-		with open(CONFIG_PATH) as f:
-			cfg.update(json.load(f))
-	except FileNotFoundError:
-		pass
-	except (ValueError, OSError) as e:
-		print(f"aviso: {CONFIG_PATH} ignorado ({e})", file=sys.stderr)
-	return cfg
-
-
-class GhostKeyboardImage(KeyboardImage):
-	"""KeyboardImage que desenha cada tecla com alpha em funcao da distancia ao dedo."""
-
-	def __init__(self, image, cfg: dict) -> None:
-		# Definidos antes do __init__ da base: ela conecta o sinal "draw",
-		# e um expose imediato chamaria on_draw antes destes existirem.
-		self.cfg = cfg
-		self.cursor_points: list[tuple[float, float]] = []
-		self.debug_alpha = False
-		KeyboardImage.__init__(self, image)
-
-	def _falloff(self, d: float) -> float:
-		"""1.0 no centro do dedo, 0.0 na borda do raio."""
-		r = float(self.cfg["raio"])
-		if r <= 0 or d >= r:
-			return 0.0
-		t = 1.0 - (d / r)
-		if self.cfg["curva"] == "smoothstep":
-			return t * t * (3.0 - 2.0 * t)
-		return t
-
-	def _alpha_for(self, x, y, w, h) -> float:
-		"""Maior contribuicao entre os dedos encostados - sem divisa dura no meio."""
-		if self.debug_alpha:
-			return 1.0
-		cx, cy = x + w * 0.5, y + h * 0.5
-		best = 0.0
-		for px, py in self.cursor_points:
-			a = self._falloff(hypot(cx - px, cy - py))
-			if a > best:
-				best = a
-		return best
-
-	def on_draw(self, self2, ctx) -> None:
-		# Zera o buffer: sem isso o fundo da DrawingArea fica opaco.
-		ctx.save()
-		ctx.set_operator(cairo.OPERATOR_SOURCE)
-		ctx.set_source_rgba(0, 0, 0, 0)
-		ctx.paint()
-		ctx.restore()
-
-		ctx.select_font_face(self.font_face, 0, 0)
-		ctx.set_line_width(self.LINE_WIDTH)
-		ctx.set_font_size(48)
-		ascent, descent, height, max_x_advance, max_y_advance = ctx.font_extents()
-
-		max_alpha = 0.0
-		for button in self.buttons:
-			x, y, w, h = button
-			alpha = self._alpha_for(x, y, w, h)
-			if alpha <= 0.004:            # invisivel: nao gasta desenho
-				continue
-			max_alpha = max(max_alpha, alpha)
-
-			if button in self._pressed:
-				color = self.color_pressed
-			elif button in self._hilight:
-				color = self.color_hilight
-			elif button.dark:
-				color = self.color_button2
-			else:
-				color = self.color_button1
-
-			ctx.set_source_rgba(color[0], color[1], color[2], color[3] * alpha)
-			ctx.rectangle(x, y, w, h)
-			ctx.fill()
-
-			b = self.color_button1_border
-			ctx.set_source_rgba(b[0], b[1], b[2], b[3] * alpha)
-			ctx.rectangle(x, y, w, h)
-			ctx.stroke()
-
-			if button.label:
-				t = self.color_text
-				ctx.set_source_rgba(t[0], t[1], t[2], t[3] * alpha)
-				x_bearing, y_bearing, width, _, _, _ = ctx.text_extents(button.label)
-				ctx.move_to(x + w * 0.5 - width * 0.5 - x_bearing, y + h * 0.5 + height * 0.3)
-				ctx.show_text(button.label)
-				ctx.stroke()
-
-		if max_alpha > 0.004:
-			Gdk.cairo_set_source_pixbuf(ctx, self.overlay.get_pixbuf(), 0, 0)
-			ctx.paint_with_alpha(max_alpha)
-		else:
-			self._draw_idle_hint(ctx)
-
-	def _draw_idle_hint(self, ctx) -> None:
-		"""Traco fino na base: confirma que o teclado esta ativo e capturando o controle."""
-		a = float(self.cfg["alpha_repouso"])
-		if a <= 0.0:
-			return
-		alloc = self.get_allocation()
-		c = self.color_button1_border
-		ctx.set_source_rgba(c[0], c[1], c[2], a)
-		ctx.rectangle(alloc.width * 0.25, alloc.height - 3, alloc.width * 0.5, 2)
-		ctx.fill()
-
-
 class GhostKeyboard(Keyboard):
 	"""Keyboard que informa a imagem onde os dedos estao e redesenha enquanto se move."""
 
@@ -255,7 +136,7 @@ class GhostKeyboard(Keyboard):
 	def _create_background(self) -> None:
 		from scc.constants import SCPads
 
-		self.background = GhostKeyboardImage(self.args.image, self.cfg)
+		self.background = TecladoWidget(self.args.image, self.cfg)
 		self.background.debug_alpha = self._debug_alpha
 		self.recolor()
 		self.limits = {
