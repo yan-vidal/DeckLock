@@ -55,6 +55,10 @@ class TecladoWidget(KeyboardImage):
 		self.cfg = cfg
 		self.cursor_points: list[tuple[float, float]] = []
 		self.debug_alpha = False
+		# Zerar o buffer so faz sentido quando o teclado tem janela propria.
+		# Embutido em outra janela, a DrawingArea pinta no MESMO buffer do
+		# hospedeiro - e o OPERATOR_SOURCE apaga o fundo dele.
+		self.limpar_fundo = True
 		KeyboardImage.__init__(self, image)
 
 	def _falloff(self, d: float) -> float:
@@ -80,12 +84,14 @@ class TecladoWidget(KeyboardImage):
 		return best
 
 	def on_draw(self, self2, ctx) -> None:
-		# Zera o buffer: sem isso o fundo da DrawingArea fica opaco.
-		ctx.save()
-		ctx.set_operator(cairo.OPERATOR_SOURCE)
-		ctx.set_source_rgba(0, 0, 0, 0)
-		ctx.paint()
-		ctx.restore()
+		if self.limpar_fundo:
+			# Sem isto o fundo da DrawingArea fica opaco quando o teclado tem
+			# janela propria. Ver limpar_fundo no __init__.
+			ctx.save()
+			ctx.set_operator(cairo.OPERATOR_SOURCE)
+			ctx.set_source_rgba(0, 0, 0, 0)
+			ctx.paint()
+			ctx.restore()
 
 		ctx.select_font_face(self.font_face, 0, 0)
 		ctx.set_line_width(self.LINE_WIDTH)

@@ -21,6 +21,7 @@ from gi.repository import Gtk  # noqa: E402
 
 from scc.constants import SCLeftRight  # noqa: E402
 from scc.osd.keyboard import Keyboard  # noqa: E402
+from scc.osd.slave_mapper import SlaveMapper  # noqa: E402
 from scc.tools import init_logging  # noqa: E402
 
 from teclado import CONFIG_PATH, TecladoWidget, load_config  # noqa: E402
@@ -319,6 +320,72 @@ class GhostKeyboard(Keyboard):
 	def on_event(self, daemon, what, data) -> None:
 		Keyboard.on_event(self, daemon, what, data)
 		self._schedule_redraw()
+
+
+class TecladoEmbutido(GhostKeyboard):
+	"""GhostKeyboard cuja janela propria nunca aparece.
+
+	O conteudo e reparentado para dentro de outra janela - na pratica a da
+	tela de bloqueio, a unica superficie que o compositor desenha com a
+	sessao travada. Toda a logica vem herdada (daemon, lock dos pads,
+	perfil, gradiente, gatilhos); muda so quem hospeda os widgets.
+	"""
+
+	def _make_transparent(self) -> None:
+		"""No modo embutido nao ha janela propria para tornar transparente.
+
+		A versao da base registra CSS no ESCOPO DA TELA e mexe no visual da
+		janela; aqui isso vazaria para a janela do hospedeiro, que perde o
+		proprio fundo. Quem cuida do fundo e a tela de bloqueio.
+		"""
+
+	def montar(self):
+		"""Devolve o conteudo do teclado para o hospedeiro adicionar."""
+		if self.background is None:
+			self._create_background()
+		# Embutido, a DrawingArea divide o buffer com a janela do hospedeiro.
+		self.background.limpar_fundo = False
+		filho = self.c
+		self.remove(filho)
+		return filho
+
+	def ligar(self) -> None:
+		"""Conecta ao daemon e prepara o mapper, sem abrir janela nenhuma.
+
+		Faz o mesmo que show(), menos o OSDWindow.show() - que criaria a
+		superficie layer-shell propria, justamente o que nao serve aqui.
+		"""
+		from scc.gui.daemon_manager import DaemonManager
+
+		self.daemon = DaemonManager()
+		self._cononect_handlers()
+		self.load_profile()
+		self.mapper = SlaveMapper(
+			self.profile, None, keyboard=b"SCC OSD Keyboard", mouse=b"SCC OSD Mouse",
+		)
+		self.mapper.set_special_actions_handler(self)
+		for lado in (SCLeftRight.LEFT, SCLeftRight.RIGHT):
+			self.set_cursor_position(0, 0, self.cursors[lado], self.limits[lado])
+		self._sync_cursor_visibility()
+		self.timer("labels", 0.1, self.update_labels)
+
+	def desligar(self) -> None:
+		"""Solta o controle e os sinais, sem derrubar o processo hospedeiro."""
+		try:
+			if self.get_controller():
+				self.get_controller().unlock_all()
+		except Exception as e:  # noqa: BLE001 - nao pode derrubar o lock
+			journal(f"unlock_all falhou: {e}")
+		for fonte, eid in self._eh_ids:
+			try:
+				fonte.disconnect(eid)
+			except Exception:  # noqa: BLE001
+				pass
+		self._eh_ids = []
+
+	def quit(self, code: int = -1) -> None:
+		"""No modo embutido, fechar o teclado NAO pode encerrar o hospedeiro."""
+		journal(f"quit({code}) ignorado: teclado embutido")
 
 
 def running_pid() -> int | None:

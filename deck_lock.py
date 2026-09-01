@@ -40,6 +40,7 @@ As cores saem do tema (cores.css), como no menu iniciar.
 """
 import getpass
 import os
+import signal
 import subprocess
 import sys
 import random
@@ -50,6 +51,12 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gst", "1.0")
 gi.require_version("GtkLayerShell", "0.1")
 from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, Gst, GtkLayerShell  # noqa: E402
+
+# O teclado mora ao lado deste arquivo. Executado pelo symlink em
+# ~/.local/bin, o Python resolve o link antes de definir sys.path[0], entao
+# o diretorio real do projeto ja esta no caminho.
+from deck_osk import TecladoEmbutido  # noqa: E402
+from teclado import load_config  # noqa: E402
 
 # MODO DE AUTENTICACAO ISOLADO - precisa vir antes de qualquer import
 # pesado, e e chamado pela propria tela num subprocesso.
@@ -76,6 +83,9 @@ if "--auth" in sys.argv:
     sys.exit(0 if ok else 1)
 
 PREVIEW = "--preview" in sys.argv
+# Forca o teclado embutido a ficar opaco. Sem isto ele e invisivel em
+# repouso (modo fantasma) e nao da para conferir se esta no lugar certo.
+DEBUG_ALPHA = "--debug-alpha" in sys.argv
 # Entra direto no modo ocioso (formulario escondido). So faz sentido com
 # --preview: sem isso teria que esperar MINUTOS_BLOQUEIO_ATE_OCIOSO pra
 # conferir qualquer ajuste visual dessa tela.
@@ -250,14 +260,15 @@ class TelaBloqueio(Gtk.Window):
         self.rodape.set_margin_bottom(80)
         veu.pack_start(self.rodape, True, True, 0)
 
-        self.rodape.pack_start(self._avatar(), False, False, 0)
+        self.avatar = self._avatar()
+        self.rodape.pack_start(self.avatar, False, False, 0)
 
         # get_real_name() devolve a string "Unknown" quando o GECOS esta
         # vazio - nao None nem "" - entao um `or` simples nao resolve.
         real = GLib.get_real_name()
-        nome = Gtk.Label(label=USUARIO if not real or real == "Unknown" else real)
-        nome.set_name("usuario")
-        self.rodape.pack_start(nome, False, False, 0)
+        self.rotulo_nome = Gtk.Label(label=USUARIO if not real or real == "Unknown" else real)
+        self.rotulo_nome.set_name("usuario")
+        self.rodape.pack_start(self.rotulo_nome, False, False, 0)
 
         self.senha = Gtk.Entry()
         self.senha.set_name("senha")
@@ -272,12 +283,37 @@ class TelaBloqueio(Gtk.Window):
         )
         self.senha.set_halign(Gtk.Align.CENTER)
         self.senha.set_alignment(0.5)
+        # Botao de teclado no proprio campo: quem esta sem controle nao tem
+        # como dar o atalho, e precisa de um jeito clicavel de abrir.
+        self.senha.set_icon_from_icon_name(
+            Gtk.EntryIconPosition.SECONDARY, "input-keyboard-symbolic"
+        )
+        self.senha.set_icon_activatable(Gtk.EntryIconPosition.SECONDARY, True)
+        self.senha.set_icon_tooltip_text(
+            Gtk.EntryIconPosition.SECONDARY, "Teclado virtual"
+        )
+        self.senha.connect(
+            "icon-press",
+            lambda _e, pos, *_: (
+                self.alternar_teclado()
+                if pos == Gtk.EntryIconPosition.SECONDARY
+                else None
+            ),
+        )
         self.senha.connect("activate", self._tentar)
         self.rodape.pack_start(self.senha, False, False, 0)
 
         self.aviso = Gtk.Label(label="")
         self.aviso.set_name("aviso")
         self.rodape.pack_start(self.aviso, False, False, 0)
+
+        # Onde o teclado entra quando chamado. Fica ancorado embaixo para
+        # nao cobrir o campo de senha, que e o que se precisa enxergar.
+        self.teclado = None
+        self.caixa_teclado = Gtk.Box()
+        self.caixa_teclado.set_valign(Gtk.Align.END)
+        self.caixa_teclado.set_halign(Gtk.Align.CENTER)
+        self.pilha.add_overlay(self.caixa_teclado)
 
         self._tique()
         GLib.timeout_add_seconds(1, self._tique)
@@ -519,6 +555,49 @@ class TelaBloqueio(Gtk.Window):
                 minutos * 60, self._entrar_modo_ocioso
             )
 
+    def alternar_teclado(self):
+        """Mostra ou esconde o teclado. Chamado pelo SIGUSR1 e pelo botao."""
+        if self.teclado is None:
+            self.teclado = TecladoEmbutido(load_config(), debug_alpha=DEBUG_ALPHA)
+            if not self.teclado.parse_arguments(["deck-lock"]):
+                self.teclado = None
+                self.aviso.set_text("nao consegui montar o teclado")
+                return
+            widget = self.teclado.montar()
+            self.caixa_teclado.add(widget)
+            self.teclado.ligar()
+            carregar_css()  # o teclado registrou CSS proprio no meio do caminho
+            self.caixa_teclado.show_all()
+            self._compactar(True)
+            return
+        if self.caixa_teclado.get_visible():
+            self.caixa_teclado.hide()
+            self._compactar(False)
+        else:
+            self.caixa_teclado.show_all()
+            self._compactar(True)
+
+    def _compactar(self, ligado: bool) -> None:
+        """Abre espaco para o teclado escondendo o que nao e essencial.
+
+        O teclado ocupa 405px de altura e a tela do Deck tem 500 logicos:
+        com relogio, avatar e nome no lugar, o campo de senha some atras
+        dele. Digitando, o que precisa estar visivel e o campo.
+        """
+        for w in (self.bloco_relogio, self.avatar, self.rotulo_nome):
+            w.hide() if ligado else w.show()
+        # O veu ocupa a tela toda e o rodape fica centralizado nele: sem
+        # encolher o veu, o campo de senha cai bem atras do teclado. A margem
+        # reserva a faixa de baixo, e o campo sobe para a area que sobra.
+        altura = self.caixa_teclado.get_allocated_height() if ligado else 0
+        if ligado and altura < 50:      # ainda nao alocado no primeiro toggle
+            altura = 405                # tamanho do SVG do teclado
+        self.veu.set_margin_bottom(altura)
+        # O rodape tem 60+80px de margem para respirar na tela cheia; na
+        # faixa que sobra acima do teclado isso nao cabe e corta o campo.
+        self.rodape.set_margin_top(0 if ligado else 60)
+        self.rodape.set_margin_bottom(0 if ligado else 80)
+
     def _atividade(self, _w, _evento):
         if self.modo_ocioso:
             self._sair_modo_ocioso()
@@ -573,6 +652,18 @@ class TelaBloqueio(Gtk.Window):
             self.pipeline.set_state(Gst.State.NULL)
 
 
+# Todas as telas abertas (uma por monitor). O SIGUSR1 age na primeira: o
+# controle e um so, entao o teclado tambem.
+TELAS = []
+
+
+def _alternar_pelo_sinal():
+    """Handler do SIGUSR1, mandado pelo deck-osk --toggle."""
+    if TELAS:
+        TELAS[0].alternar_teclado()
+    return GLib.SOURCE_CONTINUE
+
+
 def carregar_css():
     # O placeholder do Gtk.Entry NAO usa a cor do nosso CSS: ele vem do tema
     # do sistema. Com tema claro sai cinza escuro - invisivel sobre o fundo
@@ -589,19 +680,24 @@ def carregar_css():
     except GLib.Error as erro:
         print(f"CSS invalido: {erro}", file=sys.stderr)
         return
+    # Acima de PRIORITY_USER (800): ao construir a janela do teclado, o
+    # OSDWindow do sc-controller registra o CSS dele nessa prioridade, no
+    # escopo da tela. Em APPLICATION (600) o nosso perderia.
     Gtk.StyleContext.add_provider_for_screen(
-        Gdk.Screen.get_default(), provedor, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        Gdk.Screen.get_default(), provedor, Gtk.STYLE_PROVIDER_PRIORITY_USER + 200
     )
 
 
 def main():
     carregar_css()
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, _alternar_pelo_sinal)
 
     if PREVIEW:
         # Janela layer-shell comum: cobre a tela e mostra o mesmo visual,
         # mas o compositor NAO esta bloqueado - da pra sair matando o
         # processo, ou pelo Esc abaixo.
         janela = TelaBloqueio(Gtk.main_quit)
+        TELAS.append(janela)
         GtkLayerShell.init_for_window(janela)
         GtkLayerShell.set_layer(janela, GtkLayerShell.Layer.OVERLAY)
         for borda in (GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT,
@@ -672,6 +768,7 @@ def main():
             return
         janela = TelaBloqueio(destravar)
         janelas[monitor] = janela
+        TELAS.append(janela)
         # "You must only ever call this method once for a given lock and
         # monitor" - o monitor que volta depois de um reconecte e outro
         # objeto GdkMonitor, entao isto e legitimo.
@@ -684,6 +781,8 @@ def main():
         janela = janelas.pop(monitor, None)
         if janela is None:
             return
+        if janela in TELAS:
+            TELAS.remove(janela)
         janela.parar_video()
         GtkSessionLock.unmap_lock_window(janela)
         janela.destroy()
