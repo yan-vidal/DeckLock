@@ -7,6 +7,7 @@ apenas as teclas ao redor do dedo. Nada do pacote sc-controller e modificado.
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
 from math import hypot
@@ -175,6 +176,7 @@ class GhostKeyboard(Keyboard):
 	def __init__(self, cfg: dict, debug_alpha: bool = False, config=None) -> None:
 		self.cfg = cfg
 		self._debug_alpha = debug_alpha
+		self._lock_retry = False
 		Keyboard.__init__(self, config)
 		self._make_transparent()
 
@@ -242,6 +244,27 @@ class GhostKeyboard(Keyboard):
 		for side, cursor in self.cursors.items():
 			cursor.set_visible(side in touching)
 
+	def on_failed_to_lock(self, error) -> None:
+		"""Auto-recuperacao do lock dos pads.
+
+		Um OSD preso no scc-osd-daemon (tipicamente um menu que nao fechou
+		direito) segura o lock de LPAD/RPAD e impede o teclado de abrir. O
+		daemon respawna o osd-daemon automaticamente e a instancia nova nasce
+		limpa, entao derruba-lo destrava. Uma tentativa apenas: se falhar de
+		novo, e outra causa e o erro original vale.
+		"""
+		if self._lock_retry:
+			journal(f"lock falhou de novo ({error}) - desistindo")
+			Keyboard.on_failed_to_lock(self, error)
+			return
+		self._lock_retry = True
+		journal(f"lock falhou ({error}) - derrubando o osd-daemon e tentando de novo")
+		try:
+			subprocess.run(["pkill", "-f", "scc-osd-daemon"], timeout=3, check=False)
+		except (OSError, subprocess.SubprocessError) as e:
+			journal(f"pkill falhou: {e}")
+		self.timer("relock", 1.5, self.on_daemon_connected)
+
 	def quit(self, code: int = -1) -> None:
 		journal(f"quit(code={code}) - fechando")
 		# O mesmo aperto de STEAM+B e consumido duas vezes: fecha o teclado
@@ -293,6 +316,18 @@ class GhostKeyboard(Keyboard):
 		self.profile.buttons[SCButtons.B] = ModeModifier(
 			SCButtons.C, CloseOSKAction(), ButtonAction(Keys.KEY_ESC),
 		)
+
+		# R2/L2 pressionam a tecla sob o cursor do lado correspondente, espelhando
+		# o clique do pad. O padrao era LEFTSHIFT no L2 (maiuscula) e LEFTCTRL no R2.
+		# profile.triggers e indexado por SCTriggers.LT/RT, nao por SCLeftRight:
+		# usar a chave errada ADICIONA entradas e deixa o mapeamento antigo valendo.
+		from scc.actions import TriggerAction
+		from scc.constants import SCLeftRight, SCTriggers
+		from scc.osd.osk_actions import OSKPressAction
+
+		self.profile.triggers[SCTriggers.LT] = TriggerAction(50, OSKPressAction(SCLeftRight.LEFT))
+		self.profile.triggers[SCTriggers.RT] = TriggerAction(50, OSKPressAction(SCLeftRight.RIGHT))
+
 		self.set_help()
 
 	def on_event(self, daemon, what, data) -> None:
