@@ -319,15 +319,26 @@ class GhostKeyboard(Keyboard):
 
 		# R2/L2 pressionam a tecla sob o cursor do lado correspondente, espelhando
 		# o clique do pad. O padrao era LEFTSHIFT no L2 (maiuscula) e LEFTCTRL no R2.
-		# profile.triggers e indexado por SCTriggers.LT/RT, nao por SCLeftRight:
-		# usar a chave errada ADICIONA entradas e deixa o mapeamento antigo valendo.
+		# R2/L2 com dois papeis: com o dedo no pad do respectivo lado pressionam
+		# a tecla sob aquele cursor; sem o dedo viram os botoes do mouse, como no
+		# modo normal. profile.triggers e indexado por SCTriggers.LT/RT, nao por
+		# SCLeftRight: a chave errada ADICIONA entradas e deixa o antigo valendo.
 		from scc.actions import TriggerAction
 		from scc.constants import SCLeftRight, SCTriggers
 		from scc.osd.osk_actions import OSKPressAction
 
-		self.profile.triggers[SCTriggers.LT] = TriggerAction(50, OSKPressAction(SCLeftRight.LEFT))
-		self.profile.triggers[SCTriggers.RT] = TriggerAction(50, OSKPressAction(SCLeftRight.RIGHT))
+		for chave, toque, lado, botao in (
+			(SCTriggers.LT, SCButtons.LPADTOUCH, SCLeftRight.LEFT, Keys.BTN_RIGHT),
+			(SCTriggers.RT, SCButtons.RPADTOUCH, SCLeftRight.RIGHT, Keys.BTN_LEFT),
+		):
+			self.profile.triggers[chave] = TriggerAction(
+				50, ModeModifier(toque, OSKPressAction(lado), ButtonAction(botao)),
+			)
 
+		journal("gatilhos: " + " | ".join(
+			f"{k.name}={v.describe(0).replace(chr(10), ' / ')}"
+			for k, v in self.profile.triggers.items()
+		))
 		self.set_help()
 
 	def on_event(self, daemon, what, data) -> None:
