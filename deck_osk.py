@@ -64,22 +64,23 @@ DEFAULTS = {
 # Definidos aqui num lugar so para os dois perfis nao divergirem.
 
 HYPR = "hyprctl dispatch"
-# L4/L5: a nomenclatura varia entre aparelhos, entao os dois grips esquerdos
-# servem de modificador para "levar a janela junto".
-GRIPS_ESQ = ("LGRIP", "LGRIP2")
+WS = os.path.expanduser("~/.config/scripts/deck-ws")
+# R4/R5, do mesmo lado do botao "...". A nomenclatura varia entre aparelhos,
+# entao os dois grips direitos servem de modificador para levar a janela junto.
+GRIPS_DIR = ("RGRIP", "RGRIP2")
 
 
 def _dpad_dir(n: int, tecla: str) -> str:
-	"""DOTS+seta troca de workspace; DOTS+grip esquerdo+seta leva a janela junto.
+	"""DOTS+seta troca de workspace; DOTS+grip direito+seta leva a janela junto.
 
 	Sem o DOTS a seta e so a seta. O name() no default e para o shell nao ser
 	confundido com uma condicao: o ModeModifier aceita ShellCommandAction como
 	condicao quando ela aparece sem botao antes.
 	"""
 	sinal = f"+{n}" if n > 0 else str(n)
-	nav = f'shell("{HYPR} workspace e{sinal}")'
-	mov = f'shell("{HYPR} movetoworkspace e{sinal}")'
-	cond = "".join(f"{g}, {mov}, " for g in GRIPS_ESQ)
+	nav = f'shell("{WS} {n}")'
+	mov = f'shell("{WS} {n} move")'
+	cond = "".join(f"{g}, {mov}, " for g in GRIPS_DIR)
 	return f'mode(DOTS, mode({cond}name("ws {sinal}", {nav})), button(Keys.{tecla}))'
 
 
