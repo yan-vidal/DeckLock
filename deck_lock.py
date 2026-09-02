@@ -195,6 +195,17 @@ window, #fundo { background-color: black; }
 #senha:disabled { color: rgba(255,255,255,0.55); }
 
 
+#energia button {
+    background-color: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.20);
+    border-radius: 18px;
+    padding: 6px;
+    margin: 4px;
+    color: #ffffff;
+}
+
+#energia button:hover { background-color: @realce; }
+
 #aviso {
     color: #ffd9e2;
     font-size: 14px;
@@ -317,6 +328,10 @@ class TelaBloqueio(Gtk.Window):
         self.aviso = Gtk.Label(label="")
         self.aviso.set_name("aviso")
         self.rodape.pack_start(self.aviso, False, False, 0)
+
+        # Energia no canto de cima: embaixo fica o teclado, e um clique
+        # acidental em "desligar" seria caro demais.
+        self.pilha.add_overlay(self._barra_energia())
 
         # Onde o teclado entra quando chamado. Fica ancorado embaixo para
         # nao cobrir o campo de senha, que e o que se precisa enxergar.
@@ -566,6 +581,38 @@ class TelaBloqueio(Gtk.Window):
             self._timer_ocioso_id = GLib.timeout_add_seconds(
                 minutos * 60, self._entrar_modo_ocioso
             )
+
+    def _barra_energia(self):
+        """Suspender, reiniciar e desligar. O polkit libera os tres sem senha
+        para a sessao local ativa - conferido com pkcheck."""
+        caixa = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        caixa.set_name("energia")
+        caixa.set_halign(Gtk.Align.END)
+        caixa.set_valign(Gtk.Align.START)
+        caixa.set_margin_top(12)
+        caixa.set_margin_end(12)
+        for icone, dica, cmd in (
+            ("system-suspend-symbolic", "Suspender", "systemctl suspend"),
+            ("system-reboot-symbolic", "Reiniciar", "systemctl reboot"),
+            ("system-shutdown-symbolic", "Desligar", "systemctl poweroff"),
+        ):
+            b = Gtk.Button()
+            b.set_image(Gtk.Image.new_from_icon_name(icone, Gtk.IconSize.LARGE_TOOLBAR))
+            b.set_tooltip_text(dica)
+            b.set_relief(Gtk.ReliefStyle.NONE)
+            b.connect("clicked", self._energia, cmd, dica)
+            caixa.pack_start(b, False, False, 0)
+        return caixa
+
+    def _energia(self, _botao, comando: str, dica: str) -> None:
+        if PREVIEW:
+            # Sem isto, testar o visual da tela desligaria a maquina.
+            self.aviso.set_text(f"(pre-visualizacao: {dica} nao executado)")
+            return
+        try:
+            subprocess.Popen(comando.split())
+        except OSError as e:
+            self.aviso.set_text(f"falhou: {e}")
 
     def alternar_teclado(self):
         """Mostra ou esconde o teclado. Chamado pelo SIGUSR1 e pelo botao."""
