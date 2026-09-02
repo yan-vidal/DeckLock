@@ -95,6 +95,13 @@ ATALHOS_STEAM = {
 	"X": f"{HYPR} killactive",
 }
 
+# STEAM + botao, sem camada de menu. O Handy nao captura atalho global em
+# Wayland (so o compositor ve as teclas antes da janela em foco), e pelo
+# controle vale a mesma logica: quem dispara e o binding, chamando o CLI que
+# conversa com a instancia ja rodando.
+HANDY = os.path.expanduser("~/.local/bin/handy")
+ATALHOS_SIMPLES = {"RB": f"{HANDY} --toggle-transcription"}
+
 # STEAM + grip esquerdo + botao: menus rapidos. Grips esquerdos porque os
 # direitos ja servem ao "..." para levar janela entre workspaces.
 MENU = os.path.expanduser("~/.config/scripts/deck-menu")
@@ -308,6 +315,15 @@ class GhostKeyboard(Keyboard):
 		# L1/R1 iguais nos dois modos: backspace e espaco
 		self.profile.buttons[SCButtons.LB] = ButtonAction(Keys.KEY_BACKSPACE)
 		self.profile.buttons[SCButtons.RB] = ButtonAction(Keys.KEY_SPACE)
+
+		# Depois do bloco acima, e nao antes: ele define o padrao de L1/R1 e
+		# sobrescreveria o atalho, que precisa envolver esse padrao.
+		for nome, cmd in ATALHOS_SIMPLES.items():
+			btn = getattr(SCButtons, nome)
+			original = self.profile.buttons.get(btn) or NoAction()
+			self.profile.buttons[btn] = ModeModifier(
+				SCButtons.C, ShellCommandAction(cmd), original,
+			).compress()
 
 		journal("gatilhos: " + " | ".join(
 			f"{k.name}={v.describe(0).replace(chr(10), ' / ')}"
