@@ -22,6 +22,7 @@ gi.require_version("GdkX11", "3.0")
 import cairo  # noqa: E402
 from gi.repository import Gdk  # noqa: E402
 
+from scc.gui.svg_widget import SVGEditor  # noqa: E402
 from scc.osd.keyboard import KeyboardImage  # noqa: E402
 
 CONFIG_PATH = os.path.expanduser("~/.config/scc/ghost-osk.json")
@@ -31,6 +32,9 @@ DEFAULTS = {
 	"altura_tela": 0.35,
 	"alpha_repouso": 0.15,
 	"fps": 60,
+	# Quanto o teclado encolhe no modo mouse, para caber abaixo do campo de
+	# senha sem empurrar o resto da tela. 1.0 = tamanho do SVG (800x405).
+	"escala_mouse": 0.62,
 }
 
 
@@ -59,6 +63,9 @@ class TecladoWidget(KeyboardImage):
 		# Embutido em outra janela, a DrawingArea pinta no MESMO buffer do
 		# hospedeiro - e o OPERATOR_SOURCE apaga o fundo dele.
 		self.limpar_fundo = True
+		# 1.0 desenha no tamanho do SVG (800x405). Menor que isso encolhe o
+		# teclado para caber embaixo do campo de senha sem empurrar nada.
+		self.escala = 1.0
 		KeyboardImage.__init__(self, image)
 		# Precisa vir antes de a DrawingArea ser realizada, senao o widget
 		# nasce sem mascara de botao e nenhum clique chega ate ele.
@@ -86,6 +93,17 @@ class TecladoWidget(KeyboardImage):
 				best = a
 		return best
 
+	def definir_escala(self, escala: float) -> None:
+		self.escala = escala
+		bg = SVGEditor.find_by_id(self.tree, "BACKGROUND")
+		w, h = SVGEditor.get_size(bg)
+		self.set_size_request(int(w * escala), int(h * escala))
+		self.queue_draw()
+
+	def para_svg(self, x: float, y: float) -> tuple[float, float]:
+		"""Converte coordenada da tela para a do layout (que nao escala)."""
+		return x / self.escala, y / self.escala
+
 	def on_draw(self, self2, ctx) -> None:
 		if self.limpar_fundo:
 			# Sem isto o fundo da DrawingArea fica opaco quando o teclado tem
@@ -95,6 +113,11 @@ class TecladoWidget(KeyboardImage):
 			ctx.set_source_rgba(0, 0, 0, 0)
 			ctx.paint()
 			ctx.restore()
+
+		if self.escala != 1.0:
+			# Escala o contexto inteiro: as coordenadas das teclas seguem em
+			# unidades do SVG, e so o desenho encolhe.
+			ctx.scale(self.escala, self.escala)
 
 		ctx.select_font_face(self.font_face, 0, 0)
 		ctx.set_line_width(self.LINE_WIDTH)

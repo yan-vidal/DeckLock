@@ -250,7 +250,43 @@ class GhostKeyboard(Keyboard):
 			self.timer("ghost", 1.0 / float(self.cfg["fps"]), self._redraw_now)
 
 	def set_cursor_position(self, x, y, cursor, limit) -> None:
-		Keyboard.set_cursor_position(self, x, y, cursor, limit)
+		"""Posiciona o cursor do pad usando a area do TECLADO, nao a da janela.
+
+		O metodo da base limita a posicao por self.get_allocation() - a janela
+		do teclado. No modo embutido essa janela nunca e mostrada e continua
+		1x1, entao o clamp achatava tudo e os cursores ficavam presos em (0,0)
+		com o pad respondendo normalmente. Aqui a referencia e o background,
+		que esta de fato na tela.
+		"""
+		from scc.constants import STICK_PAD_MAX, ControllerFlags
+		from scc.tools import circle_to_square, clamp
+
+		if cursor not in self._hovers or self._controller is None:
+			return
+		area = self.background.get_allocation()
+		cw = cursor.get_allocation().width
+		ch = cursor.get_allocation().height
+		w = limit[2] - (cw * 0.5)
+		h = limit[3] - (ch * 0.5)
+		x = x / float(STICK_PAD_MAX)
+		y = y / float(STICK_PAD_MAX) * -1.0
+		if self._controller.get_flags() & ControllerFlags.LPAD_RPAD_IS_CIRCLE:
+			x, y = circle_to_square(x, y)
+		x = clamp(cw * 0.5, (limit[0] + w * 0.5) + x * w * 0.5, area.width - cw)
+		y = clamp(ch * 0.5, (limit[1] + h * 0.5) + y * h * 0.5, area.height - ch)
+
+		cursor.position = int(x), int(y)
+		self.f.move(cursor, x - cw * 0.5, y - ch * 0.5)
+		for botao in self.background.buttons:
+			if botao.contains(x, y):
+				if botao != self._hovers[cursor]:
+					self._hovers[cursor] = botao
+					if self._pressed[cursor] is not None:
+						self.mapper.keyboard.releaseEvent([self._pressed[cursor]])
+						self.key_from_cursor(cursor, True)
+					if not self.timer_active("update"):
+						self.timer("update", 0.01, self.update_background)
+					break
 		self._schedule_redraw()
 
 	def load_profile(self) -> None:
@@ -389,6 +425,12 @@ class TecladoEmbutido(GhostKeyboard):
 		except OSError:
 			return False
 
+	def cursores_fora(self) -> None:
+		"""Esconde os cursores dos pads. Chamado APOS o show_all do hospedeiro."""
+		if getattr(self, "_esconder_cursores", False):
+			for cursor in self.cursors.values():
+				cursor.hide()
+
 	def definir_ao_fechar(self, funcao) -> None:
 		"""Quem hospeda decide o que 'fechar o teclado' significa."""
 		self._ao_fechar = funcao
@@ -408,9 +450,15 @@ class TecladoEmbutido(GhostKeyboard):
 			# Sem pads nao ha gradiente que faca sentido: o teclado tem de
 			# estar inteiro visivel para ser clicado.
 			self.background.debug_alpha = True
+			self.background.definir_escala(float(self.cfg.get("escala_mouse", 0.62)))
+			# update_labels() vinha junto do ligar(), que o modo mouse nao chama:
+			# sem isto as teclas ficam em branco. Nao depende do daemon.
+			self.update_labels()
 			self.background.connect("button-press-event", self._clique)
-			for cursor in self.cursors.values():
-				cursor.hide()
+			# Nao adianta esconder agora: o show_all() do hospedeiro viria
+			# depois e traria os cursores de volta. Marcados para o hospedeiro
+			# esconder no momento certo.
+			self._esconder_cursores = True
 		filho = self.c
 		self.remove(filho)
 		return filho
@@ -423,8 +471,10 @@ class TecladoEmbutido(GhostKeyboard):
 		if evento.type != Gdk.EventType.BUTTON_PRESS:
 			return True
 		journal(f"clique em ({evento.x:.0f}, {evento.y:.0f})")
+		# O clique vem em pixels da tela; as teclas vivem em unidades do SVG.
+		cx, cy = self.background.para_svg(evento.x, evento.y)
 		for botao in self.background.buttons:
-			if botao.contains(evento.x, evento.y):
+			if botao.contains(cx, cy):
 				journal(f"  -> tecla {botao.name}")
 				self._ao_teclar(botao.name)
 				return True

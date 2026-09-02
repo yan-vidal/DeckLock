@@ -340,6 +340,8 @@ class TelaBloqueio(Gtk.Window):
         self.caixa_teclado = Gtk.Box()
         self.caixa_teclado.set_valign(Gtk.Align.END)
         self.caixa_teclado.set_halign(Gtk.Align.CENTER)
+        # Folga para a ultima fileira nao encostar na borda da tela.
+        self.caixa_teclado.set_margin_bottom(10)
         self.pilha.add_overlay(self.caixa_teclado)
 
         self._tique()
@@ -638,14 +640,18 @@ class TelaBloqueio(Gtk.Window):
                 self.teclado.ligar()
             carregar_css()  # o teclado registrou CSS proprio no meio do caminho
             self.caixa_teclado.show_all()
-            self._compactar(True)
+            self.teclado.cursores_fora()
+            # So o modo mouse precisa de espaco: ele desenha o teclado inteiro.
+            # No modo fantasma nada sai da frente, porque nada fica visivel.
+            self._compactar(self.modo_mouse)
             return
         if self.caixa_teclado.get_visible():
             self.caixa_teclado.hide()
             self._compactar(False)
         else:
             self.caixa_teclado.show_all()
-            self._compactar(True)
+            self.teclado.cursores_fora()
+            self._compactar(self.modo_mouse)
 
     def _alternar_visibilidade(self) -> None:
         """Mostra ou oculta a senha digitada."""
@@ -834,6 +840,19 @@ def _marcar_ativo():
 def main():
     carregar_css()
     _marcar_ativo()
+
+    # Com o teclado de desktop aberto, ele segura o controle: o primeiro
+    # STEAM+B ia para ele (fechando-o) em vez de chegar aqui, e so o segundo
+    # abria o teclado embutido. Alem disso ele ficaria invisivel atras desta
+    # tela. Encerrar de saida resolve os dois.
+    try:
+        from deck_osk import running_pid
+
+        pid = running_pid()
+        if pid is not None:
+            os.kill(pid, signal.SIGTERM)
+    except (OSError, ImportError):
+        pass
     # GLib.unix_signal_add esta depreciado em favor de GLibUnix.signal_add,
     # que nao existe em versoes mais antigas do PyGObject.
     try:
