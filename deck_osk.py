@@ -106,6 +106,10 @@ ATALHOS_SIMPLES = {"RB": f"{HANDY} --toggle-transcription"}
 # entao segurar ele e um gesto que a mao ja conhece.
 ATALHOS_DOTS = {"LB": "nemo"}
 
+# L1 + R1: a cola de atalhos. Os dois ombros juntos nao colidem com nada,
+# e e um gesto dificil de fazer sem querer.
+ATALHOS_LB = {"RB": os.path.expanduser("~/.config/scripts/deck-atalhos")}
+
 # STEAM + grip esquerdo + botao: menus rapidos. Grips esquerdos porque os
 # direitos ja servem ao "..." para levar janela entre workspaces.
 MENU = os.path.expanduser("~/.config/scripts/deck-menu")
@@ -326,6 +330,7 @@ class GhostKeyboard(Keyboard):
 		for mod, atalhos in (
 			(SCButtons.C, ATALHOS_SIMPLES),
 			(SCButtons.DOTS, ATALHOS_DOTS),
+			(SCButtons.LB, ATALHOS_LB),
 		):
 			for nome, cmd in atalhos.items():
 				btn = getattr(SCButtons, nome)
