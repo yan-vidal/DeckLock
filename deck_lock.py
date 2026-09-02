@@ -628,6 +628,9 @@ class TelaBloqueio(Gtk.Window):
             widget = self.teclado.montar(
                 ao_teclar=self._tecla_clicada if self.modo_mouse else None,
             )
+            # X, Y, C e STEAM+B chamam OSK.close(), que chega no quit() do
+            # teclado; aqui isso significa esconder, nao encerrar a tela.
+            self.teclado.definir_ao_fechar(self._esconder_teclado)
             self.caixa_teclado.add(widget)
             # Sem controle nao ha o que travar nem pads que ler: conectar ao
             # daemon so renderia um erro de lock e um teclado inerte.
@@ -685,6 +688,11 @@ class TelaBloqueio(Gtk.Window):
         if botao is not None and botao.label and len(botao.label) == 1:
             self.senha.set_text(self.senha.get_text() + botao.label)
             self.senha.set_position(-1)
+
+    def _esconder_teclado(self) -> None:
+        if self.caixa_teclado.get_visible():
+            self.caixa_teclado.hide()
+            self._compactar(False)
 
     def _compactar(self, ligado: bool) -> None:
         """Abre espaco para o teclado escondendo o que nao e essencial.

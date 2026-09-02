@@ -129,6 +129,7 @@ class GhostKeyboard(Keyboard):
 		self.cfg = cfg
 		self._debug_alpha = debug_alpha
 		self._lock_retry = False
+		self._ao_fechar = None
 		Keyboard.__init__(self, config)
 		self._make_transparent()
 
@@ -383,6 +384,10 @@ class TecladoEmbutido(GhostKeyboard):
 		except OSError:
 			return False
 
+	def definir_ao_fechar(self, funcao) -> None:
+		"""Quem hospeda decide o que 'fechar o teclado' significa."""
+		self._ao_fechar = funcao
+
 	def montar(self, ao_teclar=None):
 		"""Devolve o conteudo do teclado para o hospedeiro adicionar.
 
@@ -407,6 +412,11 @@ class TecladoEmbutido(GhostKeyboard):
 
 	def _clique(self, _widget, evento) -> bool:
 		"""Descobre a tecla sob o ponteiro. Mesmo hit-test dos cursores."""
+		# O GTK manda button-press-event tres vezes num clique duplo: uma
+		# BUTTON_PRESS, outra 2BUTTON_PRESS e mais uma. Sem filtrar, uma
+		# tecla clicada duas vezes rapido digitava tres letras.
+		if evento.type != Gdk.EventType.BUTTON_PRESS:
+			return True
 		journal(f"clique em ({evento.x:.0f}, {evento.y:.0f})")
 		for botao in self.background.buttons:
 			if botao.contains(evento.x, evento.y):
@@ -470,8 +480,19 @@ class TecladoEmbutido(GhostKeyboard):
 		self._eh_ids = []
 
 	def quit(self, code: int = -1) -> None:
-		"""No modo embutido, fechar o teclado NAO pode encerrar o hospedeiro."""
-		journal(f"quit({code}) ignorado: teclado embutido")
+		"""Fechar o teclado nao pode encerrar o hospedeiro - mas tem de fechar.
+
+		OSK.close() (STEAM+B, X, Y, C) chega aqui. Antes isto so registrava e
+		voltava, e o teclado ficava presa na tela sem meio de sair.
+		"""
+		import traceback
+
+		origem = " <- ".join(
+			f"{q.name}:{q.lineno}" for q in reversed(traceback.extract_stack()[-6:-1])
+		)
+		journal(f"quit({code}) -> escondendo | origem: {origem}")
+		if self._ao_fechar is not None:
+			self._ao_fechar()
 
 
 def lock_ativo() -> int | None:
