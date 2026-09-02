@@ -102,6 +102,10 @@ ATALHOS_STEAM = {
 HANDY = os.path.expanduser("~/.local/bin/handy")
 ATALHOS_SIMPLES = {"RB": f"{HANDY} --toggle-transcription"}
 
+# "..." + botao. O DOTS ja serve de modificador para o d-pad (workspaces),
+# entao segurar ele e um gesto que a mao ja conhece.
+ATALHOS_DOTS = {"LB": "nemo"}
+
 # STEAM + grip esquerdo + botao: menus rapidos. Grips esquerdos porque os
 # direitos ja servem ao "..." para levar janela entre workspaces.
 MENU = os.path.expanduser("~/.config/scripts/deck-menu")
@@ -318,12 +322,16 @@ class GhostKeyboard(Keyboard):
 
 		# Depois do bloco acima, e nao antes: ele define o padrao de L1/R1 e
 		# sobrescreveria o atalho, que precisa envolver esse padrao.
-		for nome, cmd in ATALHOS_SIMPLES.items():
-			btn = getattr(SCButtons, nome)
-			original = self.profile.buttons.get(btn) or NoAction()
-			self.profile.buttons[btn] = ModeModifier(
-				SCButtons.C, ShellCommandAction(cmd), original,
-			).compress()
+		for mod, atalhos in (
+			(SCButtons.C, ATALHOS_SIMPLES),
+			(SCButtons.DOTS, ATALHOS_DOTS),
+		):
+			for nome, cmd in atalhos.items():
+				btn = getattr(SCButtons, nome)
+				original = self.profile.buttons.get(btn) or NoAction()
+				self.profile.buttons[btn] = ModeModifier(
+					mod, ShellCommandAction(cmd), original,
+				).compress()
 
 		journal("gatilhos: " + " | ".join(
 			f"{k.name}={v.describe(0).replace(chr(10), ' / ')}"
