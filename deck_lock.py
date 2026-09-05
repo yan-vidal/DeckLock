@@ -646,12 +646,19 @@ class TelaBloqueio(Gtk.Window):
             self._compactar(self.modo_mouse)
             return
         if self.caixa_teclado.get_visible():
-            self.caixa_teclado.hide()
-            self._compactar(False)
+            self._esconder_teclado()
         else:
             self.caixa_teclado.show_all()
+            # Retoma os pads: o esconder os soltou, e sem religar o teclado
+            # voltaria visivel e inerte.
+            if not self.modo_mouse:
+                self.teclado.ligar()
             self.teclado.cursores_fora()
             self._compactar(self.modo_mouse)
+
+    def _sync_capslock(self, keymap) -> None:
+        """Mostra ou esconde o aviso conforme o estado real do Caps Lock."""
+        self.capslock.set_visible(keymap.get_caps_lock_state())
 
     def _alternar_visibilidade(self) -> None:
         """Mostra ou oculta a senha digitada."""
@@ -696,8 +703,20 @@ class TelaBloqueio(Gtk.Window):
             self.senha.set_position(-1)
 
     def _esconder_teclado(self) -> None:
+        """Esconde o teclado E devolve os pads.
+
+        Esconder nao pode ser so um hide(): o teclado do lock trava LPAD/RPAD
+        no daemon ao ligar(), e continua vivo depois de escondido. Sem soltar,
+        os pads ficam presos a um teclado que ninguem ve — e o pad para de
+        mover o cursor, que e justamente por que se esconde o teclado.
+
+        No desktop isso nunca apareceu porque la fechar o teclado encerra o
+        processo, e os locks morrem junto.
+        """
         if self.caixa_teclado.get_visible():
             self.caixa_teclado.hide()
+            if not self.modo_mouse:
+                self.teclado.desligar()
             self._compactar(False)
 
     def _compactar(self, ligado: bool) -> None:

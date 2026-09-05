@@ -546,6 +546,11 @@ class TecladoEmbutido(GhostKeyboard):
 			f"{q.name}:{q.lineno}" for q in reversed(traceback.extract_stack()[-6:-1])
 		)
 		journal(f"quit({code}) -> escondendo | origem: {origem}")
+		# Mesmo motivo do quit() do teclado de desktop: o STEAM+B e consumido
+		# duas vezes. O C fecha aqui e, quando o controle volta ao perfil de
+		# desktop com o B ainda pressionado, o shell() dispara --toggle e
+		# reabriria. Sem esta marca, esconder pelo STEAM+B so pisca o teclado.
+		touch_cooldown()
 		if self._ao_fechar is not None:
 			self._ao_fechar()
 
@@ -615,6 +620,12 @@ def main() -> int:
 
 	if "--toggle" in argv:
 		argv.remove("--toggle")
+		# O cooldown vem ANTES do desvio para o lock: o STEAM+B que esconde o
+		# teclado embutido tambem chega aqui pelo perfil de desktop, e mandar o
+		# SIGUSR1 nesse instante reabriria o que acabou de fechar.
+		if in_cooldown():
+			journal("toggle IGNORADO (cooldown)")
+			return 0
 		# Com a tela de bloqueio no ar, o teclado tem de aparecer DENTRO dela:
 		# uma janela layer-shell propria ficaria escondida atras da superficie
 		# de bloqueio. O lock alterna o teclado embutido ao receber o sinal.
@@ -622,9 +633,6 @@ def main() -> int:
 		if pid_lock is not None:
 			journal(f"lock ativo (pid={pid_lock}) -> SIGUSR1")
 			os.kill(pid_lock, signal.SIGUSR1)
-			return 0
-		if in_cooldown():
-			journal("toggle IGNORADO (cooldown)")
 			return 0
 		touch_cooldown()
 		pid = running_pid()
