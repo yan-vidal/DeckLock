@@ -280,8 +280,16 @@ class TelaBloqueio(Gtk.Window):
         self._widget_fundo = self._montar_video(DIR_BLOQUEIO)
         self.pilha.add(self._widget_fundo if self._widget_fundo is not None else Gtk.Box())
 
+        # O gradiente e a caixa de layout sao DOIS widgets. Sao a mesma coisa
+        # na tela do Deck, onde o teclado cobre a largura inteira, mas num
+        # monitor largo o teclado ocupa so o meio: encolher a caixa para abrir
+        # espaco (ver _compactar) tirava o gradiente da faixa de baixo e
+        # aparecia uma costura atravessando a tela, com a foto crua dos lados.
+        gradiente = Gtk.Box()
+        gradiente.set_name("veu")
+        self.pilha.add_overlay(gradiente)
+
         veu = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        veu.set_name("veu")
         self.veu = veu
         self.pilha.add_overlay(veu)
 
