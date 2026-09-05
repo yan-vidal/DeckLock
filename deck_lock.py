@@ -39,6 +39,7 @@ A midia vem de ~/.config/midias/bloqueio/ (fotos ou videos).
 As cores saem do tema (cores.css), como no menu iniciar.
 """
 import getpass
+import unicodedata
 import os
 import signal
 import subprocess
@@ -56,6 +57,7 @@ from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, Gst, GtkLayerShell  # noqa:
 # ~/.local/bin, o Python resolve o link antes de definir sys.path[0], entao
 # o diretorio real do projeto ja esta no caminho.
 from deck_osk import TecladoEmbutido  # noqa: E402
+import layout_sistema  # noqa: E402
 from teclado import load_config  # noqa: E402
 
 # MODO DE AUTENTICACAO ISOLADO - precisa vir antes de qualquer import
@@ -431,6 +433,8 @@ class TelaBloqueio(Gtk.Window):
         # nao cobrir o campo de senha, que e o que se precisa enxergar.
         self.teclado = None
         self.modo_mouse = False
+        # Acento morto esperando a proxima tecla, como num teclado fisico.
+        self._acento = None
         self.caixa_teclado = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.caixa_teclado.set_valign(Gtk.Align.END)
         self.caixa_teclado.set_halign(Gtk.Align.CENTER)
@@ -787,25 +791,39 @@ class TelaBloqueio(Gtk.Window):
         tambem o mais simples de auditar.
         """
         if nome == "KEY_BACKSPACE":
-            texto = self.senha.get_text()
-            self.senha.set_text(texto[:-1])
+            # Com acento pendente, apagar desfaz o acento - nada foi escrito
+            # ainda, e e o que o teclado fisico faz.
+            if self._acento is not None:
+                self._acento = None
+                return
+            self.senha.set_text(self.senha.get_text()[:-1])
             self.senha.set_position(-1)
             return
         if nome in ("KEY_ENTER", "KEY_KPENTER"):
+            self._acento = None
             self._tentar(self.senha)
             return
-        # Shift e AltGr agora sao teclas do proprio layout, e nao botoes ao
-        # lado: clicar nelas alterna o nivel em vez de digitar. No modo
-        # fantasma os grips fazem o mesmo, entao os dois modos combinam.
+        # Shift e AltGr sao teclas do proprio layout, e nao botoes ao lado:
+        # clicar nelas alterna o nivel em vez de digitar. No modo fantasma os
+        # grips fazem o mesmo, entao os dois modos combinam.
         if nome in TecladoEmbutido.MODIFICADORES:
             # Mesmo caminho do modo pad: um toque liga, dois travam (caps), e
             # com ele travado um toque desliga. A regra mora no teclado para
             # os dois modos nao divergirem.
             self.teclado.alternar_modificador(nome)
             return
+
+        # Tecla morta: nada entra agora, o proximo caractere e que decide.
+        acento = self.teclado.acento_morto(nome)
+        if acento is not None:
+            if self._acento is not None:
+                self._escrever(self._solto(self._acento))
+            self._acento = acento
+            self.teclado.consumir_shift()
+            return
+
         if nome == "KEY_SPACE":
-            self.senha.set_text(self.senha.get_text() + " ")
-            self.senha.set_position(-1)
+            self._escrever(" ")
             return
         # As demais vem do rotulo que o proprio teclado ja calcula a partir
         # do layout ativo - assim acentos e simbolos seguem o teclado do
@@ -816,10 +834,39 @@ class TelaBloqueio(Gtk.Window):
         if botao is not None and botao.label and len(botao.label) == 1:
             # O rotulo ja vem do nivel ativo do layout: com shift ele e "!" e
             # nao "1", entao nao ha conversao a fazer aqui.
-            self.senha.set_text(self.senha.get_text() + botao.label)
-            self.senha.set_position(-1)
+            self._escrever(botao.label)
             # Shift simples vale uma tecla so; caps fica ate ser desligado.
             self.teclado.consumir_shift()
+
+    @staticmethod
+    def _solto(combinante: str) -> str:
+        """O acento sozinho, para quando ele nao compoe com o que veio depois."""
+        for visivel, comb in layout_sistema.ACENTOS_MORTOS.values():
+            if comb == combinante:
+                return visivel
+        return combinante
+
+    def _escrever(self, texto: str) -> None:
+        """Poe o texto no campo, compondo com o acento pendente se houver.
+
+        Acento + letra vira um caractere so pela normalizacao Unicode, que e a
+        mesma regra do teclado fisico e vale para qualquer idioma - nao ha
+        tabela de pares aqui. Onde a combinacao nao existe (til com "q", por
+        exemplo), saem os dois caracteres, como no teclado de verdade.
+        """
+        acento, self._acento = self._acento, None
+        if acento is not None and texto:
+            if texto == " ":                      # acento + espaco = acento solto
+                texto = self._solto(acento)
+            else:
+                composto = unicodedata.normalize("NFC", texto[0] + acento)
+                texto = (
+                    composto + texto[1:]
+                    if len(composto) == 1
+                    else self._solto(acento) + texto
+                )
+        self.senha.set_text(self.senha.get_text() + texto)
+        self.senha.set_position(-1)
 
     def _esconder_teclado(self) -> None:
         """Esconde o teclado E devolve os pads.

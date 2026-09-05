@@ -31,6 +31,7 @@ from scc.osd.keyboard import Keyboard  # noqa: E402
 from scc.osd.slave_mapper import SlaveMapper  # noqa: E402
 from scc.tools import init_logging  # noqa: E402
 
+import layout_sistema  # noqa: E402
 from teclado import CONFIG_PATH, TecladoWidget, load_config  # noqa: E402
 
 PID_PATH = os.path.expanduser("~/.config/scc/ghost-osk.pid")
@@ -165,8 +166,21 @@ class GhostKeyboard(Keyboard):
 		# Quem hospeda o teclado pode querer refletir o estado fora dele - a
 		# tela de bloqueio acende o aviso de Caps Lock com isto.
 		self._ao_modificar = None
+		# A base poe o AltGr em MOD1, que e o Alt comum: com essa mascara o
+		# nivel 3 nunca entrava na traducao e a tecla nao mudava rotulo nenhum.
+		# AltGr e ISO_Level3_Shift, que no X e MOD5.
+		from scc.actions import Keys
+
+		self.MODIFIER_MASKS = dict(Keyboard.MODIFIER_MASKS)
+		self.MODIFIER_MASKS[Keys.KEY_RIGHTALT] = Gdk.ModifierType.MOD5_MASK
 		Keyboard.__init__(self, config)
 		self._make_transparent()
+		# Em Wayland a base fixa o grupo em 0 e nunca mais mexe. Sem isto o
+		# teclado fica em us para sempre, mesmo com o sistema em br.
+		self.sincronizar_layout()
+		self._watch_layout = layout_sistema.observar_layout(
+			lambda: self.sincronizar_layout(alinhar=True),
+		)
 
 	def _make_transparent(self) -> None:
 		"""Janela transparente: visual RGBA + CSS acima do provider do sc-controller."""
@@ -204,17 +218,16 @@ class GhostKeyboard(Keyboard):
 			self._ao_modificar()
 
 	def update_labels(self) -> None:
-		"""Rotulos conforme o layout do sistema E os modificadores ativos.
+		"""Rotulos conforme o layout ativo do sistema e os modificadores presos.
 
-		Copia a traducao da base porque ela le os modificadores de
-		mapper.keyboard._pressed, que o modo mouse nao tem. O resto e igual:
-		translate_keyboard_state resolve pelo layout ativo, entao acentos e
-		simbolos seguem o teclado do sistema sem tabela paralela aqui.
+		Nao chama a base nem quando nao ha modificador nosso: ela le o estado
+		so de mapper.keyboard._pressed, que o modo mouse nao tem, e devolve
+		rotulo vazio para tecla morta. O calculo e o mesmo dela - e o
+		translate_keyboard_state que resolve o simbolo -, com as duas fontes
+		de modificador somadas e o acento desenhado quando aparece.
 		"""
-		if not self._mods_ativos:
-			Keyboard.update_labels(self)
-			self._rotular_modificadores()
-			return
+		if self.background is None:
+			return          # antes de _create_background: nao ha o que rotular
 
 		from scc.actions import Keys
 		from scc.gui.keycode_to_key import KEY_TO_KEYCODE
@@ -223,17 +236,73 @@ class GhostKeyboard(Keyboard):
 		mt = Gdk.ModifierType(self.keymap.get_modifier_state())
 		for tecla in self._mods_ativos:
 			mt |= self.MODIFIER_MASKS.get(tecla, Gdk.ModifierType(0))
+		# Os grips fisicos seguram o modificador no proprio mapper, e nao no
+		# nosso conjunto: sem somar os dois, segurar o grip nao trocaria os
+		# rotulos - que e o que a base faz e nao podemos perder.
+		if self.mapper is not None:
+			for tecla in self.mapper.keyboard._pressed:
+				mt |= self.MODIFIER_MASKS.get(tecla, Gdk.ModifierType(0))
 
 		labels = {}
 		for button in self.background.buttons:
-			if getattr(Keys, button.name, None) in KEY_TO_KEYCODE:
-				keycode = KEY_TO_KEYCODE[getattr(Keys, button.name)]
-				t = self.keymap.translate_keyboard_state(keycode, mt, self.group)
-				keyval = t.keyval if hasattr(t, "keyval") else t[1]
-				code = Gdk.keyval_to_unicode(keyval)
-				labels[button] = chr(code).strip() if code >= 33 else SPECIAL_KEYS.get(code)
+			if getattr(Keys, button.name, None) not in KEY_TO_KEYCODE:
+				continue
+			keycode = KEY_TO_KEYCODE[getattr(Keys, button.name)]
+			t = self.keymap.translate_keyboard_state(keycode, mt, self.group)
+			keyval = t.keyval if hasattr(t, "keyval") else t[1]
+			code = Gdk.keyval_to_unicode(keyval)
+			if code >= 33:
+				labels[button] = chr(code).strip()
+			else:
+				# Acento morto nao tem unicode proprio: keyval_to_unicode
+				# devolve 0 e a tecla apareceria em branco. No br sao oito
+				# posicoes, entre elas o til e o circunflexo.
+				acento = layout_sistema.acento_morto(keyval)
+				labels[button] = acento[0] if acento else SPECIAL_KEYS.get(code)
 		self.background.set_labels(labels)
 		self._rotular_modificadores()
+
+	def acento_morto(self, nome_tecla: str) -> str | None:
+		"""O combinante do acento nesta tecla, se for uma tecla morta.
+
+		Quem digita no campo da tela de bloqueio precisa saber: la o caractere
+		entra direto no Gtk.Entry, sem passar pelo compositor, entao a
+		composicao com a proxima tecla tem de ser feita a mao.
+		"""
+		from scc.actions import Keys
+		from scc.gui.keycode_to_key import KEY_TO_KEYCODE
+
+		tecla = getattr(Keys, nome_tecla, None)
+		if tecla not in KEY_TO_KEYCODE:
+			return None
+		mt = Gdk.ModifierType(self.keymap.get_modifier_state())
+		for t in self._mods_ativos:
+			mt |= self.MODIFIER_MASKS.get(t, Gdk.ModifierType(0))
+		t = self.keymap.translate_keyboard_state(KEY_TO_KEYCODE[tecla], mt, self.group)
+		keyval = t.keyval if hasattr(t, "keyval") else t[1]
+		acento = layout_sistema.acento_morto(keyval)
+		return acento[1] if acento else None
+
+	def sincronizar_layout(self, alinhar: bool = False) -> None:
+		"""Adota o layout ativo do sistema.
+
+		Com alinhar, poe tambem os teclados virtuais do sc-controller no mesmo
+		grupo. Isso so importa quando ha uinput - no modo pad -, e e o que
+		impede o teclado de mostrar uma tecla e o compositor escrever outra.
+		"""
+		atual = layout_sistema.grupo_ativo()
+		if atual is None:
+			journal("layout do sistema: nao consegui descobrir, mantendo o atual")
+			return
+		indice, codigo = atual
+		if alinhar:
+			mudados = layout_sistema.alinhar_teclados_virtuais(indice)
+			if mudados:
+				journal(f"teclado virtual alinhado em {codigo}: {', '.join(mudados)}")
+		if indice != self.group:
+			journal(f"layout do sistema: grupo {self.group} -> {indice} ({codigo})")
+			self.group = indice
+		self.update_labels()
 
 	def _rotular_modificadores(self) -> None:
 		"""Shift e AltGr nao produzem caractere, entao a traducao nao devolve
@@ -321,7 +390,8 @@ class GhostKeyboard(Keyboard):
 		else:
 			ativo = tecla not in self._mods_ativos
 
-		journal(f"{nome}: {'travado' if self._shift_travado else ('ligado' if ativo else 'desligado')}")
+		travado = self._shift_travado and nome == "KEY_LEFTSHIFT"
+		journal(f"{nome}: {'travado' if travado else ('ligado' if ativo else 'desligado')}")
 		self.definir_modificador(tecla, ativo)
 		# O teclado virtual precisa estar com a tecla presa de verdade, senao o
 		# caractere sai sem o modificador.
@@ -448,6 +518,8 @@ class GhostKeyboard(Keyboard):
 		journal("show() - janela aparecendo")
 		Keyboard.show(self, *a)
 		self._sync_cursor_visibility()
+		# A base cria o mapper (e o uinput) dentro do show().
+		self.timer("layout", 0.1, lambda: self.sincronizar_layout(alinhar=True))
 		ls = getattr(self, "layer_shell", None)
 		if ls is None:
 			return
@@ -762,7 +834,9 @@ class TecladoEmbutido(GhostKeyboard):
 		for lado in (SCLeftRight.LEFT, SCLeftRight.RIGHT):
 			self.set_cursor_position(0, 0, self.cursors[lado], self.limits[lado])
 		self._sync_cursor_visibility()
-		self.timer("labels", 0.1, self.update_labels)
+		# Depois do mapper: e ele quem cria o teclado uinput que precisa
+		# entrar no mesmo grupo.
+		self.timer("labels", 0.1, lambda: self.sincronizar_layout(alinhar=True))
 		journal("ligar() concluido - daemon conectado e mapper pronto")
 
 	def desligar(self) -> None:
