@@ -1037,6 +1037,18 @@ def _marcar_ativo():
         )
 
 
+def _registrar_sinal(sinal, funcao) -> None:
+    """GLib.unix_signal_add esta depreciado em favor de GLibUnix.signal_add,
+    que nao existe em versoes mais antigas do PyGObject."""
+    try:
+        gi.require_version("GLibUnix", "2.0")
+        from gi.repository import GLibUnix
+
+        GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, sinal, funcao)
+    except (ImportError, ValueError):
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sinal, funcao)
+
+
 def main():
     carregar_css()
     _marcar_ativo()
@@ -1053,15 +1065,7 @@ def main():
             os.kill(pid, signal.SIGTERM)
     except (OSError, ImportError):
         pass
-    # GLib.unix_signal_add esta depreciado em favor de GLibUnix.signal_add,
-    # que nao existe em versoes mais antigas do PyGObject.
-    try:
-        gi.require_version("GLibUnix", "2.0")
-        from gi.repository import GLibUnix
-
-        GLibUnix.signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, _alternar_pelo_sinal)
-    except (ImportError, ValueError):
-        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, _alternar_pelo_sinal)
+    _registrar_sinal(signal.SIGUSR1, _alternar_pelo_sinal)
 
     if PREVIEW:
         # Janela layer-shell comum: cobre a tela e mostra o mesmo visual,
@@ -1132,6 +1136,13 @@ def main():
         # desbloqueio quando o processo morre, e a sessao fica travada.
         Gdk.Display.get_default().sync()
         Gtk.main_quit()
+
+    # Valvula de escape. Sem isto, matar o processo deixa a SESSAO travada:
+    # o compositor nao desfaz a trava sozinho, e sem unlock_and_destroy resta
+    # ir a um TTY. Nao enfraquece o bloqueio de forma relevante - quem
+    # consegue mandar sinal a este processo ja e este usuario, e ja alcanca o
+    # que a tela protege.
+    _registrar_sinal(signal.SIGTERM, destravar)
 
     def cobrir(monitor):
         """Poe uma tela de bloqueio no monitor (novo ou ja existente)."""
