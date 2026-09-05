@@ -69,7 +69,16 @@ class TecladoWidget(KeyboardImage):
 		KeyboardImage.__init__(self, image)
 		# Precisa vir antes de a DrawingArea ser realizada, senao o widget
 		# nasce sem mascara de botao e nenhum clique chega ate ele.
-		self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
+		# POINTER_MOTION e LEAVE_NOTIFY sao para o realce sob o ponteiro no modo
+		# mouse. Ficam aqui, e nao no montar(), porque add_events so vale antes
+		# de a DrawingArea ser realizada. No modo fantasma ninguem conecta os
+		# handlers, entao os eventos nao custam nada.
+		self.add_events(
+			Gdk.EventMask.BUTTON_PRESS_MASK
+			| Gdk.EventMask.BUTTON_RELEASE_MASK
+			| Gdk.EventMask.POINTER_MOTION_MASK
+			| Gdk.EventMask.LEAVE_NOTIFY_MASK
+		)
 
 	def _falloff(self, d: float) -> float:
 		"""1.0 no centro do dedo, 0.0 na borda do raio."""

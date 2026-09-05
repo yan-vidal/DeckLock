@@ -150,6 +150,21 @@ class GhostKeyboard(Keyboard):
 		self._debug_alpha = debug_alpha
 		self._lock_retry = False
 		self._ao_fechar = None
+		# Modificadores presos pelas teclas do layout, nos dois modos: clique do
+		# mouse ou clique do pad. Os grips fisicos passam pelo mapper da base.
+		self._mods_ativos = set()
+		# Duplo clique no shift trava (caps). Pelo pad nao ha evento de duplo
+		# clique do GTK - o clique vem do controle -, entao a deteccao e por
+		# tempo, e vale igual no mouse para os dois modos se comportarem igual.
+		self._shift_travado = False
+		self._ultimo_toque_shift = 0.0
+		# Tecla sob o ponteiro no modo mouse. Guardada porque o realce e
+		# recalculado do zero a cada mudanca de modificador, e sem isto o
+		# hover sumiria ao ligar ou desligar o shift.
+		self._sob_ponteiro = None
+		# Quem hospeda o teclado pode querer refletir o estado fora dele - a
+		# tela de bloqueio acende o aviso de Caps Lock com isto.
+		self._ao_modificar = None
 		Keyboard.__init__(self, config)
 		self._make_transparent()
 
@@ -167,6 +182,187 @@ class GhostKeyboard(Keyboard):
 		Gtk.StyleContext.add_provider_for_screen(
 			screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 100,
 		)
+
+	def definir_ao_modificar(self, callback) -> None:
+		"""Avisa o hospedeiro sempre que um modificador muda de estado."""
+		self._ao_modificar = callback
+
+	def definir_modificador(self, tecla, ativo: bool) -> None:
+		"""Liga/desliga um modificador preso pelas teclas do layout.
+
+		No caminho do grip fisico isto nao existe: o grip ja pressiona o shift
+		no mapper, e a base inclui esses modificadores no calculo dos rotulos.
+		Clicando a tecla desenhada o estado tem de ser nosso - e entrar no MESMO
+		calculo, para as teclas mostrarem ! @ # em vez de 1 2 3.
+		"""
+		if ativo:
+			self._mods_ativos.add(tecla)
+		else:
+			self._mods_ativos.discard(tecla)
+		self.update_labels()
+		if self._ao_modificar is not None:
+			self._ao_modificar()
+
+	def update_labels(self) -> None:
+		"""Rotulos conforme o layout do sistema E os modificadores ativos.
+
+		Copia a traducao da base porque ela le os modificadores de
+		mapper.keyboard._pressed, que o modo mouse nao tem. O resto e igual:
+		translate_keyboard_state resolve pelo layout ativo, entao acentos e
+		simbolos seguem o teclado do sistema sem tabela paralela aqui.
+		"""
+		if not self._mods_ativos:
+			Keyboard.update_labels(self)
+			self._rotular_modificadores()
+			return
+
+		from scc.actions import Keys
+		from scc.gui.keycode_to_key import KEY_TO_KEYCODE
+		from scc.osd.keyboard import SPECIAL_KEYS
+
+		mt = Gdk.ModifierType(self.keymap.get_modifier_state())
+		for tecla in self._mods_ativos:
+			mt |= self.MODIFIER_MASKS.get(tecla, Gdk.ModifierType(0))
+
+		labels = {}
+		for button in self.background.buttons:
+			if getattr(Keys, button.name, None) in KEY_TO_KEYCODE:
+				keycode = KEY_TO_KEYCODE[getattr(Keys, button.name)]
+				t = self.keymap.translate_keyboard_state(keycode, mt, self.group)
+				keyval = t.keyval if hasattr(t, "keyval") else t[1]
+				code = Gdk.keyval_to_unicode(keyval)
+				labels[button] = chr(code).strip() if code >= 33 else SPECIAL_KEYS.get(code)
+		self.background.set_labels(labels)
+		self._rotular_modificadores()
+
+	def _rotular_modificadores(self) -> None:
+		"""Shift e AltGr nao produzem caractere, entao a traducao nao devolve
+		rotulo nenhum e elas apareciam como retangulos vazios. O nome vai a mao,
+		e a tecla ativa entra no realce - assim o estado se le na propria tecla,
+		sem indicador separado para manter em sincronia."""
+		nomes = {"KEY_LEFTSHIFT": "\u21e7", "KEY_RIGHTALT": "Alt"}
+		for b in self.background.buttons:
+			if b.name in nomes:
+				b.label = nomes[b.name]
+		self._aplicar_realce()
+
+	def soltar_modificadores(self) -> None:
+		"""Solta o que ficou preso por uinput.
+
+		Um shift travado fica fisicamente pressionado no teclado virtual. Se o
+		teclado sumir sem soltar, a sessao inteira herda um shift eterno - e
+		nao ha tecla na tela para desfaze-lo.
+		"""
+		if not self._mods_ativos:
+			return
+		presos = tuple(self._mods_ativos)
+		if self.mapper is not None:
+			self.mapper.keyboard.releaseEvent(list(presos))
+		self._mods_ativos.clear()
+		self._shift_travado = False
+		journal(f"modificadores soltos: {len(presos)}")
+		self.update_labels()
+		if self._ao_modificar is not None:
+			self._ao_modificar()
+
+	def _realce_atual(self) -> set:
+		"""Todo o realce, montado do zero.
+
+		Os modificadores ativos ficam acesos por conta propria, e o cursor
+		(dedo no pad ou ponteiro do mouse) acende a tecla sob ele. Precisa ser
+		um calculo unico porque o hilight() da base sobrescreve o conjunto
+		inteiro: quem so acrescentasse perderia o realce no proximo movimento.
+		"""
+		from scc.actions import Keys
+
+		realce = {
+			b for b in self.background.buttons
+			if getattr(Keys, b.name, None) in self._mods_ativos
+		}
+		realce.update(b for b in self._hovers.values() if b)
+		if self._sob_ponteiro is not None:
+			realce.add(self._sob_ponteiro)
+		return realce
+
+	def _aplicar_realce(self, pressed=None) -> None:
+		if pressed is None:
+			pressed = self.background._pressed
+		self.background.hilight(self._realce_atual(), pressed)
+		self.background.queue_draw()
+
+	def update_background(self, *a) -> None:
+		"""Mesma via da base, somando os modificadores presos."""
+		self._aplicar_realce({x for x in self._pressed_areas.values() if x})
+
+	DUPLO_CLIQUE_S = 0.6
+	MODIFICADORES = ("KEY_LEFTSHIFT", "KEY_RIGHTALT")
+
+	def alternar_modificador(self, nome: str) -> None:
+		"""Liga, trava ou desliga um modificador desenhado no layout.
+
+		Um toque liga (vale a proxima tecla); dois toques rapidos travam, como
+		o caps de teclado de toque; com ele travado, um toque desliga.
+		"""
+		from scc.actions import Keys
+
+		tecla = getattr(Keys, nome)
+		agora = time.monotonic()
+		if nome == "KEY_LEFTSHIFT":
+			duplo = (agora - self._ultimo_toque_shift) < self.DUPLO_CLIQUE_S
+			self._ultimo_toque_shift = agora
+			if self._shift_travado:
+				self._shift_travado = False
+				ativo = False
+			elif duplo and tecla in self._mods_ativos:
+				self._shift_travado = True
+				ativo = True
+			else:
+				ativo = tecla not in self._mods_ativos
+		else:
+			ativo = tecla not in self._mods_ativos
+
+		journal(f"{nome}: {'travado' if self._shift_travado else ('ligado' if ativo else 'desligado')}")
+		self.definir_modificador(tecla, ativo)
+		# O teclado virtual precisa estar com a tecla presa de verdade, senao o
+		# caractere sai sem o modificador.
+		if self.mapper is not None:
+			if ativo:
+				self.mapper.keyboard.pressEvent([tecla])
+			else:
+				self.mapper.keyboard.releaseEvent([tecla])
+
+	@property
+	def shift_travado(self) -> bool:
+		"""Caps ligado pelo duplo clique. Quem mostra o aviso na tela precisa saber."""
+		return self._shift_travado
+
+	def consumir_shift(self) -> None:
+		"""Shift simples vale uma tecla; travado (caps) fica."""
+		from scc.actions import Keys
+
+		if self._shift_travado or Keys.KEY_LEFTSHIFT not in self._mods_ativos:
+			return
+		if self.mapper is not None:
+			self.mapper.keyboard.releaseEvent([Keys.KEY_LEFTSHIFT])
+		self.definir_modificador(Keys.KEY_LEFTSHIFT, False)
+
+	def key_from_cursor(self, cursor, pressed) -> None:
+		"""Shift e AltGr desenhados sao sticky; o resto segue a base.
+
+		Segurar nao serve pelo pad: o dedo que mantem a tecla modificadora e o
+		mesmo que precisaria clicar a letra. Nos grips fisicos segurar continua
+		valendo - la sao dedos diferentes, e a base cuida disso sozinha.
+		"""
+		if not pressed:
+			Keyboard.key_from_cursor(self, cursor, pressed)
+			return
+		x, y = cursor.position
+		for button in self.background.buttons:
+			if button.contains(x, y) and button.name in self.MODIFICADORES:
+				self.alternar_modificador(button.name)
+				return
+		Keyboard.key_from_cursor(self, cursor, pressed)
+		self.consumir_shift()
 
 	def _create_background(self) -> None:
 		from scc.constants import SCPads
@@ -240,6 +436,7 @@ class GhostKeyboard(Keyboard):
 
 	def quit(self, code: int = -1) -> None:
 		journal(f"quit(code={code}) - fechando")
+		self.soltar_modificadores()
 		# O mesmo aperto de STEAM+B e consumido duas vezes: fecha o teclado
 		# aqui e, quando o controle volta ao perfil de desktop com o B ainda
 		# pressionado, dispara o shell() que reabriria. O cooldown gravado na
@@ -471,6 +668,11 @@ class TecladoEmbutido(GhostKeyboard):
 			# sem isto as teclas ficam em branco. Nao depende do daemon.
 			self.update_labels()
 			self.background.connect("button-press-event", self._clique)
+			# Realce sob o ponteiro: no modo fantasma o dedo no pad revela as
+			# teclas ao redor; aqui o equivalente e a tecla sob o mouse mudar
+			# de cor, para o clique ter a mesma confirmacao visual.
+			self.background.connect("motion-notify-event", self._hover)
+			self.background.connect("leave-notify-event", self._sair_hover)
 			# Nao adianta esconder agora: o show_all() do hospedeiro viria
 			# depois e traria os cursores de volta. Marcados para o hospedeiro
 			# esconder no momento certo.
@@ -495,6 +697,32 @@ class TecladoEmbutido(GhostKeyboard):
 				self._ao_teclar(botao.name)
 				return True
 		journal("  -> nenhuma tecla nessa posicao")
+		return False
+
+	def _tecla_sob(self, evento):
+		"""Tecla sob o ponteiro, ou None. Mesmo hit-test do clique."""
+		cx, cy = self.background.para_svg(evento.x, evento.y)
+		return next((b for b in self.background.buttons if b.contains(cx, cy)), None)
+
+	def _hover(self, _widget, evento) -> bool:
+		"""Realca a tecla sob o ponteiro, no modo mouse.
+
+		Usa o hilight() da base em vez de mexer no _hilight direto: e a mesma
+		via que o modo fantasma usa para o cursor, entao o desenho ja sabe
+		pintar com color_hilight.
+		"""
+		sob = self._tecla_sob(evento)
+		if sob is not self._sob_ponteiro:
+			self._sob_ponteiro = sob
+			self._aplicar_realce()
+		return False
+
+	def _sair_hover(self, _widget, _evento) -> bool:
+		"""Apaga o realce quando o ponteiro sai do teclado - sem isto a ultima
+		tecla ficaria acesa para sempre."""
+		if self._sob_ponteiro is not None:
+			self._sob_ponteiro = None
+			self._aplicar_realce()
 		return False
 
 	@staticmethod
@@ -539,6 +767,7 @@ class TecladoEmbutido(GhostKeyboard):
 
 	def desligar(self) -> None:
 		"""Solta o controle e os sinais, sem derrubar o processo hospedeiro."""
+		self.soltar_modificadores()
 		try:
 			if self.get_controller():
 				self.get_controller().unlock_all()

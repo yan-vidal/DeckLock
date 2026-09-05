@@ -111,6 +111,18 @@ USUARIO = getpass.getuser()
 TAM_AVATAR = 96
 
 
+def journal_lock(msg: str) -> None:
+    """Diario da tela de bloqueio. O log do teclado ja provou seu valor; aqui
+    faltava um equivalente para o lock, que roda desacoplado do terminal."""
+    import time
+
+    try:
+        with open(os.path.join(CONFIG_DIR, "scc", "deck-lock.log"), "a") as f:
+            f.write(f"{time.strftime('%H:%M:%S')} pid={os.getpid():<7} {msg}\n")
+    except OSError:
+        pass
+
+
 def ler_minutos_bloqueio_ate_ocioso():
     """MINUTOS_BLOQUEIO_ATE_OCIOSO do theme.conf (0 = desliga o modo)."""
     try:
@@ -395,9 +407,9 @@ class TelaBloqueio(Gtk.Window):
 
         self.rodape.pack_start(linha, False, False, 0)
 
-        keymap = Gdk.Keymap.get_for_display(Gdk.Display.get_default())
-        keymap.connect("state-changed", self._sync_capslock)
-        self._sync_capslock(keymap)
+        self.keymap = Gdk.Keymap.get_for_display(Gdk.Display.get_default())
+        self.keymap.connect("state-changed", self._sync_capslock)
+        self._sync_capslock()
 
         self.aviso = Gtk.Label(label="")
         self.aviso.set_name("aviso")
@@ -411,7 +423,7 @@ class TelaBloqueio(Gtk.Window):
         # nao cobrir o campo de senha, que e o que se precisa enxergar.
         self.teclado = None
         self.modo_mouse = False
-        self.caixa_teclado = Gtk.Box()
+        self.caixa_teclado = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.caixa_teclado.set_valign(Gtk.Align.END)
         self.caixa_teclado.set_halign(Gtk.Align.CENTER)
         # Folga para a ultima fileira nao encostar na borda da tela.
@@ -707,6 +719,9 @@ class TelaBloqueio(Gtk.Window):
             # X, Y, C e STEAM+B chamam OSK.close(), que chega no quit() do
             # teclado; aqui isso significa esconder, nao encerrar a tela.
             self.teclado.definir_ao_fechar(self._esconder_teclado)
+            # O caps travado pela tecla desenhada nao passa pelo Caps Lock do
+            # sistema, entao o keymap nao avisa ninguem: quem avisa e o teclado.
+            self.teclado.definir_ao_modificar(self._sync_capslock)
             self.caixa_teclado.add(widget)
             # Sem controle nao ha o que travar nem pads que ler: conectar ao
             # daemon so renderia um erro de lock e um teclado inerte.
@@ -730,9 +745,18 @@ class TelaBloqueio(Gtk.Window):
             self.teclado.cursores_fora()
             self._compactar(self.modo_mouse)
 
-    def _sync_capslock(self, keymap) -> None:
-        """Mostra ou esconde o aviso conforme o estado real do Caps Lock."""
-        self.capslock.set_visible(keymap.get_caps_lock_state())
+    def _sync_capslock(self, keymap=None) -> None:
+        """Mostra o aviso pelo Caps Lock fisico OU pelo shift travado do teclado.
+
+        Sao dois caps diferentes com o mesmo efeito para quem digita: o do
+        teclado fisico e o duplo clique na tecla desenhada. Quem esta olhando a
+        tela quer saber que sai maiuscula, nao de onde veio.
+        """
+        # getattr: o indicador e construido antes do atributo do teclado, e o
+        # primeiro sync roda ainda dentro do __init__.
+        teclado = getattr(self, "teclado", None)
+        travado = teclado is not None and teclado.shift_travado
+        self.capslock.set_visible(self.keymap.get_caps_lock_state() or travado)
 
     def _alternar_visibilidade(self) -> None:
         """Mostra ou oculta a senha digitada."""
@@ -762,6 +786,15 @@ class TelaBloqueio(Gtk.Window):
         if nome in ("KEY_ENTER", "KEY_KPENTER"):
             self._tentar(self.senha)
             return
+        # Shift e AltGr agora sao teclas do proprio layout, e nao botoes ao
+        # lado: clicar nelas alterna o nivel em vez de digitar. No modo
+        # fantasma os grips fazem o mesmo, entao os dois modos combinam.
+        if nome in TecladoEmbutido.MODIFICADORES:
+            # Mesmo caminho do modo pad: um toque liga, dois travam (caps), e
+            # com ele travado um toque desliga. A regra mora no teclado para
+            # os dois modos nao divergirem.
+            self.teclado.alternar_modificador(nome)
+            return
         if nome == "KEY_SPACE":
             self.senha.set_text(self.senha.get_text() + " ")
             self.senha.set_position(-1)
@@ -773,8 +806,12 @@ class TelaBloqueio(Gtk.Window):
             (b for b in self.teclado.background.buttons if b.name == nome), None
         )
         if botao is not None and botao.label and len(botao.label) == 1:
+            # O rotulo ja vem do nivel ativo do layout: com shift ele e "!" e
+            # nao "1", entao nao ha conversao a fazer aqui.
             self.senha.set_text(self.senha.get_text() + botao.label)
             self.senha.set_position(-1)
+            # Shift simples vale uma tecla so; caps fica ate ser desligado.
+            self.teclado.consumir_shift()
 
     def _esconder_teclado(self) -> None:
         """Esconde o teclado E devolve os pads.
@@ -791,6 +828,10 @@ class TelaBloqueio(Gtk.Window):
             self.caixa_teclado.hide()
             if not self.modo_mouse:
                 self.teclado.desligar()
+            else:
+                # Sem daemon nao ha desligar(), mas o caps travado tem de cair
+                # junto: com o teclado fora da tela nao ha como desfaze-lo.
+                self.teclado.soltar_modificadores()
             self._compactar(False)
 
     def _compactar(self, ligado: bool) -> None:
@@ -847,6 +888,16 @@ class TelaBloqueio(Gtk.Window):
     def _tentar(self, _entry):
         senha = self.senha.get_text()
         self.senha.set_text("")
+        # Diagnostico sem expor a senha: so o tamanho, se ha caractere fora do
+        # ASCII e o encoding que o subprocess vai usar. Uma senha correta
+        # recusada quase sempre e um destes tres - e o campo mostra o texto
+        # certo de qualquer jeito, entao olhar a tela nao resolve.
+        import locale
+
+        journal_lock(
+            f"_tentar: len={len(senha)} ascii={senha.isascii()} "
+            f"encoding={locale.getpreferredencoding(False)} LANG={os.environ.get('LANG', '<vazio>')}"
+        )
         if PREVIEW:
             self.aviso.set_text("(pre-visualizacao: senha nao e verificada)")
             return
@@ -857,6 +908,7 @@ class TelaBloqueio(Gtk.Window):
             capture_output=True,
             text=True,
         )
+        journal_lock(f"resultado: rc={resultado.returncode} err={resultado.stderr.strip()[:80]!r}")
         if resultado.returncode == 0:
             self.parar_video()
             self.ao_desbloquear()
