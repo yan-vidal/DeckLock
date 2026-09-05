@@ -4,11 +4,18 @@
 Herda o teclado na tela do sc-controller e o torna invisivel em repouso, revelando
 apenas as teclas ao redor do dedo. Nada do pacote sc-controller e modificado.
 """
+import time
+
+# Antes de tudo, e de proposito: os imports abaixo custam ~550ms (gi/Gtk ~194,
+# scc ~349), e sao a maior parte do tempo entre apertar o atalho e o teclado
+# aparecer. Com _T0 depois deles, o diario media so os 158ms restantes e dava a
+# impressao de que o custo estava na nossa logica.
+_T0 = time.monotonic()
+
 import os
 import signal
 import subprocess
 import sys
-import time
 
 import gi
 
@@ -35,10 +42,19 @@ LOG_PATH = os.path.expanduser("~/.config/scc/ghost-osk.log")
 
 
 def journal(msg: str) -> None:
-	"""Diario do ciclo de vida: distingue relancamento de ressurreicao."""
+	"""Diario do ciclo de vida: distingue relancamento de ressurreicao.
+
+	O milesimo e o tempo desde o inicio do processo importam: entre apertar o
+	atalho e o teclado assumir os pads o cursor ainda se move, e so medindo da
+	para saber se o custo esta no import, na conexao com o daemon ou na janela.
+	"""
 	try:
+		ms = (time.monotonic() - _T0) * 1000
 		with open(LOG_PATH, "a") as f:
-			f.write(f"{time.strftime('%H:%M:%S')} pid={os.getpid():<7} {msg}\n")
+			f.write(
+				f"{time.strftime('%H:%M:%S')}.{int(time.time() * 1000) % 1000:03d} "
+				f"pid={os.getpid():<7} [+{ms:7.1f}ms] {msg}\n"
+			)
 	except OSError:
 		pass
 
@@ -519,6 +535,7 @@ class TecladoEmbutido(GhostKeyboard):
 			self.set_cursor_position(0, 0, self.cursors[lado], self.limits[lado])
 		self._sync_cursor_visibility()
 		self.timer("labels", 0.1, self.update_labels)
+		journal("ligar() concluido - daemon conectado e mapper pronto")
 
 	def desligar(self) -> None:
 		"""Solta o controle e os sinais, sem derrubar o processo hospedeiro."""
@@ -616,7 +633,7 @@ def main() -> int:
 	if debug_alpha:
 		argv.remove("--debug-alpha")
 
-	journal(f"invocado argv={argv[1:]}")
+	journal(f"invocado argv={argv[1:]} (imports ja carregados)")
 
 	if "--toggle" in argv:
 		argv.remove("--toggle")
