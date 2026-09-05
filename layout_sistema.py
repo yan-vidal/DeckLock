@@ -109,24 +109,51 @@ def _teclados() -> list[dict]:
 		return []
 
 
-def grupo_ativo() -> tuple[int, str] | None:
-	"""(indice, codigo) do layout ativo no teclado principal, ou None.
+def eh_virtual(nome: str) -> bool:
+	"""Teclado criado por nos (uinput do sc-controller), e nao de verdade."""
+	return nome.startswith("scc")
 
-	None quando nao ha como saber - sem Hyprland, por exemplo. Quem chama
-	deve manter o grupo que ja tinha, e nao assumir zero: assumir zero e
-	exatamente o defeito que isto conserta.
-	"""
-	principal = next((k for k in _teclados() if k.get("main")), None)
-	if principal is None:
-		return None
-	codigos = [c.strip() for c in (principal.get("layout") or "").split(",") if c.strip()]
-	codigo = descricoes_de_layout().get(principal.get("active_keymap"))
-	if not codigos or codigo is None:
+
+def _codigos_configurados() -> list[str]:
+	"""Os codigos do kb_layout, na ordem - e a ordem que define o indice."""
+	for k in _teclados():
+		codigos = [c.strip() for c in (k.get("layout") or "").split(",") if c.strip()]
+		if codigos:
+			return codigos
+	return []
+
+
+def indice_de(descricao: str) -> tuple[int, str] | None:
+	"""(indice, codigo) para a descricao que o compositor reporta."""
+	codigo = descricoes_de_layout().get(descricao)
+	codigos = _codigos_configurados()
+	if codigo is None or not codigos:
 		return None
 	try:
 		return codigos.index(codigo), codigo
 	except ValueError:
 		return None
+
+
+def grupo_ativo() -> tuple[int, str] | None:
+	"""(indice, codigo) do layout ativo no teclado principal, ou None.
+
+	None quando nao ha como saber - sem Hyprland, ou quando o unico teclado
+	"principal" e um dos nossos. Quem chama deve manter o grupo que ja tinha,
+	e nao assumir zero: assumir zero e exatamente o defeito que isto conserta.
+
+	O teclado virtual e ignorado de proposito. Ao ser criado ele vira o
+	principal aos olhos do compositor, e como nasce no grupo 0 a leitura se
+	tornava circular: o teclado perguntava o layout a si mesmo, respondia
+	"us" e desfazia o alinhamento que tinha acabado de aplicar.
+	"""
+	principal = next(
+		(k for k in _teclados() if k.get("main") and not eh_virtual(k.get("name", ""))),
+		None,
+	)
+	if principal is None:
+		return None
+	return indice_de(principal.get("active_keymap"))
 
 
 def alinhar_teclados_virtuais(indice: int) -> list[str]:
@@ -138,7 +165,7 @@ def alinhar_teclados_virtuais(indice: int) -> list[str]:
 	mudados = []
 	for k in _teclados():
 		nome = k.get("name", "")
-		if not nome.startswith("scc"):
+		if not eh_virtual(nome):
 			continue
 		if _hyprctl("switchxkblayout", nome, str(indice)).strip().startswith("ok"):
 			mudados.append(nome)
@@ -146,7 +173,12 @@ def alinhar_teclados_virtuais(indice: int) -> list[str]:
 
 
 def observar_layout(ao_mudar) -> int | None:
-	"""Chama ao_mudar() quando o layout de um teclado de verdade muda.
+	"""Chama ao_mudar(descricao) quando o layout de um teclado de verdade muda.
+
+	A descricao vai junto de proposito. Enquanto o teclado da tela esta aberto,
+	o dispositivo virtual e quem carrega a marca de "principal", e perguntar
+	qual e o layout ativo nao devolve resposta util - mas o evento diz de qual
+	teclado se trata e para qual layout ele foi.
 
 	O Hyprland emite 'activelayout>>dispositivo,descricao' no socket2. Ler o
 	evento evita ficar perguntando de tempos em tempos, e faz a troca aparecer
@@ -182,9 +214,9 @@ def observar_layout(ao_mudar) -> int | None:
 		# Os teclados virtuais tambem emitem o evento, quando somos nos que
 		# acabamos de alinha-los. Reagir a eles seria um laco.
 		for linha in dados.splitlines():
-			m = re.match(r"activelayout>>([^,]+),", linha)
-			if m and not m.group(1).startswith("scc"):
-				ao_mudar()
+			m = re.match(r"activelayout>>([^,]+),(.*)$", linha)
+			if m and not eh_virtual(m.group(1)):
+				ao_mudar(m.group(2).strip())
 				break
 		return True
 

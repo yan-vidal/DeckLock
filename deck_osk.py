@@ -179,7 +179,7 @@ class GhostKeyboard(Keyboard):
 		# teclado fica em us para sempre, mesmo com o sistema em br.
 		self.sincronizar_layout()
 		self._watch_layout = layout_sistema.observar_layout(
-			lambda: self.sincronizar_layout(alinhar=True),
+			lambda descricao: self.sincronizar_layout(alinhar=True, descricao=descricao),
 		)
 
 	def _make_transparent(self) -> None:
@@ -283,18 +283,27 @@ class GhostKeyboard(Keyboard):
 		acento = layout_sistema.acento_morto(keyval)
 		return acento[1] if acento else None
 
-	def sincronizar_layout(self, alinhar: bool = False) -> None:
+	def sincronizar_layout(self, alinhar: bool = False, descricao: str = "") -> None:
 		"""Adota o layout ativo do sistema.
 
 		Com alinhar, poe tambem os teclados virtuais do sc-controller no mesmo
 		grupo. Isso so importa quando ha uinput - no modo pad -, e e o que
 		impede o teclado de mostrar uma tecla e o compositor escrever outra.
 		"""
-		atual = layout_sistema.grupo_ativo()
+		# A descricao vem do evento do compositor e diz de qual layout se
+		# trata. Vale mais do que perguntar qual e o ativo: com o teclado
+		# aberto, quem responde a essa pergunta e o nosso proprio dispositivo.
+		atual = layout_sistema.indice_de(descricao) if descricao else None
 		if atual is None:
-			journal("layout do sistema: nao consegui descobrir, mantendo o atual")
-			return
-		indice, codigo = atual
+			atual = layout_sistema.grupo_ativo()
+		if atual is None:
+			# Sem leitura confiavel, o grupo que ja temos e a melhor resposta -
+			# mas o alinhamento tem de acontecer mesmo assim, senao o teclado
+			# virtual recem-criado fica num grupo diferente do que esta escrito
+			# nas teclas.
+			indice, codigo = self.group, "grupo atual"
+		else:
+			indice, codigo = atual
 		if alinhar:
 			mudados = layout_sistema.alinhar_teclados_virtuais(indice)
 			if mudados:
