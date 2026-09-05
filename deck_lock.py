@@ -206,6 +206,27 @@ window, #fundo { background-color: black; }
 
 #energia button:hover { background-color: @realce; }
 
+/* O botao de enviar acompanha o campo de senha: mesma borda, mesmo raio e
+   mesmo fundo. Sem contorno proprio ele so parecia um botao no hover, e em
+   repouso passava por um icone solto ao lado do campo. */
+#enviar {
+    background-color: rgba(255,255,255,0.15);
+    color: #ffffff;
+    border: 1px solid @rosa_translucido;
+    border-radius: 20px;
+    padding: 10px 14px;
+}
+
+#enviar:hover { background-color: @hover; }
+#enviar:disabled { opacity: 0.45; }
+
+#capslock {
+    color: #ffd166;
+    font-size: 13px;
+    font-weight: bold;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.9);
+}
+
 #aviso {
     color: #ffd9e2;
     font-size: 14px;
@@ -323,7 +344,60 @@ class TelaBloqueio(Gtk.Window):
             ),
         )
         self.senha.connect("activate", self._tentar)
-        self.rodape.pack_start(self.senha, False, False, 0)
+
+        # Botao de enviar ao lado do campo. Quem esta so com o mouse (sem
+        # controle e sem teclado fisico) digita pelo teclado virtual, mas nao
+        # tem como dar o Enter - faltava o ultimo passo para entrar so clicando.
+        #
+        # Fora do campo porque as duas posicoes de icone do Gtk.Entry ja servem:
+        # PRIMARY mostra/oculta a senha, SECONDARY abre o teclado. As duas sao
+        # justamente o que esse mesmo usuario precisa.
+        linha = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        linha.set_halign(Gtk.Align.CENTER)
+
+        # Espacador invisivel do tamanho do botao, a esquerda. Sem ele quem
+        # fica centralizado e o conjunto campo+botao, e o campo escorrega para
+        # a esquerda do eixo - o avatar e o nome, centralizados na coluna,
+        # apareciam tortos em relacao a ele. O SizeGroup mantem os dois com a
+        # mesma largura mesmo se o icone ou o padding mudarem.
+        espacador = Gtk.Box()
+        linha.pack_start(espacador, False, False, 0)
+        linha.pack_start(self.senha, False, False, 0)
+
+        self.enviar = Gtk.Button()
+        self.enviar.set_name("enviar")
+        self.enviar.set_image(
+            Gtk.Image.new_from_icon_name("go-next-symbolic", Gtk.IconSize.LARGE_TOOLBAR)
+        )
+        self.enviar.set_tooltip_text("Entrar")
+        # Nasce desligado: com o campo vazio o clique so renderia "senha
+        # incorreta", e o botao apagado diz que ainda falta digitar.
+        self.enviar.set_sensitive(False)
+        self.enviar.connect("clicked", lambda _b: self._tentar(self.senha))
+        self.senha.connect(
+            "changed", lambda e: self.enviar.set_sensitive(bool(e.get_text()))
+        )
+        linha.pack_start(self.enviar, False, False, 0)
+        grupo = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
+        grupo.add_widget(espacador)
+        grupo.add_widget(self.enviar)
+
+        # Caps Lock ligado com a senha oculta e um erro dificil de enxergar:
+        # digita-se tudo em maiusculas sem perceber e a senha e recusada sem
+        # explicacao. O rotulo so existe na tela quando esta ligado.
+        #
+        # set_no_show_all e obrigatorio: sem ele o show_all() da janela mostra
+        # o aviso sempre, inclusive com o Caps Lock desligado.
+        self.capslock = Gtk.Label(label="Caps Lock ligado")
+        self.capslock.set_name("capslock")
+        self.capslock.set_no_show_all(True)
+        self.rodape.pack_start(self.capslock, False, False, 0)
+
+        self.rodape.pack_start(linha, False, False, 0)
+
+        keymap = Gdk.Keymap.get_for_display(Gdk.Display.get_default())
+        keymap.connect("state-changed", self._sync_capslock)
+        self._sync_capslock(keymap)
 
         self.aviso = Gtk.Label(label="")
         self.aviso.set_name("aviso")
