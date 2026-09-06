@@ -36,9 +36,16 @@ no canto superior e teclado inferior; modo mouse compacto e modo controle com
 transparência por proximidade. `scripts/import-python-theme` converte cores e
 fundo locais para um tema externo; nenhuma configuração do sc-controller é alterada.
 
+O Shift virtual segue a referência Python: dois cliques em menos de 600 ms
+travam o modificador, com indicação de Caps Lock; outro clique destrava.
+O estado de toque agora controla a visibilidade dos pads: o evento neutro `(0, 0)`
+enviado pelo daemon depois da liberação não recria um dedo no centro. O teste GTK
+cobre ambos os pads, soltura independente e tentativa de pressionar uma tecla
+após soltar. Os dois defeitos foram reproduzidos nos testes antes da correção.
+
 ## Evidência e limites
 
-26 testes unitários/de integração cobrem configuração, Fluent, teclado, estado,
+27 testes unitários/de integração cobrem configuração, Fluent, teclado, estado,
 helper de autenticação simulado e protocolo de controle simulado.
 `examples/preview_check.rs` verifica cliques GTK, Shift, acentos, exclusão Unicode,
 envio sem autenticação, energia desativada e liberação do campo ao destruir janela.

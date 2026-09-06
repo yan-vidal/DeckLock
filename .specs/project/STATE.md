@@ -10,7 +10,7 @@ gtk4-layer-shell 1.3 built locally in ignored `.deps/`; no system installation.
 Use `scripts/bootstrap-native --tests` to reproduce the native setup.
 Installed sc-controller: 0.7.1; Rust integration uses its external Unix daemon.
 
-Validation passed: 26 unit/integration tests, fmt, clippy with warnings denied,
+Validation passed: 27 unit/integration tests, fmt, clippy with warnings denied,
 build, configuration check, GTK preview harness, and isolated compositor test.
 The latter covers acquisition, monitor add/remove/re-add, SIGTERM without unlock,
 and refusal of a second locker after the first dies. Preview was visually
@@ -27,3 +27,7 @@ OSK. `scripts/import-python-theme` exports legacy colors/media to an external th
 Next: device UAT, controller recovery/ergonomics, haptics,
 dynamic XKB groups/custom keyboard layouts, and standalone OSK parity. Full details and
 reproduction commands: `docs/rust-migration.md`, `README.md`.
+
+Follow-up verified: double Shift latch (600 ms) and virtual Caps indicator;
+touch-gated pad coordinates prevent final neutral reports reviving ghost keys.
+GUI regression covers independent release of both pads and no stale selection.

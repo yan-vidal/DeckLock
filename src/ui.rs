@@ -175,6 +175,7 @@ fn refresh_keys(keys: &Keys, model: &Keyboard, _strings: &I18n) {
     for (button, key) in keys.iter() {
         let label = match key.normal {
             "Space" => "␣".into(),
+            "Shift" if model.shift_locked => "⇪".into(),
             "Shift" => "⇧".into(),
             "Caps" => "⇪".into(),
             "AltGr" => "Alt".into(),
@@ -353,12 +354,20 @@ fn build_keyboard(
             entry.downgrade(),
             settings.clone(),
         );
+        let keyboard = container.downgrade();
         button.connect_clicked(move |_| {
             let (Some(keys), Some(entry)) = (keys.upgrade(), entry.upgrade()) else {
                 return;
             };
             let action = model.borrow_mut().press(&key);
             edit_entry(&entry, action);
+            if let Some(keyboard) = keyboard.upgrade() {
+                if model.borrow().shift_locked || model.borrow().caps {
+                    keyboard.add_css_class("caps-active");
+                } else {
+                    keyboard.remove_css_class("caps-active");
+                }
+            }
             refresh_keys(&keys, &model.borrow(), &settings.strings);
         });
     }
@@ -408,6 +417,8 @@ fn build_keyboard(
         clear_points.replace([None, None]);
         clear_fade();
     });
+    let touching = Rc::new(RefCell::new([false, false]));
+    let reset_touching = touching.clone();
     let pads = Rc::new(RefCell::new([None, None]));
     let triggers = Rc::new(RefCell::new([false, false]));
     let reset_pads = pads.clone();
@@ -416,6 +427,7 @@ fn build_keyboard(
     let reset_keys = Rc::downgrade(&keys);
     let reset_settings = settings.clone();
     container.connect_visible_notify(move |container| {
+        reset_touching.replace([false, false]);
         reset_pads.replace([None, None]);
         reset_triggers.replace([false, false]);
         if !container.is_visible() {
@@ -423,6 +435,8 @@ fn build_keyboard(
             model.held_shift = false;
             model.held_altgr = false;
             model.shift = false;
+            model.shift_locked = false;
+            container.remove_css_class("caps-active");
             model.altgr = false;
             if let Some(keys) = reset_keys.upgrade() {
                 refresh_keys(&keys, &model, &reset_settings.strings);
@@ -456,6 +470,9 @@ fn build_keyboard(
         match event {
             ControllerEvent::Pad { side, x, y } if container.is_visible() => {
                 let idx = if side == Side::Left { 0 } else { 1 };
+                if !touching.borrow()[idx] {
+                    return;
+                }
                 // The two pads cover overlapping halves of the original SVG,
                 // exactly as LIMIT_LPAD / LIMIT_RPAD in the Python keyboard.
                 let (left, width) = if side == Side::Left {
@@ -489,11 +506,14 @@ fn build_keyboard(
                     "RPADPRESS" => Some(1),
                     _ => None,
                 };
+                if name == "LPADTOUCH" || name == "RPADTOUCH" {
+                    touching.borrow_mut()[if name == "LPADTOUCH" { 0 } else { 1 }] = pressed;
+                }
                 if name == "LGRIP" || name == "RGRIP" {
                     let mut state = model.borrow_mut();
                     if name == "LGRIP" {
                         state.held_shift = pressed;
-                        state.shift = pressed;
+                        state.shift = pressed || state.shift_locked;
                     } else {
                         state.held_altgr = pressed;
                         state.altgr = pressed;
@@ -542,6 +562,7 @@ fn build_keyboard(
                 status.set_text(&settings.strings.text("controller-unavailable"));
             }
             ControllerEvent::Disconnected => {
+                touching.replace([false, false]);
                 pads.replace([None, None]);
                 points.replace([None, None]);
                 fade();
@@ -840,6 +861,14 @@ pub fn build(
     form.append(&row);
     form.append(&status);
     let (keyboard, controller_event) = build_keyboard(&entry, &settings, &status);
+    let physical_caps = Rc::new(Cell::new(false));
+    let caps_label = caps.downgrade();
+    let physical = physical_caps.clone();
+    keyboard.connect_notify_local(Some("css-classes"), move |keyboard, _| {
+        if let Some(label) = caps_label.upgrade() {
+            label.set_visible(physical.get() || keyboard.has_css_class("caps-active"));
+        }
+    });
     keyboard.set_valign(gtk::Align::End);
     keyboard.set_margin_bottom(16);
     overlay.add_overlay(&keyboard);
@@ -935,7 +964,13 @@ pub fn build(
     let weak_form = form.downgrade();
     key_events.connect_key_pressed(move |_, key, _, modifiers| {
         activity_key.set(Instant::now());
-        caps.set_visible(modifiers.contains(gdk::ModifierType::LOCK_MASK));
+        physical_caps.set(modifiers.contains(gdk::ModifierType::LOCK_MASK));
+        caps.set_visible(
+            physical_caps.get()
+                || weak_keyboard
+                    .upgrade()
+                    .is_some_and(|k| k.has_css_class("caps-active")),
+        );
         if let Some(form) = weak_form.upgrade() {
             form.set_visible(true);
         }

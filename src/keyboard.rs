@@ -20,6 +20,8 @@ pub struct Key {
 #[derive(Default)]
 pub struct Keyboard {
     pub shift: bool,
+    pub shift_locked: bool,
+    last_shift_tap: Option<std::time::Instant>,
     pub caps: bool,
     pub altgr: bool,
     pub held_shift: bool,
@@ -59,9 +61,24 @@ impl Keyboard {
     }
 
     pub fn press(&mut self, key: &Key) -> Action {
+        self.press_at(key, std::time::Instant::now())
+    }
+
+    fn press_at(&mut self, key: &Key, now: std::time::Instant) -> Action {
         match key.normal {
             "Shift" => {
-                self.shift = !self.shift;
+                let double = self.last_shift_tap.is_some_and(|last| {
+                    now.saturating_duration_since(last) < std::time::Duration::from_millis(600)
+                });
+                self.last_shift_tap = Some(now);
+                if self.shift_locked {
+                    self.shift_locked = false;
+                    self.shift = self.held_shift || self.shift_locked;
+                } else if double && self.shift {
+                    self.shift_locked = true;
+                } else {
+                    self.shift = !self.shift;
+                }
                 return Action::None;
             }
             "Caps" => {
@@ -100,7 +117,7 @@ impl Keyboard {
         } else {
             text.chars().count() == 1 && "´`^~¨".contains(&text)
         };
-        self.shift = self.held_shift;
+        self.shift = self.held_shift || self.shift_locked;
         self.altgr = self.held_altgr;
         if let Some(accent) = self.accent.take() {
             if text == " " || text == accent.to_string() {
@@ -836,6 +853,31 @@ mod tests {
             width: 1,
         }
     }
+    #[test]
+    fn double_shift_latches_until_next_shift_and_slow_taps_do_not() {
+        let mut model = Keyboard::default();
+        let shift = Key {
+            normal: "Shift",
+            shifted: "Shift",
+            width: 1,
+        };
+        let letter = Key {
+            normal: "a",
+            shifted: "A",
+            width: 1,
+        };
+        let start = std::time::Instant::now();
+        model.press_at(&shift, start);
+        model.press_at(&shift, start + std::time::Duration::from_millis(200));
+        assert_eq!(model.press(&letter), Action::Insert("A".into()));
+        assert_eq!(model.press(&letter), Action::Insert("A".into()));
+        model.press_at(&shift, start + std::time::Duration::from_millis(300));
+        assert_eq!(model.press(&letter), Action::Insert("a".into()));
+        model.press_at(&shift, start + std::time::Duration::from_secs(2));
+        model.press_at(&shift, start + std::time::Duration::from_secs(3));
+        assert_eq!(model.press(&letter), Action::Insert("a".into()));
+    }
+
     #[test]
     fn system_keymap_preserves_literal_symbols_and_dead_keys() {
         let mut model = Keyboard::default();

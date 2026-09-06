@@ -58,6 +58,20 @@ fn main() {
     key(&view, "⇧").emit_clicked();
     key(&view, "A").emit_clicked();
     assert_eq!(view.entry.text(), "aA");
+    key(&view, "⇧").emit_clicked();
+    key(&view, "⇧").emit_clicked();
+    assert!(view.keyboard.has_css_class("caps-active"));
+    let caps_label = descendants(view.window.upcast_ref())
+        .into_iter()
+        .find(|w| w.widget_name() == "caps")
+        .unwrap();
+    assert!(caps_label.is_visible());
+    key(&view, "A").emit_clicked();
+    key(&view, "A").emit_clicked();
+    assert_eq!(view.entry.text(), "aAAA");
+    key(&view, "⇪").emit_clicked();
+    assert!(!caps_label.is_visible());
+    assert!(!view.keyboard.has_css_class("caps-active"));
     view.entry.select_region(0, -1);
     key(&view, "←").emit_clicked();
     assert_eq!(view.entry.text(), "");
@@ -109,6 +123,10 @@ fn main() {
     view.window.present();
     while glib::MainContext::default().iteration(false) {}
     assert_eq!(key(&view, "a").opacity(), 0.0);
+    (view.controller_event)(ControllerEvent::Button {
+        name: "LPADTOUCH".into(),
+        pressed: true,
+    });
     (view.controller_event)(ControllerEvent::Pad {
         side: Side::Left,
         x: 0,
@@ -119,7 +137,81 @@ fn main() {
         name: "LPADTOUCH".into(),
         pressed: false,
     });
+    // The daemon reports a final neutral coordinate AFTER touch release.
+    (view.controller_event)(ControllerEvent::Pad {
+        side: Side::Left,
+        x: 0,
+        y: 0,
+    });
     assert_eq!(key(&view, "f").opacity(), 0.0);
+    (view.controller_event)(ControllerEvent::Button {
+        name: "RPADTOUCH".into(),
+        pressed: true,
+    });
+    (view.controller_event)(ControllerEvent::Pad {
+        side: Side::Right,
+        x: 0,
+        y: 0,
+    });
+    assert!(key(&view, "k").opacity() > 0.0);
+    (view.controller_event)(ControllerEvent::Button {
+        name: "RPADTOUCH".into(),
+        pressed: false,
+    });
+    (view.controller_event)(ControllerEvent::Pad {
+        side: Side::Right,
+        x: 0,
+        y: 0,
+    });
+    assert_eq!(key(&view, "k").opacity(), 0.0);
+    for side in [Side::Left, Side::Right] {
+        (view.controller_event)(ControllerEvent::Button {
+            name: if side == Side::Left {
+                "LPADTOUCH"
+            } else {
+                "RPADTOUCH"
+            }
+            .into(),
+            pressed: true,
+        });
+        (view.controller_event)(ControllerEvent::Pad { side, x: 0, y: 0 });
+    }
+    (view.controller_event)(ControllerEvent::Button {
+        name: "LPADTOUCH".into(),
+        pressed: false,
+    });
+    (view.controller_event)(ControllerEvent::Pad {
+        side: Side::Left,
+        x: 0,
+        y: 0,
+    });
+    assert!(
+        key(&view, "k").opacity() > 0.0,
+        "Other finger should remain visible"
+    );
+    (view.controller_event)(ControllerEvent::Button {
+        name: "RPADTOUCH".into(),
+        pressed: false,
+    });
+    (view.controller_event)(ControllerEvent::Pad {
+        side: Side::Right,
+        x: 0,
+        y: 0,
+    });
+    for widget in descendants(view.keyboard.upcast_ref()) {
+        if widget.has_css_class("key") {
+            assert_eq!(widget.opacity(), 0.0);
+        }
+    }
+    (view.controller_event)(ControllerEvent::Trigger {
+        side: Side::Left,
+        value: 255,
+    });
+    assert_eq!(
+        view.entry.text(),
+        "",
+        "Released pad must not retain a selected key"
+    );
     view.entry.set_text("ab");
     view.entry.set_position(-1);
     (view.controller_event)(ControllerEvent::Button {
@@ -157,6 +249,6 @@ fn main() {
         "Ghost preview retained entry"
     );
     println!(
-        "PASS: clickable keyboard, shift, accents, Unicode deletion, preview isolation, ghost opacity, controller bindings, fallback, widget cleanup"
+        "PASS: clickable keyboard, shift, accents, Unicode deletion, preview isolation, double Shift latch, post-release pad coordinates, ghost opacity, controller bindings, fallback, widget cleanup"
     );
 }
