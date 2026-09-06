@@ -1,6 +1,6 @@
 # Rust / GTK4 migration
 
-Status: in progress. Approved direction: Wayland only, Rust, GTK4, external CSS
+Status: first implementation verified; full parity and device UAT pending. Approved direction: Wayland only, Rust, GTK4, external CSS
 themes, extensive customization, localization from the start. Lua/plugins deferred.
 
 ## Requirements
