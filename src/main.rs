@@ -1,4 +1,4 @@
-use decklock::{auth, config, controller, i18n, lock, session, ui};
+use decklock::{auth, config, controller, i18n, lock, session, shortcut, ui};
 
 use clap::Parser;
 use gtk::{gio, glib, prelude::*};
@@ -45,6 +45,9 @@ struct Args {
     /// Explicitly enable optional controller integration (also in preview).
     #[arg(long)]
     controller_socket: Option<PathBuf>,
+    /// Enable sc-controller at its default socket and route deck-osk --toggle here.
+    #[arg(long)]
+    controller: bool,
     /// Validate configuration/catalogs without opening a display.
     #[arg(long, conflicts_with = "lock")]
     check_config: bool,
@@ -89,6 +92,18 @@ fn run(args: Args) -> Result<(), String> {
     if args.controller_socket.is_some() || !args.lock {
         config.controller_socket = args.controller_socket;
     }
+    if args.controller && config.controller_socket.is_none() {
+        config.controller_socket = Some(
+            shortcut::config_dir()
+                .ok_or("Cannot locate sc-controller configuration")?
+                .join("scc/daemon.socket"),
+        );
+    }
+    let shortcut_dir = if args.lock || config.controller_socket.is_some() {
+        shortcut::config_dir().map(|p| p.join("scc"))
+    } else {
+        None
+    };
     let theme = config::Theme::load(config.theme.as_deref())?;
     let strings = i18n::I18n::new(config.locale.as_deref(), args.translations.as_deref())?;
     if args.check_config {
@@ -131,6 +146,7 @@ fn run(args: Args) -> Result<(), String> {
         let client = controller::ControllerClient::connect(path.clone())?;
         let targets = Rc::downgrade(&views);
         let mut active = false;
+        let cooldown_dir = shortcut_dir.clone();
         glib::timeout_add_local(Duration::from_millis(16), move || {
             let Some(targets) = targets.upgrade() else {
                 return glib::ControlFlow::Break;
@@ -140,6 +156,9 @@ fn run(args: Args) -> Result<(), String> {
             let should_capture =
                 target.is_some_and(|v| v.keyboard.is_visible() && v.keyboard.is_sensitive());
             if should_capture != active {
+                if active && let Some(dir) = &cooldown_dir {
+                    shortcut::cooldown(dir);
+                }
                 let _ = client.set_active(should_capture);
                 active = should_capture;
             }
@@ -257,6 +276,10 @@ fn run(args: Args) -> Result<(), String> {
             }
         }
     });
+    // Register only after SIGUSR1 has a handler. Preview opts in with --controller.
+    let _shortcut_registration = shortcut_dir
+        .map(|dir| shortcut::Registration::acquire(dir.join("deck-lock.pid")))
+        .transpose()?;
     app.run_with_args::<&str>(&[]);
     session.borrow_mut().terminate();
     drop(hold);

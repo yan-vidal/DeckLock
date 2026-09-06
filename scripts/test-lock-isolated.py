@@ -34,7 +34,7 @@ def run():
         root = Path(directory)
         socket = root / "gtkls-test-display"
         env = os.environ.copy()
-        env.update(GTKLS_TEST_DIR=directory, WAYLAND_DISPLAY=str(socket), GDK_BACKEND="wayland",
+        env.update(XDG_CONFIG_HOME=str(root / "config"), GTKLS_TEST_DIR=directory, WAYLAND_DISPLAY=str(socket), GDK_BACKEND="wayland",
                    GSK_RENDERER="cairo", GTK_A11Y="none", WAYLAND_DEBUG="1",
                    LD_LIBRARY_PATH=str(ROOT / ".deps/install/lib"))
         env.pop("WAYLAND_SOCKET", None)
