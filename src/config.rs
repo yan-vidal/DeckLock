@@ -11,6 +11,7 @@ pub struct Config {
     pub background: Option<PathBuf>,
     pub idle_background: Option<PathBuf>,
     pub controller_socket: Option<PathBuf>,
+    pub system_keyboard: bool,
 }
 
 impl Default for Config {
@@ -23,6 +24,7 @@ impl Default for Config {
             background: None,
             idle_background: None,
             controller_socket: None,
+            system_keyboard: true,
         }
     }
 }

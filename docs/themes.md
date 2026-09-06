@@ -19,7 +19,7 @@ keyboard_scale = 1.0        # 0.5..2.0
 ```
 
 `background` pode ser um arquivo local ou diretório. A configuração do aplicativo
-tem precedência sobre o fundo do tema. Imagens são ajustadas para cobrir a área;
+tem precedência sobre o fundo do tema. Imagens são esticadas para preencher a área, como no Python;
 vídeos são mudos e repetidos. Um erro de vídeo mantém o fundo opaco.
 
 O CSS é **GTK4 CSS**, não CSS de navegador. Use cores, fontes, bordas, transparência,
@@ -30,7 +30,7 @@ dessa API; a organização dos blocos é definida pelo TOML.
 | --- | --- |
 | `window.decklock` | Janela e cor de fundo |
 | `#background`, `#veil` | Mídia e camada sobre o fundo |
-| `#content` | Bloco de relógio e credenciais |
+| `#content`, `#credentials` | Disposição geral e formulário |
 | `#clock`, `#date` | Relógio e data |
 | `#avatar`, `#username` | Avatar e nome do usuário |
 | `#password`, `#submit` | Campo de senha e envio |
@@ -50,6 +50,12 @@ CSS inválido ou TOML desconhecido é rejeitado antes de adquirir o bloqueio.
 `--check-config` verifica TOML e traduções; a análise de CSS exige abrir o preview.
 O nome do serviço PAM pertence à configuração do aplicativo, não ao tema.
 
-Em janelas pequenas, o conteúdo pode rolar para manter o teclado e o formulário
-acessíveis. Para conferir a composição de tela inteira, use `--preview-fullscreen`.
+O teclado fica ancorado embaixo. No modo mouse, abrir o teclado esconde relógio,
+avatar e nome para reservar espaço ao campo de senha, como no Python. Com controle,
+as teclas aparecem por proximidade dos dedos. Para conferir a composição, use
+`--preview-fullscreen`. `keyboard_scale` multiplica a escala original: 0,62 no modo
+mouse e 1,0 no modo controle.
 Ainda não há layout arbitrário por GtkBuilder, editor visual ou API de plugins.
+
+Para importar as cores locais do Python, execute `scripts/import-python-theme`.
+O diretório gerado é um tema CSS/TOML comum; a importação não altera o sc-controller.

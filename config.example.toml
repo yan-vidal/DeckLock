@@ -6,3 +6,6 @@ idle_seconds = 600
 # background = "media/lock"       # File or directory of images/videos
 # idle_background = "media/idle"
 # controller_socket = "/absolute/path/to/sc-controller/socket"
+
+# Follow the first GDK keymap group at startup; false selects the built-in BR map.
+system_keyboard = true

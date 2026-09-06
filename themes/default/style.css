@@ -1,25 +1,36 @@
-/* GTK4 CSS. Widget classes are the supported appearance customization hooks. */
-@define-color background #101521;
-@define-color surface #1a2235;
-@define-color foreground #e6e9f2;
+/* Python deck_lock.py appearance, using GTK4's stable theme hooks. */
 @define-color accent #7aa2f7;
-window.decklock { background-color: @background; color: @foreground; }
-#content { padding: 24px; border-radius: 24px; background-color: alpha(@surface, 0.90); }
-#clock { font-size: 64px; font-weight: 300; }
-#date { font-size: 18px; color: #b4c3df; }
-#username { font-size: 22px; font-weight: 600; }
-#avatar { border-radius: 999px; }
-#password { min-height: 42px; border-radius: 12px; background-color: #111827; color: @foreground; }
-button { min-height: 36px; border-radius: 10px; background-image: none; background-color: #29354e; color: @foreground; border: 1px solid alpha(@accent, 0.20); }
-button:hover { background-color: #3d527a; }
-button:focus-visible, entry:focus { outline: 2px solid @accent; outline-offset: 2px; }
-#submit { background-color: @accent; color: #101521; font-weight: 700; }
-#preview-banner { background-color: #263754; padding: 10px 16px; color: #d7e5ff; }
-#status { color: #ffb4bb; }
-#keyboard { padding: 12px; border-radius: 16px; background-color: alpha(@background, 0.95); }
-#keyboard button { min-width: 30px; min-height: 36px; padding: 4px; }
-#status { color: #b4c3df; }
+@define-color foreground #e6e6e6;
+@define-color keyboard_background #101010;
+@define-color keyboard_dark #2e3436;
+@define-color keyboard_text #eeeeec;
+@define-color keyboard_hilight #7a7a7a;
+@define-color keyboard_pressed #b0b0b0;
+window.decklock, #background { background-color: black; color: @foreground; }
+#veil { background-image: linear-gradient(to bottom, rgba(0,0,0,0.45), rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.65)); }
+#content { background: transparent; }
+#clock { color: white; font-size: 96px; font-weight: 300; text-shadow: 0 2px 12px rgba(0,0,0,0.8); }
+#date { color: white; font-size: 22px; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
+#avatar { border: 2px solid rgba(255,255,255,0.55); border-radius: 50%; margin-bottom: 8px; }
+#username { color: white; font-size: 20px; font-weight: bold; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
+#password { background-color: rgba(255,255,255,0.15); color: white; border: 1px solid alpha(@accent,0.8); border-radius: 20px; padding: 10px 18px; min-width: 260px; min-height: 30px; font-size: 16px; }
+#password:focus-within { border-color: @accent; outline: none; }
+#password placeholder { color: rgba(255,255,255,0.55); }
+button { background-image: none; box-shadow: none; text-shadow: none; }
+#submit { background-color: rgba(255,255,255,0.15); color: white; border: 1px solid alpha(@accent,0.8); border-radius: 20px; padding: 10px 14px; min-width: 0; min-height: 0; }
+#submit:hover { background-color: rgba(230,230,230,0.14); }
+#submit:disabled { opacity: 0.45; }
+#power button { background-color: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.20); border-radius: 18px; padding: 6px; margin: 4px; color: white; min-width: 0; min-height: 0; }
+#power button:hover { background-color: alpha(@accent,0.55); }
+#caps { color: #ffd166; font-size: 13px; font-weight: bold; text-shadow: 0 2px 8px rgba(0,0,0,0.9); }
+#status { color: #ffd9e2; font-size: 14px; text-shadow: 0 2px 8px rgba(0,0,0,0.9); }
+#preview-banner { color: rgba(255,255,255,0.55); font-size: 12px; margin: 12px; }
+#keyboard { background: transparent; padding: 0; }
+#keyboard button.key { background-color: @keyboard_background; border: 1px solid @keyboard_background; color: @keyboard_text; border-radius: 0; padding: 0; margin: 0; min-width: 0; min-height: 0; font-family: "DejaVu Sans"; font-size: 29.76px; font-weight: normal; }
+#keyboard button.key-dark { background-color: @keyboard_dark; }
+#keyboard button.key-hover, #keyboard button.key:hover, #keyboard button.modifier-active { background-color: @keyboard_hilight; color: @keyboard_text; }
 
-#veil { background-color: rgba(0, 0, 0, 0.35); }
-.key-hover, .modifier-active { background-color: #7aa2f7; color: #101521; }
-#caps { color: #ffd166; }
+#keyboard.ghost button.key { font-size: 48px; }
+#keyboard-idle-hint { background-color: alpha(@keyboard_text,0.15); }
+
+#keyboard button.key:active { background-color: @keyboard_pressed; }

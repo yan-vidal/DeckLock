@@ -1,6 +1,7 @@
 //! GUI integration check. Preview only; never authenticates or takes a lock.
 use decklock::{
     config::{Config, Theme},
+    controller::{ControllerEvent, Side},
     i18n::I18n,
     ui,
 };
@@ -34,7 +35,10 @@ fn main() {
     );
     app.register(None::<&gio::Cancellable>).unwrap();
     let settings = Rc::new(ui::Settings {
-        config: Config::default(),
+        config: Config {
+            system_keyboard: false,
+            ..Config::default()
+        },
         theme: Theme::load(None).unwrap(),
         strings: I18n::new(Some("pt-BR"), None).unwrap(),
         preview: true,
@@ -55,15 +59,15 @@ fn main() {
     key(&view, "A").emit_clicked();
     assert_eq!(view.entry.text(), "aA");
     view.entry.select_region(0, -1);
-    key(&view, "⌫").emit_clicked();
+    key(&view, "←").emit_clicked();
     assert_eq!(view.entry.text(), "");
     key(&view, "´").emit_clicked();
     key(&view, "e").emit_clicked();
     assert_eq!(view.entry.text(), "é");
-    key(&view, "⌫").emit_clicked();
+    key(&view, "←").emit_clicked();
     assert_eq!(view.entry.text(), "");
     key(&view, "q").emit_clicked();
-    key(&view, "↵").emit_clicked();
+    key(&view, "↲").emit_clicked();
     assert_eq!(view.entry.text(), "");
     assert!(
         !submitted.get(),
@@ -88,7 +92,71 @@ fn main() {
         weak_entry.upgrade().is_none(),
         "Destroyed preview retained password entry"
     );
+    let settings = Rc::new(ui::Settings {
+        config: Config {
+            controller_socket: Some("/unused-fake-socket".into()),
+            system_keyboard: false,
+            ..Config::default()
+        },
+        theme: Theme::load(None).unwrap(),
+        strings: I18n::new(Some("pt-BR"), None).unwrap(),
+        preview: true,
+        show_keyboard: true,
+        start_idle: false,
+        username: "Preview".into(),
+    });
+    let view = ui::build(&app, settings, Rc::new(|_| panic!("Preview authenticated")));
+    view.window.present();
+    while glib::MainContext::default().iteration(false) {}
+    assert_eq!(key(&view, "a").opacity(), 0.0);
+    (view.controller_event)(ControllerEvent::Pad {
+        side: Side::Left,
+        x: 0,
+        y: 0,
+    });
+    assert!(key(&view, "f").opacity() > 0.0);
+    (view.controller_event)(ControllerEvent::Button {
+        name: "LPADTOUCH".into(),
+        pressed: false,
+    });
+    assert_eq!(key(&view, "f").opacity(), 0.0);
+    view.entry.set_text("ab");
+    view.entry.set_position(-1);
+    (view.controller_event)(ControllerEvent::Button {
+        name: "LB".into(),
+        pressed: true,
+    });
+    assert_eq!(view.entry.text(), "a");
+    (view.controller_event)(ControllerEvent::Button {
+        name: "RB".into(),
+        pressed: true,
+    });
+    assert_eq!(view.entry.text(), "a ");
+    (view.controller_event)(ControllerEvent::Button {
+        name: "LGRIP".into(),
+        pressed: true,
+    });
+    key(&view, "A").emit_clicked();
+    key(&view, "A").emit_clicked();
+    assert_eq!(view.entry.text(), "a AA");
+    (view.controller_event)(ControllerEvent::Button {
+        name: "LGRIP".into(),
+        pressed: false,
+    });
+    key(&view, "a").emit_clicked();
+    assert_eq!(view.entry.text(), "a AAa");
+    (view.controller_event)(ControllerEvent::Disconnected);
+    assert_eq!(key(&view, "a").opacity(), 1.0);
+    assert!(!view.keyboard.has_css_class("ghost"));
+    let weak_entry = view.entry.downgrade();
+    view.window.destroy();
+    drop(view);
+    while glib::MainContext::default().iteration(false) {}
+    assert!(
+        weak_entry.upgrade().is_none(),
+        "Ghost preview retained entry"
+    );
     println!(
-        "PASS: clickable keyboard, shift, accents, Unicode deletion, preview isolation, widget cleanup"
+        "PASS: clickable keyboard, shift, accents, Unicode deletion, preview isolation, ghost opacity, controller bindings, fallback, widget cleanup"
     );
 }

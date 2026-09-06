@@ -22,14 +22,31 @@ adiada por decisão do usuário; não há runtime de plugins disfarçado de tema
   seleção/captura/liberação; uma conexão compartilhada entre monitores, direcionada
   à janela ativa. Sem Python para o funcionamento Rust de mouse/teclado.
 
+## Correção de integração e aparência
+
+O preview inicial não ativava sc-controller nem registrava o PID esperado por
+`deck-osk --toggle`, então o atalho abria o teclado Python separado. `--controller`
+agora resolve o socket padrão e registra a compatibilidade com esse atalho.
+`scripts/test-controller-shortcut.py` executa o launcher Python original usando
+HOME temporário e daemon simulado, verificando captura/liberação do teclado
+embutido e ausência de outro OSK.
+
+O tema padrão retorna à disposição do Python: relógio/data, credenciais, energia
+no canto superior e teclado inferior; modo mouse compacto e modo controle com
+transparência por proximidade. `scripts/import-python-theme` converte cores e
+fundo locais para um tema externo; nenhuma configuração do sc-controller é alterada.
+
 ## Evidência e limites
 
-21 testes unitários/de integração cobrem configuração, Fluent, teclado, estado,
+26 testes unitários/de integração cobrem configuração, Fluent, teclado, estado,
 helper de autenticação simulado e protocolo de controle simulado.
 `examples/preview_check.rs` verifica cliques GTK, Shift, acentos, exclusão Unicode,
 envio sem autenticação, energia desativada e liberação do campo ao destruir janela.
 
-Preview observado em Hyprland a 1920×1080, em português e inglês; campo de senha
+Previews Python/Rust comparados visualmente no monitor de 1280×800, nos modos
+normal e teclado mouse, com fundo e cores importados. A composição original foi
+restaurada; GTK3/GTK4 ainda têm pequenas diferenças de rasterização e métricas.
+Preview anterior observado em Hyprland a 1920×1080, em português e inglês; campo de senha
 testado com texto fictício; vídeo de teste de dois segundos observado após repetir.
 Não foi usado nenhum segredo real. Não há benchmark comparativo com Python.
 
@@ -48,10 +65,11 @@ normais. O teste de hotplug passou após a correção.
 
 - Teste no controle físico: ergonomia, cursores, calibração, reconexão e recuperação
   de disputa de captura. A conexão não se reconecta automaticamente nesta versão.
-- Efeito fantasma por proximidade e vibração do teclado Python; o Rust usa realce
-  da tecla selecionada, com teclado sólido.
-- Sincronização de layouts XKB, AltGr e layout SVG personalizado do teclado Python.
-  A grade virtual inicial é fixa e inclui ç/acentos; o teclado físico usa GTK.
+- Vibração do teclado Python e validação no controle físico do efeito fantasma
+  por proximidade, agora implementado no Rust.
+- Atualização dinâmica e seleção de grupos XKB, e SVGs personalizados em execução.
+  A geometria original foi incorporada. Na abertura, o teclado consulta o primeiro
+  grupo GDK e seus níveis Shift/AltGr; há mapa brasileiro embutido como alternativa.
 - Teclado Rust independente para digitar em outros aplicativos. `deck_osk.py`
   continua sendo a referência desse recurso.
 - Validação PAM com a configuração real da distribuição, integração de suspensão

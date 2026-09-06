@@ -36,7 +36,8 @@ Escape esconde o teclado aberto e, pressionado novamente, fecha a prévia.
 
 **Preview nunca autentica nem executa ações de energia.** Ele ignora o socket de
 controle salvo na configuração; captura de controle só acontece se você passar
-`--controller-socket /caminho/do/socket` explicitamente e abrir o teclado.
+`--controller` (socket padrão) ou `--controller-socket /caminho/do/socket`
+explicitamente e abrir o teclado.
 
 ```sh
 scripts/cargo-local run -- --preview --background /caminho/video.webm
@@ -49,6 +50,34 @@ Wayland por si só não garante esse suporte. O programa não implementa X11.
 Não substitua seu bloqueador já configurado antes de validar a versão Rust no seu
 ambiente. SIGTERM/SIGINT e fechamento de janela não pedem desbloqueio; uma saída
 inesperada pode deixar a sessão bloqueada, conforme a política do compositor.
+
+## Testar o controle e o visual Python
+
+```sh
+scripts/cargo-local run -- --preview --locale pt-BR --preview-fullscreen --controller
+```
+
+Com essa janela ativa, o atalho existente `deck-osk --toggle` alterna o teclado
+embutido. `--controller` registra temporariamente `scc/deck-lock.pid`; outra
+instância viva não é substituída. O daemon sc-controller continua externo.
+Fechar o teclado libera a captura. Preview sem `--controller` continua sendo o
+modo de teste com mouse/teclado, sem capturar o controle.
+
+O tema padrão reproduz a disposição do Python. Para importar também suas cores
+do sc-controller e um fundo da pasta `~/.config/midias/bloqueio`:
+
+```sh
+scripts/import-python-theme
+scripts/cargo-local run -- --preview --locale pt-BR --preview-fullscreen --controller --theme ~/.config/decklock/themes/python
+```
+
+A importação usa Python uma vez para gerar CSS/TOML editáveis; o Rust lê esses
+arquivos diretamente. Executar o importador novamente sobrescreve o tema gerado.
+O importador escolhe o primeiro fundo por nome; edite `background` no TOML para
+escolher outro. O teclado virtual usa a geometria do SVG original e lê o primeiro grupo do mapa
+GDK na abertura (incluindo níveis Shift/AltGr). Mudanças de grupo/layout durante
+a execução ainda exigem reabrir. `system_keyboard = false` na configuração usa
+o mapa brasileiro embutido.
 
 ## Personalização e idiomas
 
