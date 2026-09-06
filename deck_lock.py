@@ -1137,11 +1137,15 @@ def main():
         Gdk.Display.get_default().sync()
         Gtk.main_quit()
 
-    # Valvula de escape. Sem isto, matar o processo deixa a SESSAO travada:
-    # o compositor nao desfaz a trava sozinho, e sem unlock_and_destroy resta
-    # ir a um TTY. Nao enfraquece o bloqueio de forma relevante - quem
-    # consegue mandar sinal a este processo ja e este usuario, e ja alcanca o
-    # que a tela protege.
+    # Valvula de escape, igual a do gtklock - medido: SIGTERM nele devolve a
+    # sessao, SIGKILL nao (e a sessao fica travada, como o protocolo manda).
+    #
+    # Isso e o que separa os dois casos. Um crash NAO destrava: o handler so
+    # roda num SIGTERM limpo, e quem derruba o processo por bug ou por
+    # SIGKILL continua sem entrar. O que a valvula concede e a quem ja tem
+    # shell como este usuario - por SSH, por exemplo -, que passa a poder
+    # destravar a tela fisica. Em troca, matar o bloqueador deixa de prender
+    # a sessao.
     _registrar_sinal(signal.SIGTERM, destravar)
 
     def cobrir(monitor):
