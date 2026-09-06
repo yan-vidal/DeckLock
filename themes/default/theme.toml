@@ -1,0 +1,12 @@
+name = "DeckLock Midnight"
+css = "style.css"
+# Optional local image/video: background = "wallpaper.png"
+
+[layout]
+alignment = "center" # start, center, end
+arrangement = "vertical" # vertical, horizontal
+spacing = 16
+padding = 32
+clock_visible = true
+avatar_visible = true
+keyboard_scale = 1.0

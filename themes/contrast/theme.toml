@@ -1,0 +1,11 @@
+name = "DeckLock High Contrast"
+css = "style.css"
+
+[layout]
+alignment = "center"
+arrangement = "vertical"
+spacing = 20
+padding = 32
+clock_visible = true
+avatar_visible = false
+keyboard_scale = 1.2

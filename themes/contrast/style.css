@@ -1,0 +1,15 @@
+window.decklock { background-color: #000000; color: #ffffff; }
+#content { background-color: #000000; padding: 24px; }
+#clock { font-size: 64px; font-weight: 700; }
+#date, #username { font-size: 24px; }
+#password, button { background-image: none; background-color: #000000; color: #ffffff; border: 2px solid #ffffff; border-radius: 4px; min-height: 44px; }
+button:hover, #submit { background-color: #ffffff; color: #000000; }
+button:focus-visible, entry:focus { outline: 3px solid #ffff00; outline-offset: 3px; }
+#preview-banner { padding: 12px; background-color: #ffffff; color: #000000; }
+#status { color: #ffff00; font-size: 18px; }
+#keyboard { padding: 12px; }
+#keyboard button { min-width: 36px; padding: 6px; }
+
+#veil { background-color: rgba(0, 0, 0, 0.35); }
+.key-hover, .modifier-active { background-color: #7aa2f7; color: #101521; }
+#caps { color: #ffd166; }

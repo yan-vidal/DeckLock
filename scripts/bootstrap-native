@@ -1,0 +1,34 @@
+#!/bin/sh
+# Build the pinned native dependency locally; never writes into /usr.
+set -eu
+project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$project_dir"
+tests=false
+case "${1:-}" in
+    --tests) tests=true ;;
+    "") ;;
+    *) echo "Usage: scripts/bootstrap-native [--tests]" >&2; exit 2 ;;
+esac
+archive=.deps/gtk4-layer-shell-1.3.0.tar.gz
+mkdir -p .deps
+if [ ! -f "$archive" ]; then
+    curl -fL https://github.com/wmww/gtk4-layer-shell/archive/refs/tags/v1.3.0.tar.gz -o "$archive"
+fi
+echo "1ebb01ab14e98afd1727f68f64981c37bd23305b1f131f5667c02b94cf593192  $archive" | sha256sum -c -
+if [ ! -d .deps/gtk4-layer-shell-1.3.0 ]; then
+    tar -xzf "$archive" -C .deps
+fi
+build=.deps/layer-build-1.3
+if [ -f "$build/build.ninja" ]; then
+    meson configure "$build" -Dtests="$tests" -Dsmoke-tests=false
+else
+    meson setup "$build" .deps/gtk4-layer-shell-1.3.0 \
+        --prefix="$project_dir/.deps/install" -Dintrospection=false -Dvapi=false \
+        -Ddocs=false -Dexamples=false -Dtests="$tests" -Dsmoke-tests=false
+fi
+# Explicit native targets avoid compiling unrelated upstream tests/examples.
+ninja -C "$build" src/libgtk4-layer-shell.so.1.3.0 src/liblayer-shell-preload.so
+meson install -C "$build" --no-rebuild
+if [ "$tests" = true ]; then
+    ninja -C "$build" test/mock-server/mock-server
+fi

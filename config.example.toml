@@ -1,0 +1,8 @@
+# Copy to ~/.config/decklock/config.toml. Paths resolve beside this file.
+locale = "pt-BR"
+pam_service = "login"
+idle_seconds = 600
+# theme = "themes/my-theme"
+# background = "media/lock"       # File or directory of images/videos
+# idle_background = "media/idle"
+# controller_socket = "/absolute/path/to/sc-controller/socket"
