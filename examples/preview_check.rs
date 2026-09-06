@@ -80,6 +80,10 @@ fn main() {
     assert_eq!(view.entry.text(), "é");
     key(&view, "←").emit_clicked();
     assert_eq!(view.entry.text(), "");
+    key(&view, "Alt").emit_clicked();
+    key(&view, "¹").emit_clicked();
+    assert_eq!(view.entry.text(), "¹");
+    key(&view, "←").emit_clicked();
     key(&view, "q").emit_clicked();
     key(&view, "↲").emit_clicked();
     assert_eq!(view.entry.text(), "");

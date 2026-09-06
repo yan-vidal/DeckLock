@@ -1,3 +1,6 @@
+> Documento histórico da implementação Python (`7459bb1`). Para o Rust atual,
+> consulte [o estado da migração](rust-migration.md) e o README.
+
 # Tela de bloqueio com teclado
 
 Data: 2026-09-01

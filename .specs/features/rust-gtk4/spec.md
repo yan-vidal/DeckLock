@@ -24,7 +24,7 @@ themes, extensive customization, localization from the start. Lua/plugins deferr
   degrades gracefully and does not kill another daemon.
 - R7: One lock surface per output, monitor hotplug, explicit unsupported-
   compositor errors. Real-lock validation is separate from preview validation.
-- R8: Keep Python reference operational during migration. Record parity gaps
+- R8: Keep Python reference in Git history after the authorized Rust promotion. Record parity gaps
   honestly, including standalone OSK, generic layout synchronization and device UAT.
 
 ## Deferred

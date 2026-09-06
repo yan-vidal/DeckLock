@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preview-only regression: existing Python shortcut routes to Rust, fake daemon only."""
+"""Preview-only regression: Rust shortcut toggles the embedded keyboard, fake daemon only."""
 import os
 from pathlib import Path
 import queue
@@ -55,8 +55,8 @@ with tempfile.TemporaryDirectory(prefix="decklock-shortcut-") as tmp:
         pidfile = scc / "deck-lock.pid"
         wait_for(pidfile.exists, "Rust did not register the shortcut")
         assert pidfile.read_text() == str(proc.pid)
-        # Execute the original dispatcher with isolated HOME and a fake daemon.
-        subprocess.run(["python3", str(ROOT / "deck_osk.py"), "--toggle"], env=env, check=True, timeout=10)
+        # Execute the Rust launcher with isolated HOME and a fake daemon.
+        subprocess.run([str(ROOT / "target/debug/decklock"), "--toggle-keyboard"], env=env, check=True, timeout=10)
         seen = []
 
         def captured():
@@ -66,7 +66,7 @@ with tempfile.TemporaryDirectory(prefix="decklock-shortcut-") as tmp:
 
         wait_for(captured, "Shortcut did not show/capture the embedded keyboard")
         assert not (scc / "ghost-osk.pid").exists(), "Shortcut spawned a separate OSK"
-        subprocess.run(["python3", str(ROOT / "deck_osk.py"), "--toggle"], env=env, check=True, timeout=10)
+        subprocess.run([str(ROOT / "target/debug/decklock"), "--toggle-keyboard"], env=env, check=True, timeout=10)
 
         def released():
             while not messages.empty():
@@ -77,7 +77,7 @@ with tempfile.TemporaryDirectory(prefix="decklock-shortcut-") as tmp:
         assert proc.poll() is None
         assert errors.empty(), "Fake daemon failed"
         assert not (scc / "ghost-osk.pid").exists()
-        print("PASS: Python shortcut toggles Rust embedded keyboard; fake capture/release; no separate OSK")
+        print("PASS: Rust shortcut toggles embedded keyboard; fake capture/release; no separate OSK")
     finally:
         proc.terminate()
         proc.wait(timeout=5)

@@ -36,7 +36,15 @@ impl Keyboard {
         let alphabetic = levels.first()?.0.chars().all(char::is_alphabetic);
         let shift = self.shift ^ (self.caps && alphabetic);
         let level = usize::from(shift) + if self.altgr { 2 } else { 0 };
-        levels.get(level).or_else(|| levels.get(usize::from(shift)))
+        levels.get(level).or_else(|| {
+            // Two-level layouts (e.g. plain US) have no AltGr symbols. Use the
+            // embedded supplementary layer instead of silently repeating level 0.
+            if self.altgr && level_three(key.normal).is_some() {
+                None
+            } else {
+                levels.get(usize::from(shift))
+            }
+        })
     }
     pub fn label(&self, key: &Key) -> String {
         if let Some((text, _)) = self.system_level(key) {
@@ -853,6 +861,32 @@ mod tests {
             width: 1,
         }
     }
+    #[test]
+    fn alt_uses_supplementary_symbols_when_system_has_only_two_levels() {
+        let mut model = Keyboard::default();
+        model
+            .system_levels
+            .insert("1", vec![("1".into(), false), ("!".into(), false)]);
+        let key = Key {
+            normal: "1",
+            shifted: "!",
+            width: 1,
+        };
+        model.altgr = true;
+        assert_eq!(model.label(&key), "¹");
+        assert_eq!(model.press(&key), Action::Insert("¹".into()));
+        model.system_levels.insert(
+            "1",
+            vec![
+                ("1".into(), false),
+                ("!".into(), false),
+                ("custom".into(), false),
+            ],
+        );
+        model.altgr = true;
+        assert_eq!(model.label(&key), "custom");
+    }
+
     #[test]
     fn double_shift_latches_until_next_shift_and_slow_taps_do_not() {
         let mut model = Keyboard::default();

@@ -1,9 +1,10 @@
 # Estado da migração Rust
 
-Data: 2026-09-06. Branch: `feat/rust-gtk4`.
+Data: 2026-09-06. Integração na branch principal `main`.
 
-Esta é a primeira base funcional Rust/GTK4 para Wayland. Ela não substitui ainda
-todas as funções da referência Python. X11 foi removido do escopo e a execução de plugins/Lua foi
+Rust/GTK4 é agora a implementação principal para Wayland. Os quatro módulos
+Python foram retirados da árvore atual; permanecem no histórico em `7459bb1`.
+Ainda existem diferenças funcionais em relação à referência Python. X11 foi removido do escopo e a execução de plugins/Lua foi
 adiada por decisão do usuário; não há runtime de plugins disfarçado de tema.
 
 ## Implementado
@@ -27,9 +28,10 @@ adiada por decisão do usuário; não há runtime de plugins disfarçado de tema
 O preview inicial não ativava sc-controller nem registrava o PID esperado por
 `deck-osk --toggle`, então o atalho abria o teclado Python separado. `--controller`
 agora resolve o socket padrão e registra a compatibilidade com esse atalho.
-`scripts/test-controller-shortcut.py` executa o launcher Python original usando
-HOME temporário e daemon simulado, verificando captura/liberação do teclado
-embutido e ausência de outro OSK.
+`scripts/test-controller-shortcut.py` executa agora o launcher Rust
+`--toggle-keyboard` com HOME temporário e daemon simulado, verificando
+captura/liberação do teclado embutido e ausência de outro OSK. A compatibilidade
+com o launcher Python foi verificada antes da retirada dos módulos.
 
 O tema padrão retorna à disposição do Python: relógio/data, credenciais, energia
 no canto superior e teclado inferior; modo mouse compacto e modo controle com
@@ -45,7 +47,7 @@ após soltar. Os dois defeitos foram reproduzidos nos testes antes da correção
 
 ## Evidência e limites
 
-27 testes unitários/de integração cobrem configuração, Fluent, teclado, estado,
+28 testes unitários/de integração cobrem configuração, Fluent, teclado, estado,
 helper de autenticação simulado e protocolo de controle simulado.
 `examples/preview_check.rs` verifica cliques GTK, Shift, acentos, exclusão Unicode,
 envio sem autenticação, energia desativada e liberação do campo ao destruir janela.
@@ -77,8 +79,8 @@ normais. O teste de hotplug passou após a correção.
 - Atualização dinâmica e seleção de grupos XKB, e SVGs personalizados em execução.
   A geometria original foi incorporada. Na abertura, o teclado consulta o primeiro
   grupo GDK e seus níveis Shift/AltGr; há mapa brasileiro embutido como alternativa.
-- Teclado Rust independente para digitar em outros aplicativos. `deck_osk.py`
-  continua sendo a referência desse recurso.
+- Teclado Rust independente para digitar em outros aplicativos. A versão Python
+  no histórico continua sendo a referência desse recurso.
 - Validação PAM com a configuração real da distribuição, integração de suspensão
   e ações de energia reais; não foi instalada/configurada nenhuma delas.
 - UAT de bloqueio em Hyprland/Sway reais, escalas/resoluções diversas e vídeo com
@@ -96,5 +98,8 @@ scripts/cargo-local run --example preview_check
 python3 scripts/test-lock-isolated.py
 ```
 
-O código Python original não foi alterado pela migração. Não ativar o Rust como
+O código Python original pode ser consultado no histórico (`7459bb1`). Não ativar o Rust como
 bloqueador da sessão antes de UAT explícita no ambiente de destino.
+
+Alt virtual: quando o mapa GDK tem somente dois níveis, usa a camada suplementar
+embutida em vez de repetir o nível normal. AltGr nativo continua tendo prioridade.

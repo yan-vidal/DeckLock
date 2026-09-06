@@ -3,8 +3,9 @@
 Tela de bloqueio personalizável para Wayland, com teclado virtual embutido,
 imagens/vídeos de fundo e suporte opcional a controle.
 
-Esta branch contém a **primeira implementação Rust + GTK4**, em desenvolvimento.
-A versão Python continua no repositório como referência. O preview foi observado
+A implementação principal é **Rust + GTK4**, em desenvolvimento.
+Ela substitui a implementação Python; a última versão Python permanece no
+[histórico do Git](https://github.com/yan-vidal/DeckLock/tree/7459bb1). O preview foi observado
 no Hyprland; bloqueio e hotplug foram testados num compositor Wayland simulado.
 A autenticação PAM na sessão real e a paridade completa do controle ainda precisam
 de validação. Consulte [o estado da migração](docs/rust-migration.md).
@@ -58,7 +59,10 @@ scripts/cargo-local run -- --preview --locale pt-BR --preview-fullscreen --contr
 ```
 
 Com essa janela ativa, o atalho existente `deck-osk --toggle` alterna o teclado
-embutido. `--controller` registra temporariamente `scc/deck-lock.pid`; outra
+embutido. Para novos atalhos, use `decklock --toggle-keyboard` (ou
+`scripts/cargo-local run -- --toggle-keyboard` durante o desenvolvimento), sem
+Python. O atalho antigo instalado no seu desktop continua compatível.
+`--controller` registra temporariamente `scc/deck-lock.pid`; outra
 instância viva não é substituída. O daemon sc-controller continua externo.
 Fechar o teclado libera a captura. Preview sem `--controller` continua sendo o
 modo de teste com mouse/teclado, sem capturar o controle.
@@ -77,7 +81,8 @@ O importador escolhe o primeiro fundo por nome; edite `background` no TOML para
 escolher outro. O teclado virtual usa a geometria do SVG original e lê o primeiro grupo do mapa
 GDK na abertura (incluindo níveis Shift/AltGr). Mudanças de grupo/layout durante
 a execução ainda exigem reabrir. `system_keyboard = false` na configuração usa
-o mapa brasileiro embutido.
+o mapa brasileiro embutido. Se o mapa do sistema não tiver níveis AltGr,
+o Alt virtual usa os símbolos suplementares desse mapa embutido.
 
 ## Personalização e idiomas
 

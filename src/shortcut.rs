@@ -59,6 +59,44 @@ pub fn cooldown(dir: &Path) {
     }
 }
 
+/// Standalone launcher: no GTK initialization, Python, or controller capture.
+pub fn toggle() -> Result<(), String> {
+    let dir = config_dir()
+        .ok_or("Cannot locate DeckLock configuration")?
+        .join("scc");
+    if fs::metadata(dir.join("ghost-osk.cooldown"))
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|elapsed| elapsed < std::time::Duration::from_secs(1))
+    {
+        return Ok(());
+    }
+    let pid: i32 = fs::read_to_string(dir.join("deck-lock.pid"))
+        .map_err(|_| "No running DeckLock instance")?
+        .trim()
+        .parse()
+        .map_err(|_| "Invalid DeckLock PID")?;
+    if pid <= 0 {
+        return Err("Invalid DeckLock PID".into());
+    }
+    let executable =
+        fs::read_link(format!("/proc/{pid}/exe")).map_err(|_| "DeckLock is no longer running")?;
+    let name = executable
+        .file_name()
+        .and_then(|p| p.to_str())
+        .unwrap_or_default();
+    if !matches!(name, "decklock" | "decklock (deleted)") {
+        return Err("PID does not belong to DeckLock".into());
+    }
+    // SAFETY: positive PID verified against the Rust executable; SIGUSR1 only
+    // toggles the embedded keyboard and never unlocks the session.
+    if unsafe { libc::kill(pid, libc::SIGUSR1) } != 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

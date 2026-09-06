@@ -48,6 +48,9 @@ struct Args {
     /// Enable sc-controller at its default socket and route deck-osk --toggle here.
     #[arg(long)]
     controller: bool,
+    /// Toggle the embedded keyboard of an already running DeckLock instance.
+    #[arg(long, conflicts_with_all = ["lock", "preview"])]
+    toggle_keyboard: bool,
     /// Validate configuration/catalogs without opening a display.
     #[arg(long, conflicts_with = "lock")]
     check_config: bool,
@@ -73,6 +76,9 @@ fn main() {
 }
 
 fn run(args: Args) -> Result<(), String> {
+    if args.toggle_keyboard {
+        return shortcut::toggle();
+    }
     let default_config = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".config")))
@@ -242,7 +248,12 @@ fn run(args: Args) -> Result<(), String> {
     });
     let signal_views = views.clone();
     glib_unix::unix_signal_add_local(libc::SIGUSR1, move || {
-        if let Some(view) = signal_views.borrow().iter().find(|v| v.window.is_active()) {
+        let views = signal_views.borrow();
+        if let Some(view) = views
+            .iter()
+            .find(|v| v.window.is_active())
+            .or_else(|| views.first())
+        {
             view.keyboard.set_visible(!view.keyboard.is_visible());
         }
         glib::ControlFlow::Continue
