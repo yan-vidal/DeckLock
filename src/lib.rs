@@ -9,3 +9,6 @@ pub mod session;
 pub mod settings;
 pub mod shortcut;
 pub mod ui;
+
+pub mod library;
+pub mod media_editor;

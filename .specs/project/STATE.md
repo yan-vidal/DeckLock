@@ -53,3 +53,16 @@ with no power callbacks in preview. 32 tests, clippy/fmt and GTK preview/setting
 checks passed. English README GIF uses supplied Osaka footage with real mouse
 clicks, cursor, Caps Lock, password visibility and power tooltips. Capture helpers
 are development-only; no real power action, PAM or desktop lock was exercised.
+
+2026-09-07: media library/pool cards added for normal and idle backgrounds.
+Config keeps optional explicit pools (including intentionally empty pools), separate
+photo intervals, idle_enabled and idle_reuse_background; legacy paths still load.
+Library imports run off the GTK thread and use create_new to avoid overwrites; pool
+removal never deletes media. Default packs live outside the executable, with the
+empty author-supplied pack scaffold in assets/media. Imports use XDG_DATA_HOME/
+decklock/library; bundled packs use decklock/media. See assets/media/README.md.
+Selection chooses video-only looping or image-only slideshow per lock; GTK Stack
+crossfades photos. Reuse-idle preserves the current renderer and hides controls.
+35 core tests, clippy/fmt, settings/keyboard/media GUI checks and isolated protocol
+checks passed. Real editor screenshots are settings-library.png and settings-idle.png.
+Original default artwork and its credits/license are awaiting the user's files.

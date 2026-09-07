@@ -19,12 +19,12 @@ Caps Lock indicator, password visibility and power tooltips. Fictitious password
 scripts/cargo-local run -- --settings
 ```
 
-Choose a theme and background, set the language, move the clock and credentials,
+Choose a theme and background pool, set the language, move the clock and credentials,
 change spacing and keyboard scale, and adjust idle time. **Open preview** displays
 your current edits without saving. **Save** writes your user configuration without
 changing the theme files. The editor supports English and Brazilian Portuguese.
 
-![Native Rust and GTK4 settings window](docs/assets/settings.png)
+![Native Rust and GTK4 settings window](docs/assets/settings-library.png)
 
 This first editor uses controls for existing layout options. Freeform dragging,
 live theme reload and plugins are future work.
@@ -129,6 +129,7 @@ scripts/cargo-local test --locked
 scripts/cargo-local fmt --all -- --check
 scripts/cargo-local clippy --locked --all-targets -- -D warnings
 scripts/cargo-local build --locked
+scripts/cargo-local run --locked --example media_check
 scripts/cargo-local run --locked --example settings_check
 scripts/cargo-local run --locked --example preview_check
 python3 scripts/test-controller-shortcut.py
@@ -145,8 +146,27 @@ On startup DeckLock creates `~/.config/midias/bloqueio/{fotos,videos}` and
 `~/.config/midias/ocioso/{fotos,videos}` (respecting `XDG_CONFIG_HOME`).
 It chooses a supported image or video from these folders when no background is
 specified. Explicit configuration takes priority over the theme and default folders.
-An empty idle folder falls back to the normal background. The settings editor can
-select separate normal and idle files; TOML paths can also name a media folder.
+The editor has independent library/pool cards for normal and idle backgrounds.
+Use the Images/Videos tabs, select a file and **Add →**. **Remove from pool** does
+not delete the library file. **Import media** copies files into
+`$XDG_DATA_HOME/decklock/library/{images,videos}` without overwriting existing names.
+
+Each lock selects a random item from the pool: a video loops for that session;
+a photo starts a crossfading slideshow of only that pool's photos, at the configured
+interval. Normal and idle pools have independent intervals. An empty idle pool
+keeps the normal background. An explicitly empty normal pool has no media.
+Existing single-file/folder configurations remain supported until a pool overrides them.
+
+**Keep background and only hide the interface** hides the idle media card and
+preserves ongoing playback. **Disable idle mode** hides that card and disables the
+reuse/time controls, preserving their saved preferences for re-enabling later.
+
+![Independent idle media settings](docs/assets/settings-idle.png)
+
+Default artwork is distributed as ordinary files alongside the application, not
+inside the Rust binary. See [media pack layout and credits](assets/media/README.md).
+The prepared pack is empty until original artwork and its redistribution terms
+are supplied. User imports and default packs are kept separate.
 
 Idle time controls DeckLock's own visual idle mode, not system suspension.
 Power buttons delegate to `systemctl suspend`, `hibernate`, `reboot`, and `poweroff`;

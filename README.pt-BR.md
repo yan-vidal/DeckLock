@@ -24,7 +24,7 @@ escala do teclado e tempo de inatividade. **Abrir preview** mostra as alteraçõ
 atuais sem salvar. **Salvar** grava sua configuração sem modificar os arquivos do
 tema. A interface está disponível em português e inglês.
 
-![Janela nativa de configurações em Rust e GTK4](docs/assets/settings.png)
+![Janela nativa de configurações em Rust e GTK4](docs/assets/settings-library.png)
 
 Esta primeira interface oferece controles para as opções de layout existentes.
 Arrastar elementos livremente, recarregar temas ao editar e plugins ficam para
@@ -130,6 +130,7 @@ scripts/cargo-local test --locked
 scripts/cargo-local fmt --all -- --check
 scripts/cargo-local clippy --locked --all-targets -- -D warnings
 scripts/cargo-local build --locked
+scripts/cargo-local run --locked --example media_check
 scripts/cargo-local run --locked --example settings_check
 scripts/cargo-local run --locked --example preview_check
 python3 scripts/test-controller-shortcut.py
@@ -146,8 +147,29 @@ Ao iniciar, o DeckLock cria `~/.config/midias/bloqueio/{fotos,videos}` e
 `~/.config/midias/ocioso/{fotos,videos}` (respeitando `XDG_CONFIG_HOME`).
 Sem um fundo definido, seleciona uma imagem ou vídeo dessas pastas. A configuração
 explícita tem prioridade sobre o tema e as pastas padrão. Se a pasta ociosa estiver
-vazia, usa o fundo normal. O editor permite selecionar arquivos separados para
-bloqueio e idle; caminhos no TOML também podem indicar uma pasta de mídia.
+vazia, usa o fundo normal.
+
+O editor possui cards independentes para bloqueio e idle, divididos entre biblioteca
+e pool. Use as abas Imagens/Vídeos, selecione uma mídia e clique em **Adicionar →**.
+**Remover do pool** não apaga o arquivo. **Importar mídias** copia os arquivos para
+`$XDG_DATA_HOME/decklock/library/{images,videos}`, sem sobrescrever nomes existentes.
+
+Cada bloqueio sorteia uma mídia do pool: vídeo permanece em loop nessa sessão;
+foto inicia um slideshow com transição suave entre apenas as fotos daquele pool,
+no intervalo configurado. Bloqueio e idle possuem intervalos independentes.
+Pool ocioso vazio mantém o fundo normal; pool normal explicitamente vazio fica sem
+mídia. Configurações antigas com arquivo/pasta continuam aceitas até definir um pool.
+
+**Manter o fundo e apenas ocultar a interface** oculta o card de mídias ociosas e
+preserva a reprodução. **Desativar modo ocioso** oculta o card e desabilita as opções
+de reutilização e tempo, guardando as preferências para quando reativar o idle.
+
+![Configurações independentes de mídia ociosa](docs/assets/settings-idle.png)
+
+As mídias padrão acompanham o programa como arquivos, fora do binário Rust.
+Veja a [estrutura do pacote e os créditos](assets/media/README.md). O pacote está
+preparado e vazio, aguardando os arquivos autorais e seus termos de redistribuição.
+As importações do usuário ficam separadas das mídias do pacote.
 
 O tempo ocioso controla o modo visual do próprio DeckLock, não a suspensão do sistema.
 Os botões chamam `systemctl suspend`, `hibernate`, `reboot` e `poweroff`; permissões

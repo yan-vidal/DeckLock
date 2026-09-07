@@ -8,6 +8,12 @@ pub struct Config {
     pub locale: Option<String>,
     pub pam_service: String,
     pub idle_seconds: u32,
+    pub idle_enabled: bool,
+    pub idle_reuse_background: bool,
+    pub background_pool: Option<Vec<PathBuf>>,
+    pub idle_pool: Option<Vec<PathBuf>>,
+    pub slideshow_seconds: u32,
+    pub idle_slideshow_seconds: u32,
     pub background: Option<PathBuf>,
     pub idle_background: Option<PathBuf>,
     pub controller_socket: Option<PathBuf>,
@@ -22,6 +28,12 @@ impl Default for Config {
             locale: None,
             pam_service: "login".into(),
             idle_seconds: 600,
+            idle_enabled: true,
+            idle_reuse_background: false,
+            background_pool: None,
+            idle_pool: None,
+            slideshow_seconds: 30,
+            idle_slideshow_seconds: 30,
             background: None,
             idle_background: None,
             controller_socket: None,
@@ -51,6 +63,14 @@ impl Config {
         {
             *path = resolve(base, path);
         }
+        for paths in [&mut config.background_pool, &mut config.idle_pool]
+            .into_iter()
+            .flatten()
+        {
+            for path in paths {
+                *path = resolve(base, path);
+            }
+        }
         Ok(config)
     }
     /// Preserve the original media folders and explicit config/theme precedence.
@@ -75,6 +95,11 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        if !(1..=86400).contains(&self.slideshow_seconds)
+            || !(1..=86400).contains(&self.idle_slideshow_seconds)
+        {
+            return Err("Slideshow intervals must be between 1 and 86400 seconds".into());
+        }
         if !(1..=86400).contains(&self.idle_seconds) {
             return Err("idle_seconds must be between 1 and 86400".into());
         }
@@ -236,6 +261,25 @@ fn read_text(path: &Path) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pools_round_trip_and_resolve_relative_media() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "background_pool = ['a.png', 'b.mp4']\nidle_pool = []\nidle_enabled = false\nidle_reuse_background = true\nslideshow_seconds = 12\n").unwrap();
+        let config = super::Config::load(Some(&path)).unwrap();
+        assert_eq!(
+            config.background_pool.as_ref().unwrap()[0],
+            dir.path().join("a.png")
+        );
+        assert_eq!(config.idle_pool, Some(vec![]));
+        assert!(!config.idle_enabled);
+        assert!(config.idle_reuse_background);
+        config.save(&path).unwrap();
+        assert_eq!(
+            super::Config::load(Some(&path)).unwrap().slideshow_seconds,
+            12
+        );
+    }
     #[test]
     fn media_defaults_create_folders_and_preserve_overrides() {
         let dir = tempfile::tempdir().unwrap();

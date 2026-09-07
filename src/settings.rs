@@ -155,7 +155,7 @@ pub fn build(
     let window = gtk::ApplicationWindow::builder()
         .application(app)
         .title(strings.text("settings-title"))
-        .default_width(760)
+        .default_width(1000)
         .default_height(720)
         .build();
     let root = gtk::Box::new(gtk::Orientation::Vertical, 16);
@@ -190,13 +190,27 @@ pub fn build(
         &strings.text("settings-theme"),
         &chooser(&window, &theme_path, true, &strings),
     );
-    let background = path_entry(original.background.as_deref(), "settings-background");
-    background.set_placeholder_text(Some(&strings.text("settings-theme-background")));
-    row(
-        &form,
-        &strings.text("settings-background"),
-        &chooser(&window, &background, false, &strings),
+    let catalog = crate::media_editor::Catalog::new(crate::library::catalog(&original, &theme));
+    let background = crate::media_editor::build(
+        &window,
+        catalog.clone(),
+        original
+            .background_pool
+            .clone()
+            .unwrap_or_else(|| crate::library::pool(&original, &theme, false)),
+        strings.clone(),
+        "settings-background",
     );
+    form.append(&gtk::Label::new(Some(&strings.text("settings-background"))));
+    form.append(&background.widget);
+    let slideshow = spin(
+        original.slideshow_seconds as f64,
+        1.0,
+        86400.0,
+        1.0,
+        "settings-slideshow",
+    );
+    row(&form, &strings.text("media-interval"), &slideshow);
     let language = combo(
         &[
             ("auto", strings.text("settings-system")),
@@ -260,15 +274,14 @@ pub fn build(
     let system_keyboard = gtk::CheckButton::with_label(&strings.text("settings-system-keyboard"));
     system_keyboard.set_active(original.system_keyboard);
     form.append(&system_keyboard);
-    let idle_background = path_entry(
-        original.idle_background.as_deref(),
-        "settings-idle-background",
-    );
-    row(
-        &form,
-        &strings.text("settings-idle-background"),
-        &chooser(&window, &idle_background, false, &strings),
-    );
+    let disable_idle = gtk::CheckButton::with_label(&strings.text("idle-disable"));
+    disable_idle.set_widget_name("settings-disable-idle");
+    disable_idle.set_active(!original.idle_enabled);
+    form.append(&disable_idle);
+    let reuse = gtk::CheckButton::with_label(&strings.text("idle-reuse"));
+    reuse.set_widget_name("settings-reuse-background");
+    reuse.set_active(original.idle_reuse_background);
+    form.append(&reuse);
     let idle = spin(
         original.idle_seconds as f64,
         1.0,
@@ -277,6 +290,57 @@ pub fn build(
         "settings-idle",
     );
     row(&form, &strings.text("settings-idle"), &idle);
+    let idle_group = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    idle_group.set_widget_name("settings-idle-media");
+    form.append(&idle_group);
+    idle_group.append(&gtk::Label::new(Some(
+        &strings.text("settings-idle-background"),
+    )));
+    let idle_background = crate::media_editor::build(
+        &window,
+        catalog,
+        original
+            .idle_pool
+            .clone()
+            .unwrap_or_else(|| crate::library::pool(&original, &theme, true)),
+        strings.clone(),
+        "settings-idle-background",
+    );
+    idle_group.append(&idle_background.widget);
+    let idle_slideshow = spin(
+        original.idle_slideshow_seconds as f64,
+        1.0,
+        86400.0,
+        1.0,
+        "settings-idle-slideshow",
+    );
+    row(
+        &idle_group,
+        &strings.text("media-interval"),
+        &idle_slideshow,
+    );
+    let (weak_disable, weak_reuse, weak_group, weak_idle) = (
+        disable_idle.downgrade(),
+        reuse.downgrade(),
+        idle_group.downgrade(),
+        idle.downgrade(),
+    );
+    let update: Rc<dyn Fn()> = Rc::new(move || {
+        if let (Some(disable), Some(reuse), Some(group), Some(idle)) = (
+            weak_disable.upgrade(),
+            weak_reuse.upgrade(),
+            weak_group.upgrade(),
+            weak_idle.upgrade(),
+        ) {
+            reuse.set_sensitive(!disable.is_active());
+            idle.set_sensitive(!disable.is_active());
+            group.set_visible(!disable.is_active() && !reuse.is_active());
+        }
+    });
+    update();
+    let changed = update.clone();
+    disable_idle.connect_toggled(move |_| changed());
+    reuse.connect_toggled(move |_| update());
     let controller = gtk::CheckButton::with_label(&strings.text("settings-controller"));
     controller.set_active(original.controller_socket.is_some());
     form.append(&controller);
@@ -300,8 +364,12 @@ pub fn build(
     let read: Rc<dyn Fn() -> Result<Config, String>> = Rc::new(move || {
         let mut config = original.clone();
         config.theme = selected_path(&theme_path, &base);
-        config.background = selected_path(&background, &base);
-        config.idle_background = selected_path(&idle_background, &base);
+        config.background_pool = Some(background.paths.borrow().clone());
+        config.idle_pool = Some(idle_background.paths.borrow().clone());
+        config.slideshow_seconds = slideshow.value_as_int() as u32;
+        config.idle_slideshow_seconds = idle_slideshow.value_as_int() as u32;
+        config.idle_enabled = !disable_idle.is_active();
+        config.idle_reuse_background = reuse.is_active();
         config.locale = language
             .active_id()
             .filter(|id| id != "auto")

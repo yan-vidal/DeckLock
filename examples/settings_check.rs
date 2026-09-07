@@ -65,6 +65,27 @@ fn main() {
     assert_eq!(layout.padding, 48);
     assert_eq!(layout.alignment, Alignment::End);
     assert!(!layout.clock_visible);
+    let disable = get("settings-disable-idle")
+        .downcast::<gtk::CheckButton>()
+        .unwrap();
+    let reuse = get("settings-reuse-background")
+        .downcast::<gtk::CheckButton>()
+        .unwrap();
+    let media = get("settings-idle-media");
+    assert!(media.is_visible());
+    reuse.set_active(true);
+    assert!(!media.is_visible());
+    disable.set_active(true);
+    assert!(!reuse.is_sensitive());
+    assert!(!get("settings-idle").is_sensitive());
+    disable.set_active(false);
+    assert!(reuse.is_sensitive());
+    assert!(!media.is_visible());
+    reuse.set_active(false);
+    assert!(media.is_visible());
+    drop(disable);
+    drop(reuse);
+    drop(media);
     // Preview must not persist unsaved edits.
     let saved = std::fs::read(&path).unwrap();
     get("settings-padding")

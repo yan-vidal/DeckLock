@@ -74,3 +74,15 @@ settings-preview-open = Preview aberto com as alterações. Não captura o contr
 
 hibernate = Hibernar
 settings-idle-background = Fundo do modo ocioso
+
+media-library = Biblioteca de mídias
+media-images = Imagens
+media-videos = Vídeos
+media-import = Importar mídias…
+media-add = Adicionar →
+media-pool = Pool selecionado
+media-remove = Remover do pool
+media-empty = Pool vazio
+media-interval = Intervalo das fotos (segundos)
+idle-disable = Desativar modo ocioso
+idle-reuse = Manter o fundo e apenas ocultar a interface

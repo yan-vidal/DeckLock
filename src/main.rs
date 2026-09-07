@@ -103,6 +103,7 @@ fn run(args: Args) -> Result<(), String> {
         config.locale = Some(locale);
     }
     if let Some(path) = args.background {
+        config.background_pool = None;
         config.background = Some(path);
     }
     // Preview never uses the saved controller socket without explicit opt-in.

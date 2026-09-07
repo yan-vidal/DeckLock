@@ -63,46 +63,12 @@ pub fn apply_css(css: &str) -> Result<(), String> {
 }
 
 fn media_file(path: &Path) -> Option<PathBuf> {
-    if path.is_file() {
-        return Some(path.into());
-    }
-    let mut files: Vec<_> = [path.to_path_buf(), path.join("fotos"), path.join("videos")]
-        .into_iter()
-        .filter_map(|dir| std::fs::read_dir(dir).ok())
-        .flatten()
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| {
-            p.is_file()
-                && matches!(
-                    p.extension()
-                        .and_then(|e| e.to_str())
-                        .map(str::to_ascii_lowercase)
-                        .as_deref(),
-                    Some(
-                        "png"
-                            | "jpg"
-                            | "jpeg"
-                            | "webp"
-                            | "avif"
-                            | "bmp"
-                            | "mp4"
-                            | "mkv"
-                            | "webm"
-                            | "mov"
-                    )
-                )
-        })
-        .collect();
-    files.sort();
+    let files = crate::library::files(path);
     if files.is_empty() {
-        return None;
+        None
+    } else {
+        Some(files[crate::library::seed() % files.len()].clone())
     }
-    let seed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos() as usize;
-    Some(files.swap_remove(seed % files.len()))
 }
 
 fn set_background(
@@ -111,10 +77,30 @@ fn set_background(
     stream: &RefCell<Option<crate::media::Playback>>,
 ) {
     stream.borrow_mut().take();
-    while let Some(child) = container.first_child() {
-        container.remove(&child);
+    let stack = container
+        .first_child()
+        .and_downcast::<gtk::Stack>()
+        .unwrap_or_else(|| {
+            let stack = gtk::Stack::new();
+            stack.set_hexpand(true);
+            stack.set_vexpand(true);
+            stack.set_transition_type(gtk::StackTransitionType::Crossfade);
+            stack.set_transition_duration(600);
+            container.append(&stack);
+            stack
+        });
+    let visible = stack.visible_child();
+    let mut child = stack.first_child();
+    while let Some(widget) = child {
+        child = widget.next_sibling();
+        if Some(&widget) != visible.as_ref() {
+            stack.remove(&widget);
+        }
     }
     let Some(path) = path.and_then(media_file) else {
+        if let Some(visible) = visible {
+            stack.remove(&visible);
+        }
         return;
     };
     let picture = gtk::Picture::new();
@@ -138,7 +124,8 @@ fn set_background(
     } else {
         picture.set_file(Some(&gio::File::for_path(path)));
     }
-    container.append(&picture);
+    stack.add_child(&picture);
+    stack.set_visible_child(&picture);
 }
 
 fn edit_entry(entry: &gtk::Entry, action: Action) {
@@ -614,12 +601,15 @@ pub fn build(
     background.set_widget_name("background");
     overlay.set_child(Some(&background));
     let stream = Rc::new(RefCell::new(None));
-    let background_path = settings
-        .config
-        .background
-        .as_deref()
-        .or(settings.theme.background.as_deref());
-    set_background(&background, background_path, &stream);
+    let mut normal_selection = crate::library::Selection::new(
+        crate::library::pool(&settings.config, &settings.theme, false),
+        crate::library::seed(),
+    );
+    let mut idle_selection = crate::library::Selection::new(
+        crate::library::pool(&settings.config, &settings.theme, true),
+        crate::library::seed(),
+    );
+    set_background(&background, normal_selection.current(), &stream);
     let close_stream = stream.clone();
     window.connect_destroy(move |_| {
         close_stream.borrow_mut().take();
@@ -1016,6 +1006,8 @@ pub fn build(
     let weak_keyboard = keyboard.downgrade();
     let idle = Rc::new(Cell::new(false));
     let weak_clock_box = clock_box.downgrade();
+    let weak_power = power.downgrade();
+    let mut changed_at = Instant::now();
     let settings_idle = settings.clone();
     if settings.start_idle {
         activity.set(
@@ -1031,10 +1023,18 @@ pub fn build(
         if weak_window.upgrade().is_none() {
             return glib::ControlFlow::Break;
         }
-        let is_idle = settings_idle.config.idle_seconds > 0
+        let is_idle = settings_idle.config.idle_enabled
+            && settings_idle.config.idle_seconds > 0
             && idle_activity.get().elapsed().as_secs() >= settings_idle.config.idle_seconds as u64;
         if idle.replace(is_idle) != is_idle {
+            if let Some(power) = weak_power.upgrade() {
+                power.set_visible(!is_idle);
+            }
             if let Some(clock) = weak_clock_box.upgrade() {
+                clock.set_visible(
+                    settings_idle.theme.layout.clock_visible
+                        && !(is_idle && settings_idle.config.idle_reuse_background),
+                );
                 clock.set_valign(if is_idle {
                     gtk::Align::Center
                 } else {
@@ -1047,25 +1047,34 @@ pub fn build(
             if is_idle && let Some(k) = weak_keyboard.upgrade() {
                 k.set_visible(false);
             }
-            let normal = settings_idle
-                .config
-                .background
-                .as_deref()
-                .or(settings_idle.theme.background.as_deref());
-            set_background(
-                &background,
-                if is_idle {
-                    settings_idle
-                        .config
-                        .idle_background
-                        .as_deref()
-                        .filter(|path| media_file(path).is_some())
-                        .or(normal)
+            if !settings_idle.config.idle_reuse_background && idle_selection.current().is_some() {
+                let selected = if is_idle {
+                    &idle_selection
                 } else {
-                    normal
-                },
-                &stream,
-            );
+                    &normal_selection
+                };
+                set_background(&background, selected.current(), &stream);
+                changed_at = Instant::now();
+            }
+        }
+        let separate_idle = is_idle
+            && !settings_idle.config.idle_reuse_background
+            && idle_selection.current().is_some();
+        let interval = if separate_idle {
+            settings_idle.config.idle_slideshow_seconds
+        } else {
+            settings_idle.config.slideshow_seconds
+        };
+        let selection = if separate_idle {
+            &mut idle_selection
+        } else {
+            &mut normal_selection
+        };
+        if changed_at.elapsed().as_secs() >= interval as u64 {
+            if selection.advance() {
+                set_background(&background, selection.current(), &stream);
+            }
+            changed_at = Instant::now();
         }
         glib::ControlFlow::Continue
     });

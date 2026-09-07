@@ -74,3 +74,15 @@ settings-preview-open = Preview opened with your changes. It does not capture co
 
 hibernate = Hibernate
 settings-idle-background = Idle background
+
+media-library = Media library
+media-images = Images
+media-videos = Videos
+media-import = Import media…
+media-add = Add →
+media-pool = Selected pool
+media-remove = Remove from pool
+media-empty = Empty pool
+media-interval = Photo interval (seconds)
+idle-disable = Disable idle mode
+idle-reuse = Keep background and only hide the interface
