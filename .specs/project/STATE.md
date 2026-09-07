@@ -66,3 +66,14 @@ crossfades photos. Reuse-idle preserves the current renderer and hides controls.
 35 core tests, clippy/fmt, settings/keyboard/media GUI checks and isolated protocol
 checks passed. Real editor screenshots are settings-library.png and settings-idle.png.
 Original default artwork and its credits/license are awaiting the user's files.
+
+2026-09-07: settings redesigned with adaptive-height Background/Rest tabs,
+compact rounded media cards, pool info tooltips and collapsible layout preferences.
+Seven built-in palette adaptations (Classic, Catppuccin Mocha/Latte, Dracula, Nord,
+Tokyo Night, Gruvbox) share semantic colors across settings and lock/keyboard.
+Config.theme_preset selects bundled colors; external Config.theme retains precedence.
+Live settings CSS replacement preserves the last valid provider on errors and
+removes the provider on window destruction. Empty external selection cannot save.
+36 core tests, clippy/fmt and GTK tests passed; GUI validation cycles all presets,
+checks color changes and persistence, tabs/tooltips and invalid external folders.
+Dark/light settings screenshots inspected; themes/README.md records palette sources.

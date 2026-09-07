@@ -86,3 +86,10 @@ media-empty = Pool vazio
 media-interval = Intervalo das fotos (segundos)
 idle-disable = Desativar modo ocioso
 idle-reuse = Manter o fundo e apenas ocultar a interface
+
+settings-external-theme = Tema externo…
+settings-theme-folder = Pasta do tema
+settings-rest = Repouso
+settings-layout-options = Layout e preferências
+media-pool-help = Uma mídia deste pool é sorteada a cada bloqueio. Se for foto, apenas as fotos deste pool se alternam no intervalo configurado. Se for vídeo, ele permanece em loop nessa sessão. Remover daqui não apaga o arquivo.
+settings-theme-required = Escolha uma pasta para usar um tema externo.

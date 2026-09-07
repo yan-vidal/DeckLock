@@ -86,6 +86,18 @@ compatíveis.
 
 ## Temas e configuração
 
+Selecione Classic, Catppuccin Mocha/Latte, Dracula, Nord, Tokyo Night ou Gruvbox
+no seletor de temas. As cores mudam imediatamente na janela de configurações e
+também são aplicadas ao preview do bloqueio. Pastas de temas externos continuam aceitas.
+
+**Fundo** e **Repouso** ficam em abas separadas. O ⓘ do pool explica o sorteio,
+o slideshow de fotos e o loop do vídeo ao passar o mouse. **Layout e preferências**
+expande os controles gerais abaixo da área de mídias.
+
+Veja a [configuração de temas e os créditos das paletas](themes/README.md).
+
+![Tema claro das configurações — Catppuccin Latte](docs/assets/settings-light.png)
+
 Abra `--settings` ou copie [config.example.toml](config.example.toml) para
 `~/.config/decklock/config.toml`. Use `--config CAMINHO` para outro arquivo.
 As escolhas visuais da interface ficam em `[layout]`, com prioridade sobre o tema.

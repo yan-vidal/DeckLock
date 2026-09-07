@@ -88,7 +88,7 @@ fn fill(list: &gtk::ListBox, paths: &[PathBuf]) {
 fn scroll(list: &gtk::ListBox) -> gtk::ScrolledWindow {
     gtk::ScrolledWindow::builder()
         .child(list)
-        .height_request(230)
+        .height_request(170)
         .hexpand(true)
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vscrollbar_policy(gtk::PolicyType::Automatic)
@@ -104,12 +104,13 @@ pub fn build(
     let root = gtk::Box::new(gtk::Orientation::Vertical, 8);
     root.set_widget_name(name);
     let card = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    card.add_css_class("card");
+    card.add_css_class("media-card");
     root.append(&card);
     let left = gtk::Box::new(gtk::Orientation::Vertical, 8);
     left.set_hexpand(true);
     left.append(&gtk::Label::new(Some(&strings.text("media-library"))));
     let tabs = gtk::Notebook::new();
+    tabs.add_css_class("media-tabs");
     tabs.set_hexpand(true);
     left.append(&tabs);
     let images = gtk::ListBox::new();
@@ -143,14 +144,24 @@ pub fn build(
     card.append(&add);
     let right = gtk::Box::new(gtk::Orientation::Vertical, 8);
     right.set_hexpand(true);
-    right.append(&gtk::Label::new(Some(&strings.text("media-pool"))));
+    let pool_header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    pool_header.set_halign(gtk::Align::Center);
+    let pool_title = gtk::Label::new(Some(&strings.text("media-pool")));
+    pool_title.add_css_class("section-title");
+    pool_header.append(&pool_title);
+    let info = gtk::Button::from_icon_name("dialog-information-symbolic");
+    info.add_css_class("info-button");
+    info.set_widget_name(&format!("{name}-info"));
+    info.set_tooltip_text(Some(&strings.text("media-pool-help")));
+    pool_header.append(&info);
+    right.append(&pool_header);
     let list = gtk::ListBox::new();
     list.set_widget_name(&format!("{name}-pool"));
     list.set_selection_mode(gtk::SelectionMode::Single);
     list.set_placeholder(Some(&gtk::Label::new(Some(&strings.text("media-empty")))));
     fill(&list, &initial);
     let pool_scroll = scroll(&list);
-    pool_scroll.set_height_request(268);
+    pool_scroll.set_height_request(208);
     right.append(&pool_scroll);
     let remove = gtk::Button::with_label(&strings.text("media-remove"));
     remove.set_widget_name(&format!("{name}-remove"));

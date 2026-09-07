@@ -12,3 +12,5 @@ pub mod ui;
 
 pub mod library;
 pub mod media_editor;
+
+pub mod themes;

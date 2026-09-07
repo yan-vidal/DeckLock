@@ -42,7 +42,12 @@ fn main() {
     let window = settings::build(&app, path.clone(), Some("en-US"), executable).unwrap();
     window.present();
     while glib::MainContext::default().iteration(false) {}
-    let get = |name| find(window.upcast_ref(), name).unwrap();
+    let get =
+        |name| find(window.upcast_ref(), name).unwrap_or_else(|| panic!("Missing widget {name}"));
+    get("settings-layout-options")
+        .downcast::<gtk::Expander>()
+        .unwrap()
+        .set_expanded(true);
     get("settings-padding")
         .downcast::<gtk::SpinButton>()
         .unwrap()
@@ -65,6 +70,10 @@ fn main() {
     assert_eq!(layout.padding, 48);
     assert_eq!(layout.alignment, Alignment::End);
     assert!(!layout.clock_visible);
+    get("settings-media-tabs")
+        .downcast::<gtk::Stack>()
+        .unwrap()
+        .set_visible_child_name("rest");
     let disable = get("settings-disable-idle")
         .downcast::<gtk::CheckButton>()
         .unwrap();
@@ -86,6 +95,42 @@ fn main() {
     drop(disable);
     drop(reuse);
     drop(media);
+    let selector = get("settings-theme-selector")
+        .downcast::<gtk::DropDown>()
+        .unwrap();
+    let mut previous_color = None;
+    for (index, preset) in decklock::themes::presets().iter().enumerate() {
+        selector.set_selected(index as u32);
+        while glib::MainContext::default().iteration(false) {}
+        get("settings-save")
+            .downcast::<gtk::Button>()
+            .unwrap()
+            .emit_clicked();
+        assert_eq!(Config::load(Some(&path)).unwrap().theme_preset, preset.id);
+        let color = window.color();
+        if let Some(previous) = previous_color {
+            assert_ne!(color, previous, "Theme did not change settings colors");
+        }
+        previous_color = Some(color);
+    }
+    let tabs = get("settings-media-tabs").downcast::<gtk::Stack>().unwrap();
+    assert!(tabs.child_by_name("background").is_some());
+    assert!(tabs.child_by_name("rest").is_some());
+    tabs.set_visible_child_name("rest");
+    assert!(
+        get("settings-idle-background-info")
+            .tooltip_text()
+            .unwrap()
+            .contains("random")
+    );
+    tabs.set_visible_child_name("background");
+    assert!(
+        get("settings-background-info")
+            .tooltip_text()
+            .unwrap()
+            .contains("does not delete")
+    );
+    drop(tabs);
     // Preview must not persist unsaved edits.
     let saved = std::fs::read(&path).unwrap();
     get("settings-padding")
@@ -105,6 +150,17 @@ fn main() {
             .contains("Preview opened")
     );
     // Invalid theme must fail without replacing the file.
+    selector.set_selected(decklock::themes::presets().len() as u32);
+    drop(selector);
+    get("settings-save")
+        .downcast::<gtk::Button>()
+        .unwrap()
+        .emit_clicked();
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        saved,
+        "Empty external theme must not save"
+    );
     get("settings-theme")
         .downcast::<gtk::Entry>()
         .unwrap()

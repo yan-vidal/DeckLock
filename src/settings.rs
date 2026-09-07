@@ -129,7 +129,7 @@ fn combo(values: &[(&str, String)], selected: &str, name: &str) -> Choice {
 }
 fn validate_theme(config: &Config) -> Result<(), String> {
     config.validate()?;
-    let theme = Theme::load(config.theme.as_deref())?;
+    let theme = Theme::from_config(config)?;
     let provider = gtk::CssProvider::new();
     let errors = Rc::new(RefCell::new(Vec::new()));
     let capture = errors.clone();
@@ -150,14 +150,15 @@ pub fn build(
     let path = absolute(&path)?;
     let original = Config::load(path.exists().then_some(path.as_path()))?;
     let strings = Rc::new(I18n::new(locale.or(original.locale.as_deref()), None)?);
-    let theme = Theme::load(original.theme.as_deref())?;
+    let theme = Theme::from_config(&original)?;
     let layout = original.layout.as_ref().unwrap_or(&theme.layout);
     let window = gtk::ApplicationWindow::builder()
         .application(app)
         .title(strings.text("settings-title"))
         .default_width(1000)
-        .default_height(720)
+        .default_height(820)
         .build();
+    window.add_css_class("settings");
     let root = gtk::Box::new(gtk::Orientation::Vertical, 16);
     for set in [
         gtk::prelude::WidgetExt::set_margin_top,
@@ -173,6 +174,7 @@ pub fn build(
     title.set_halign(gtk::Align::Start);
     root.append(&title);
     let hint = gtk::Label::new(Some(&strings.text("settings-hint")));
+    hint.add_css_class("subtitle");
     hint.set_wrap(true);
     hint.set_xalign(0.0);
     root.append(&hint);
@@ -183,13 +185,131 @@ pub fn build(
     root.append(&scroll);
     let form = gtk::Box::new(gtk::Orientation::Vertical, 12);
     scroll.set_child(Some(&form));
-    let theme_path = path_entry(original.theme.as_deref(), "settings-theme");
-    theme_path.set_placeholder_text(Some(&strings.text("settings-default-theme")));
-    row(
-        &form,
-        &strings.text("settings-theme"),
-        &chooser(&window, &theme_path, true, &strings),
+    let presets = crate::themes::presets();
+    let mut options: Vec<_> = presets
+        .iter()
+        .map(|p| (p.id.as_str(), p.name.clone()))
+        .collect();
+    options.push(("external", strings.text("settings-external-theme")));
+    let theme_choice = combo(
+        &options,
+        if original.theme.is_some() {
+            "external"
+        } else {
+            &original.theme_preset
+        },
+        "settings-theme-selector",
     );
+    row(&form, &strings.text("settings-theme"), &theme_choice.widget);
+    let theme_path = path_entry(original.theme.as_deref(), "settings-theme");
+    theme_path.set_placeholder_text(Some(&strings.text("settings-theme-folder")));
+    let external = chooser(&window, &theme_path, true, &strings);
+    external.set_visible(original.theme.is_some());
+    form.append(&external);
+    let theme_error = gtk::Label::new(None);
+    theme_error.set_wrap(true);
+    theme_error.set_visible(false);
+    form.append(&theme_error);
+    let provider: Rc<RefCell<Option<gtk::CssProvider>>> = Rc::new(RefCell::new(None));
+    let (weak_window, weak_choice, weak_path, weak_external, weak_error) = (
+        window.downgrade(),
+        theme_choice.widget.downgrade(),
+        theme_path.downgrade(),
+        external.downgrade(),
+        theme_error.downgrade(),
+    );
+    let ids = theme_choice.ids.clone();
+    let base_theme = path.parent().unwrap().to_path_buf();
+    let active_provider = provider.clone();
+    let missing_theme = strings.text("settings-theme-required");
+    let refresh_theme: Rc<dyn Fn()> = Rc::new(move || {
+        let (Some(window), Some(choice), Some(entry), Some(external), Some(error_label)) = (
+            weak_window.upgrade(),
+            weak_choice.upgrade(),
+            weak_path.upgrade(),
+            weak_external.upgrade(),
+            weak_error.upgrade(),
+        ) else {
+            return;
+        };
+        let id = ids[choice.selected() as usize].clone();
+        external.set_visible(id == "external");
+        if id == "external" && selected_path(&entry, &base_theme).is_none() {
+            error_label.set_visible(true);
+            error_label.set_text(&missing_theme);
+            return;
+        }
+        let config = Config {
+            theme: if id == "external" {
+                selected_path(&entry, &base_theme)
+            } else {
+                None
+            },
+            theme_preset: if id == "external" {
+                "classic".into()
+            } else {
+                id
+            },
+            ..Config::default()
+        };
+        let result = (|| -> Result<(), String> {
+            let theme = Theme::from_config(&config)?;
+            let css = gtk::CssProvider::new();
+            let errors = Rc::new(RefCell::new(Vec::new()));
+            let capture = errors.clone();
+            css.connect_parsing_error(move |_, _, error| {
+                capture.borrow_mut().push(error.to_string())
+            });
+            css.load_from_string(&theme.css);
+            if !errors.borrow().is_empty() {
+                return Err(errors.borrow().join("; "));
+            }
+            let display = gtk::prelude::WidgetExt::display(&window);
+            if let Some(old) = active_provider.replace(Some(css.clone())) {
+                gtk::style_context_remove_provider_for_display(&display, &old);
+            }
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &css,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+            Ok(())
+        })();
+        error_label.set_visible(result.is_err());
+        error_label.set_text(&result.err().unwrap_or_default());
+    });
+    refresh_theme();
+    let refresh = refresh_theme.clone();
+    theme_choice
+        .widget
+        .connect_selected_notify(move |_| refresh());
+    theme_path.connect_changed(move |_| refresh_theme());
+    let display = gtk::prelude::WidgetExt::display(&window);
+    window.connect_destroy(move |_| {
+        if let Some(css) = provider.borrow_mut().take() {
+            gtk::style_context_remove_provider_for_display(&display, &css);
+        }
+    });
+    let media_tabs = gtk::Stack::new();
+    media_tabs.set_widget_name("settings-media-tabs");
+    media_tabs.set_vhomogeneous(false);
+    media_tabs.set_hhomogeneous(false);
+    media_tabs.set_transition_type(gtk::StackTransitionType::Crossfade);
+    media_tabs.set_transition_duration(150);
+    let media_switcher = gtk::StackSwitcher::new();
+    media_switcher.set_stack(Some(&media_tabs));
+    media_switcher.add_css_class("section-tabs");
+    media_switcher.set_halign(gtk::Align::Start);
+    form.append(&media_switcher);
+    form.append(&media_tabs);
+    let background_page = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    let idle_page = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    media_tabs.add_titled(
+        &background_page,
+        Some("background"),
+        &strings.text("settings-background"),
+    );
+    media_tabs.add_titled(&idle_page, Some("rest"), &strings.text("settings-rest"));
     let catalog = crate::media_editor::Catalog::new(crate::library::catalog(&original, &theme));
     let background = crate::media_editor::build(
         &window,
@@ -201,8 +321,7 @@ pub fn build(
         strings.clone(),
         "settings-background",
     );
-    form.append(&gtk::Label::new(Some(&strings.text("settings-background"))));
-    form.append(&background.widget);
+    background_page.append(&background.widget);
     let slideshow = spin(
         original.slideshow_seconds as f64,
         1.0,
@@ -210,7 +329,18 @@ pub fn build(
         1.0,
         "settings-slideshow",
     );
-    row(&form, &strings.text("media-interval"), &slideshow);
+    row(
+        &background_page,
+        &strings.text("media-interval"),
+        &slideshow,
+    );
+    let appearance = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    appearance.set_margin_top(12);
+    let expander = gtk::Expander::new(Some(&strings.text("settings-layout-options")));
+    expander.set_widget_name("settings-layout-options");
+    expander.add_css_class("layout-options");
+    expander.set_child(Some(&appearance));
+    form.append(&expander);
     let language = combo(
         &[
             ("auto", strings.text("settings-system")),
@@ -220,7 +350,11 @@ pub fn build(
         original.locale.as_deref().unwrap_or("auto"),
         "settings-language",
     );
-    row(&form, &strings.text("settings-language"), &language.widget);
+    row(
+        &appearance,
+        &strings.text("settings-language"),
+        &language.widget,
+    );
     let alignment = combo(
         &[
             ("start", strings.text("settings-left")),
@@ -235,7 +369,7 @@ pub fn build(
         "settings-alignment",
     );
     row(
-        &form,
+        &appearance,
         &strings.text("settings-alignment"),
         &alignment.widget,
     );
@@ -252,36 +386,36 @@ pub fn build(
         "settings-arrangement",
     );
     row(
-        &form,
+        &appearance,
         &strings.text("settings-arrangement"),
         &arrangement.widget,
     );
     let spacing = spin(layout.spacing as f64, 0.0, 128.0, 1.0, "settings-spacing");
-    row(&form, &strings.text("settings-spacing"), &spacing);
+    row(&appearance, &strings.text("settings-spacing"), &spacing);
     let padding = spin(layout.padding as f64, 0.0, 256.0, 1.0, "settings-padding");
-    row(&form, &strings.text("settings-padding"), &padding);
+    row(&appearance, &strings.text("settings-padding"), &padding);
     let scale = spin(layout.keyboard_scale, 0.5, 2.0, 0.05, "settings-scale");
     scale.set_digits(2);
-    row(&form, &strings.text("settings-scale"), &scale);
+    row(&appearance, &strings.text("settings-scale"), &scale);
     let clock = gtk::CheckButton::with_label(&strings.text("settings-clock"));
     clock.set_active(layout.clock_visible);
     clock.set_widget_name("settings-clock");
-    form.append(&clock);
+    appearance.append(&clock);
     let avatar = gtk::CheckButton::with_label(&strings.text("settings-avatar"));
     avatar.set_active(layout.avatar_visible);
     avatar.set_widget_name("settings-avatar");
-    form.append(&avatar);
+    appearance.append(&avatar);
     let system_keyboard = gtk::CheckButton::with_label(&strings.text("settings-system-keyboard"));
     system_keyboard.set_active(original.system_keyboard);
-    form.append(&system_keyboard);
+    appearance.append(&system_keyboard);
     let disable_idle = gtk::CheckButton::with_label(&strings.text("idle-disable"));
     disable_idle.set_widget_name("settings-disable-idle");
     disable_idle.set_active(!original.idle_enabled);
-    form.append(&disable_idle);
+    idle_page.append(&disable_idle);
     let reuse = gtk::CheckButton::with_label(&strings.text("idle-reuse"));
     reuse.set_widget_name("settings-reuse-background");
     reuse.set_active(original.idle_reuse_background);
-    form.append(&reuse);
+    idle_page.append(&reuse);
     let idle = spin(
         original.idle_seconds as f64,
         1.0,
@@ -289,13 +423,10 @@ pub fn build(
         30.0,
         "settings-idle",
     );
-    row(&form, &strings.text("settings-idle"), &idle);
+    row(&idle_page, &strings.text("settings-idle"), &idle);
     let idle_group = gtk::Box::new(gtk::Orientation::Vertical, 8);
     idle_group.set_widget_name("settings-idle-media");
-    form.append(&idle_group);
-    idle_group.append(&gtk::Label::new(Some(
-        &strings.text("settings-idle-background"),
-    )));
+    idle_page.append(&idle_group);
     let idle_background = crate::media_editor::build(
         &window,
         catalog,
@@ -343,7 +474,7 @@ pub fn build(
     reuse.connect_toggled(move |_| update());
     let controller = gtk::CheckButton::with_label(&strings.text("settings-controller"));
     controller.set_active(original.controller_socket.is_some());
-    form.append(&controller);
+    appearance.append(&controller);
     let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     buttons.set_halign(gtk::Align::End);
     let preview = gtk::Button::with_label(&strings.text("settings-preview"));
@@ -361,9 +492,18 @@ pub fn build(
     status.set_widget_name("settings-status");
     root.append(&status);
     let base = path.parent().unwrap().to_path_buf();
+    let missing_theme = strings.text("settings-theme-required");
     let read: Rc<dyn Fn() -> Result<Config, String>> = Rc::new(move || {
         let mut config = original.clone();
-        config.theme = selected_path(&theme_path, &base);
+        let selected_theme = theme_choice.active_id().unwrap_or_else(|| "classic".into());
+        config.theme = if selected_theme == "external" {
+            Some(selected_path(&theme_path, &base).ok_or_else(|| missing_theme.clone())?)
+        } else {
+            None
+        };
+        if selected_theme != "external" {
+            config.theme_preset = selected_theme;
+        }
         config.background_pool = Some(background.paths.borrow().clone());
         config.idle_pool = Some(idle_background.paths.borrow().clone());
         config.slideshow_seconds = slideshow.value_as_int() as u32;

@@ -86,3 +86,10 @@ media-empty = Empty pool
 media-interval = Photo interval (seconds)
 idle-disable = Disable idle mode
 idle-reuse = Keep background and only hide the interface
+
+settings-external-theme = External theme…
+settings-theme-folder = Theme folder
+settings-rest = Rest
+settings-layout-options = Layout & preferences
+media-pool-help = A random item is chosen from this pool for each lock. If it is a photo, only the photos in this pool cycle at the configured interval. If it is a video, that video loops for the session. Removing an item here does not delete its file.
+settings-theme-required = Choose a theme folder to use an external theme.

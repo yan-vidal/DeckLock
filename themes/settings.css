@@ -1,0 +1,42 @@
+/* Shared settings shell. External CSS may override these semantic colors. */
+window.settings { background: @settings_bg; color: @settings_text; font-family: sans-serif; }
+.settings .title-1 { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+.settings .subtitle { color: @settings_muted; font-size: 13px; }
+.settings label { color: @settings_text; }
+.settings .section-title { font-weight: 600; font-size: 14px; }
+.settings button, .settings entry, .settings spinbutton, .settings dropdown > button {
+  background: @settings_surface; color: @settings_text; border: 1px solid alpha(@settings_muted,0.18);
+  border-radius: 9px; box-shadow: none; text-shadow: none; min-height: 30px; padding: 5px 10px;
+}
+.settings button:hover { background: @settings_raised; border-color: alpha(@accent,0.5); }
+.settings button:active { background: alpha(@accent,0.25); }
+.settings button:disabled { opacity: 0.45; }
+.settings button.suggested-action { background: alpha(@accent,0.20); color: @accent; border-color: alpha(@accent,0.5); font-weight: bold; }
+.settings entry:focus-within, .settings spinbutton:focus-within { border-color: @accent; outline: 2px solid alpha(@accent,0.18); }
+.settings spinbutton text { background: transparent; color: @settings_text; }
+.settings spinbutton button { background: transparent; border: none; min-height: 22px; padding: 2px 8px; }
+.settings checkbutton { padding: 5px 0; }
+.settings checkbutton check { background: @settings_surface; border: 1px solid @settings_muted; border-radius: 5px; min-width: 17px; min-height: 17px; }
+.settings checkbutton check:checked { background: @accent; color: @settings_bg; border-color: @accent; }
+.settings .media-card { background: @settings_surface; border: 1px solid alpha(@settings_muted,0.14); border-radius: 14px; padding: 16px; }
+.settings list { background: transparent; color: @settings_text; }
+.settings list row { border-radius: 8px; padding: 3px 8px; margin: 2px 0; }
+.settings list row:hover { background: alpha(@accent,0.10); }
+.settings list row:selected { background: alpha(@accent,0.22); }
+.settings notebook { border: none; background: transparent; }
+.settings notebook > header { background: transparent; border: none; padding: 0 0 8px; }
+.settings notebook > header tabs tab { padding: 8px 16px; border-radius: 8px; border: none; background: transparent; }
+.settings notebook > header tabs tab:checked { background: alpha(@accent,0.16); box-shadow: inset 0 -2px @accent; }
+.settings notebook > stack { background: transparent; border: none; }
+.settings .media-tabs > header tabs tab { padding: 5px 12px; }
+.settings .info-button { border: none; background: transparent; border-radius: 50%; min-height: 20px; min-width: 20px; padding: 2px; color: @settings_muted; }
+.settings .info-button:hover { color: @accent; background: alpha(@accent,0.15); }
+.settings .layout-options { background: @settings_surface; padding: 12px 16px; border-radius: 12px; }
+.settings .layout-options > title { padding: 4px; }
+.settings popover contents { background: @settings_surface; color: @settings_text; border: 1px solid @settings_raised; border-radius: 10px; }
+.settings scrollbar slider { background: alpha(@settings_muted,0.4); border-radius: 8px; min-width: 4px; min-height: 4px; }
+.settings #settings-status { color: @settings_muted; font-size: 12px; }
+
+.settings .section-tabs { background: @settings_surface; padding: 4px; border-radius: 11px; }
+.settings .section-tabs button { border: none; background: transparent; padding: 5px 20px; }
+.settings .section-tabs button:checked { background: alpha(@accent,0.18); color: @accent; }

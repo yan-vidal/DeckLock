@@ -122,7 +122,7 @@ fn run(args: Args) -> Result<(), String> {
     } else {
         None
     };
-    let mut theme = config::Theme::load(config.theme.as_deref())?;
+    let mut theme = config::Theme::from_config(&config)?;
     if let Some(layout) = &config.layout {
         theme.layout = layout.clone();
     }

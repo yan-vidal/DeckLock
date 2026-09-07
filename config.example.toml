@@ -1,6 +1,7 @@
 # Copy to ~/.config/decklock/config.toml. Paths resolve beside this file.
 locale = "pt-BR"
 pam_service = "login"
+theme_preset = "classic" # catppuccin-mocha, catppuccin-latte, dracula, nord, tokyo-night, gruvbox
 idle_seconds = 600
 idle_enabled = true
 idle_reuse_background = false

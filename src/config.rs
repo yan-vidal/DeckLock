@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub theme: Option<PathBuf>,
+    pub theme_preset: String,
     pub locale: Option<String>,
     pub pam_service: String,
     pub idle_seconds: u32,
@@ -25,6 +26,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             theme: None,
+            theme_preset: "classic".into(),
             locale: None,
             pam_service: "login".into(),
             idle_seconds: 600,
@@ -224,6 +226,21 @@ impl Default for ThemeFile {
 }
 
 impl Theme {
+    pub fn from_config(config: &Config) -> Result<Self, String> {
+        if config.theme.is_some() {
+            return Self::load(config.theme.as_deref());
+        }
+        let mut theme = Self::load(None)?;
+        theme.css +=
+            &crate::themes::colors(&config.theme_preset, config.theme_preset != "classic")?;
+        theme.name = crate::themes::presets()
+            .into_iter()
+            .find(|p| p.id == config.theme_preset)
+            .unwrap()
+            .name;
+        Ok(theme)
+    }
+
     /// `path` is a theme directory containing theme.toml and a local CSS file.
     pub fn load(path: Option<&Path>) -> Result<Self, String> {
         let source = match path {
@@ -238,7 +255,12 @@ impl Theme {
         };
         Ok(Self {
             name: file.name,
-            css,
+            css: format!(
+                "{}\n{}\n{}",
+                crate::themes::colors("classic", false)?,
+                crate::themes::settings_css(),
+                css
+            ),
             layout: file.layout,
             background: file
                 .background

@@ -85,6 +85,18 @@ remain compatible.
 
 ## Themes and configuration
 
+Select Classic, Catppuccin Mocha/Latte, Dracula, Nord, Tokyo Night or Gruvbox
+from the theme selector. Colors update the settings window immediately and apply
+to the lock preview as well. External theme folders remain supported.
+
+**Background** and **Rest** have separate tabs. The pool's ⓘ tooltip explains
+selection, photo slideshows and video looping. **Layout & preferences** expands
+the general controls below the media section.
+
+See [theme configuration and palette credits](themes/README.md).
+
+![Light settings theme — Catppuccin Latte](docs/assets/settings-light.png)
+
 Open `--settings` or copy [config.example.toml](config.example.toml) to
 `~/.config/decklock/config.toml`. Use `--config PATH` for another configuration.
 GUI layout choices are stored under `[layout]` and take precedence over the theme's
