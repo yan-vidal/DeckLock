@@ -44,3 +44,12 @@ closing settings terminates only that child. File selection uses GTK4 FileDialog
 30 core tests plus settings save/reload/invalid theme/cleanup GUI checks passed.
 English primary README, Portuguese README.pt-BR.md and real English screenshots
 introduce the application as a general Wayland lock screen.
+
+2026-09-07: default media directories now preserve the legacy XDG_CONFIG_HOME/midias
+layout (bloqueio and ocioso, each fotos/videos), created on startup. Explicit config
+and theme backgrounds retain priority; empty idle folders fall back to normal.
+The editor exposes idle background; Hibernate delegates to systemctl hibernate,
+with no power callbacks in preview. 32 tests, clippy/fmt and GTK preview/settings
+checks passed. English README GIF uses supplied Osaka footage with real mouse
+clicks, cursor, Caps Lock, password visibility and power tooltips. Capture helpers
+are development-only; no real power action, PAM or desktop lock was exercised.

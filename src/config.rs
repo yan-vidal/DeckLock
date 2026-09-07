@@ -53,6 +53,27 @@ impl Config {
         }
         Ok(config)
     }
+    /// Preserve the original media folders and explicit config/theme precedence.
+    pub fn prepare_media(
+        &mut self,
+        config_home: &Path,
+        theme_background: Option<&Path>,
+    ) -> Result<(), String> {
+        let root = config_home.join("midias");
+        for mode in ["bloqueio", "ocioso"] {
+            for kind in ["fotos", "videos"] {
+                std::fs::create_dir_all(root.join(mode).join(kind)).map_err(|e| e.to_string())?;
+            }
+        }
+        if self.background.is_none() && theme_background.is_none() {
+            self.background = Some(root.join("bloqueio"));
+        }
+        if self.idle_background.is_none() {
+            self.idle_background = Some(root.join("ocioso"));
+        }
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if !(1..=86400).contains(&self.idle_seconds) {
             return Err("idle_seconds must be between 1 and 86400".into());
@@ -215,6 +236,22 @@ fn read_text(path: &Path) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn media_defaults_create_folders_and_preserve_overrides() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = super::Config::default();
+        config.prepare_media(dir.path(), None).unwrap();
+        assert_eq!(config.background, Some(dir.path().join("midias/bloqueio")));
+        assert!(dir.path().join("midias/ocioso/videos").is_dir());
+        let custom = dir.path().join("custom.mp4");
+        config.background = Some(custom.clone());
+        config.prepare_media(dir.path(), None).unwrap();
+        assert_eq!(config.background, Some(custom.clone()));
+        let mut themed = super::Config::default();
+        themed.prepare_media(dir.path(), Some(&custom)).unwrap();
+        assert!(themed.background.is_none());
+    }
+
     use super::*;
 
     #[test]

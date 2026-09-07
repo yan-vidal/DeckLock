@@ -133,6 +133,9 @@ fn run(args: Args) -> Result<(), String> {
         );
         return Ok(());
     }
+    if let Some(home) = shortcut::config_dir() {
+        config.prepare_media(&home, theme.background.as_deref())?;
+    }
     // A locker handles passwords: never include its address space in a core dump.
     let limit = libc::rlimit {
         rlim_cur: 0,

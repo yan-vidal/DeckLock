@@ -71,3 +71,6 @@ settings-preview = Open preview
 settings-save = Save
 settings-saved = Settings saved. Reopen the preview to apply.
 settings-preview-open = Preview opened with your changes. It does not capture controllers or lock the session.
+
+hibernate = Hibernate
+settings-idle-background = Idle background

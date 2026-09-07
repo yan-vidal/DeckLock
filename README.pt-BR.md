@@ -8,9 +8,10 @@ Temas CSS externos, fundos com imagens e vídeos, teclado integrado e uma janela
 nativa de configurações. Voltado a desktops Wayland, com suporte opcional a
 controles em dispositivos como o Steam Deck.
 
-![Tela de bloqueio Wayland do DeckLock — preview em inglês](docs/assets/lock-screen.png)
+![Tela de bloqueio Wayland do DeckLock — preview em inglês](docs/assets/demo.gif)
 
-*Captura real do aplicativo em modo preview. A sessão não está bloqueada.*
+*Gravação real do preview com vídeo em loop, ponteiro e cliques visíveis, teclado
+integrado, Caps Lock, revelação da senha e dicas dos botões. Senha fictícia; a sessão não está bloqueada.*
 
 ## Configure pela interface
 
@@ -89,7 +90,7 @@ Abra `--settings` ou copie [config.example.toml](config.example.toml) para
 `~/.config/decklock/config.toml`. Use `--config CAMINHO` para outro arquivo.
 As escolhas visuais da interface ficam em `[layout]`, com prioridade sobre o tema.
 Remova essa seção para voltar aos padrões do tema. Configurações existentes de
-PAM e fundo ocioso são preservadas ao salvar pela interface.
+PAM são preservadas ao salvar pela interface.
 
 Temas contêm `theme.toml` e `style.css`; não é preciso recompilar.
 
@@ -138,3 +139,19 @@ python3 scripts/test-lock-isolated.py
 
 Os testes de interface usam configuração temporária e janelas de preview. Os
 testes de protocolo usam outro socket Wayland e nunca bloqueiam a sessão em uso.
+
+## Pastas de mídia e modo ocioso
+
+Ao iniciar, o DeckLock cria `~/.config/midias/bloqueio/{fotos,videos}` e
+`~/.config/midias/ocioso/{fotos,videos}` (respeitando `XDG_CONFIG_HOME`).
+Sem um fundo definido, seleciona uma imagem ou vídeo dessas pastas. A configuração
+explícita tem prioridade sobre o tema e as pastas padrão. Se a pasta ociosa estiver
+vazia, usa o fundo normal. O editor permite selecionar arquivos separados para
+bloqueio e idle; caminhos no TOML também podem indicar uma pasta de mídia.
+
+O tempo ocioso controla o modo visual do próprio DeckLock, não a suspensão do sistema.
+Os botões chamam `systemctl suspend`, `hibernate`, `reboot` e `poweroff`; permissões
+e configuração funcional de suspensão/hibernação ficam por conta do sistema.
+No preview, os botões só mostram dicas e nunca executam esses comandos.
+Fundos procedurais ainda não estão implementados: os fundos são imagens ou vídeos
+em loop, sem áudio, conforme os codecs GStreamer instalados.

@@ -8,9 +8,10 @@ External CSS themes, image and video backgrounds, an embedded keyboard, and a
 native settings window. Designed for Wayland desktops, with optional controller
 support for devices such as the Steam Deck.
 
-![DeckLock Wayland lock screen — English preview](docs/assets/lock-screen.png)
+![DeckLock Wayland lock screen — English preview](docs/assets/demo.gif)
 
-*Actual application screenshot in preview mode. The session is not locked.*
+*Actual preview recording with a looping video, visible pointer clicks, embedded keyboard,
+Caps Lock indicator, password visibility and power tooltips. Fictitious password; the session is not locked.*
 
 ## Configure visually
 
@@ -87,8 +88,8 @@ remain compatible.
 Open `--settings` or copy [config.example.toml](config.example.toml) to
 `~/.config/decklock/config.toml`. Use `--config PATH` for another configuration.
 GUI layout choices are stored under `[layout]` and take precedence over the theme's
-layout. Remove that section to inherit theme defaults again. Existing PAM and
-idle-background settings are preserved when saving through the editor.
+layout. Remove that section to inherit theme defaults again. Existing PAM settings
+are preserved when saving through the editor.
 
 Themes contain `theme.toml` and `style.css`; no recompilation is needed.
 
@@ -137,3 +138,19 @@ python3 scripts/test-lock-isolated.py
 
 GUI tests use temporary configuration and preview windows. Protocol tests use a
 separate Wayland socket and never lock the desktop session in use.
+
+## Media folders and idle mode
+
+On startup DeckLock creates `~/.config/midias/bloqueio/{fotos,videos}` and
+`~/.config/midias/ocioso/{fotos,videos}` (respecting `XDG_CONFIG_HOME`).
+It chooses a supported image or video from these folders when no background is
+specified. Explicit configuration takes priority over the theme and default folders.
+An empty idle folder falls back to the normal background. The settings editor can
+select separate normal and idle files; TOML paths can also name a media folder.
+
+Idle time controls DeckLock's own visual idle mode, not system suspension.
+Power buttons delegate to `systemctl suspend`, `hibernate`, `reboot`, and `poweroff`;
+the host supplies permissions and working sleep/hibernate configuration.
+Preview buttons only show tooltips and never execute these commands.
+Procedural backgrounds are not currently implemented; backgrounds are images or
+looping, muted videos supported by the installed GStreamer codecs.

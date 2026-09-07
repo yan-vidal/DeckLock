@@ -66,29 +66,32 @@ fn media_file(path: &Path) -> Option<PathBuf> {
     if path.is_file() {
         return Some(path.into());
     }
-    let mut files: Vec<_> = std::fs::read_dir(path)
-        .ok()?
+    let mut files: Vec<_> = [path.to_path_buf(), path.join("fotos"), path.join("videos")]
+        .into_iter()
+        .filter_map(|dir| std::fs::read_dir(dir).ok())
+        .flatten()
         .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| {
-            matches!(
-                p.extension()
-                    .and_then(|e| e.to_str())
-                    .map(str::to_ascii_lowercase)
-                    .as_deref(),
-                Some(
-                    "png"
-                        | "jpg"
-                        | "jpeg"
-                        | "webp"
-                        | "avif"
-                        | "bmp"
-                        | "mp4"
-                        | "mkv"
-                        | "webm"
-                        | "mov"
+            p.is_file()
+                && matches!(
+                    p.extension()
+                        .and_then(|e| e.to_str())
+                        .map(str::to_ascii_lowercase)
+                        .as_deref(),
+                    Some(
+                        "png"
+                            | "jpg"
+                            | "jpeg"
+                            | "webp"
+                            | "avif"
+                            | "bmp"
+                            | "mp4"
+                            | "mkv"
+                            | "webm"
+                            | "mov"
+                    )
                 )
-            )
         })
         .collect();
     files.sort();
@@ -649,6 +652,7 @@ pub fn build(
     power.set_margin_end(12);
     for (label, command, icon) in [
         ("suspend", "suspend", "system-suspend-symbolic"),
+        ("hibernate", "hibernate", "weather-clear-night-symbolic"),
         ("restart", "reboot", "system-reboot-symbolic"),
         ("shutdown", "poweroff", "system-shutdown-symbolic"),
     ] {
@@ -1051,7 +1055,12 @@ pub fn build(
             set_background(
                 &background,
                 if is_idle {
-                    settings_idle.config.idle_background.as_deref().or(normal)
+                    settings_idle
+                        .config
+                        .idle_background
+                        .as_deref()
+                        .filter(|path| media_file(path).is_some())
+                        .or(normal)
                 } else {
                     normal
                 },
@@ -1077,5 +1086,20 @@ pub fn build(
         keyboard,
         controller_event,
         activity,
+    }
+}
+
+#[cfg(test)]
+mod media_tests {
+    #[test]
+    fn media_folder_supports_legacy_subfolders_and_empty_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(super::media_file(dir.path()).is_none());
+        std::fs::create_dir(dir.path().join("videos")).unwrap();
+        let video = dir.path().join("videos/background.MP4");
+        std::fs::write(&video, b"test").unwrap();
+        assert_eq!(super::media_file(dir.path()), Some(video));
+        std::fs::create_dir(dir.path().join("fake.png")).unwrap();
+        assert!(super::media_file(dir.path()).unwrap().is_file());
     }
 }

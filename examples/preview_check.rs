@@ -100,7 +100,7 @@ fn main() {
         .into_iter()
         .filter_map(|w| w.downcast::<gtk::Button>().ok())
         .collect();
-    assert_eq!(buttons.len(), 3);
+    assert_eq!(buttons.len(), 4);
     for button in &buttons {
         assert!(
             button.is_sensitive(),

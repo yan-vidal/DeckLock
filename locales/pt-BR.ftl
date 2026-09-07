@@ -71,3 +71,6 @@ settings-preview = Abrir preview
 settings-save = Salvar
 settings-saved = Configurações salvas. Reabra o preview para aplicar.
 settings-preview-open = Preview aberto com as alterações. Não captura o controle nem bloqueia a sessão.
+
+hibernate = Hibernar
+settings-idle-background = Fundo do modo ocioso

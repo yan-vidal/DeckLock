@@ -5,6 +5,8 @@ idle_seconds = 600
 # theme = "themes/my-theme"
 # background = "media/lock"       # File or directory of images/videos
 # idle_background = "media/idle"
+# Without overrides, use $XDG_CONFIG_HOME/midias/{bloqueio,ocioso}/{fotos,videos}.
+# Directories are created automatically; empty idle media falls back to normal.
 # controller_socket = "/absolute/path/to/sc-controller/socket"
 
 # Follow the first GDK keymap group at startup; false selects the built-in BR map.

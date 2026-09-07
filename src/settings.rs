@@ -260,6 +260,15 @@ pub fn build(
     let system_keyboard = gtk::CheckButton::with_label(&strings.text("settings-system-keyboard"));
     system_keyboard.set_active(original.system_keyboard);
     form.append(&system_keyboard);
+    let idle_background = path_entry(
+        original.idle_background.as_deref(),
+        "settings-idle-background",
+    );
+    row(
+        &form,
+        &strings.text("settings-idle-background"),
+        &chooser(&window, &idle_background, false, &strings),
+    );
     let idle = spin(
         original.idle_seconds as f64,
         1.0,
@@ -292,6 +301,7 @@ pub fn build(
         let mut config = original.clone();
         config.theme = selected_path(&theme_path, &base);
         config.background = selected_path(&background, &base);
+        config.idle_background = selected_path(&idle_background, &base);
         config.locale = language
             .active_id()
             .filter(|id| id != "auto")
