@@ -59,3 +59,14 @@ Ainda não há layout arbitrário por GtkBuilder, editor visual ou API de plugin
 
 Para importar as cores locais do Python, execute `scripts/import-python-theme`.
 O diretório gerado é um tema CSS/TOML comum; a importação não altera o sc-controller.
+
+## Editor visual
+
+`scripts/cargo-local run -- --settings` abre o editor GTK4. O botão de preview usa
+uma cópia temporária das escolhas; salvar grava `~/.config/decklock/config.toml`
+(ou o arquivo indicado por `--config`) por substituição atômica.
+
+A seção `[layout]` do arquivo do usuário tem prioridade sobre `[layout]` do tema.
+O tema e seu CSS não são editados. Remova a seção do usuário para voltar a herdar
+a disposição do tema. Campos não expostos, como serviço PAM e fundo ocioso, são
+preservados. Comentários/formatação do TOML são normalizados ao salvar.

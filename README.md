@@ -1,115 +1,139 @@
 # DeckLock
 
-Tela de bloqueio personalizável para Wayland, com teclado virtual embutido,
-imagens/vídeos de fundo e suporte opcional a controle.
+**English** · [Português (Brasil)](README.pt-BR.md)
 
-A implementação principal é **Rust + GTK4**, em desenvolvimento.
-Ela substitui a implementação Python; a última versão Python permanece no
-[histórico do Git](https://github.com/yan-vidal/DeckLock/tree/7459bb1). O preview foi observado
-no Hyprland; bloqueio e hotplug foram testados num compositor Wayland simulado.
-A autenticação PAM na sessão real e a paridade completa do controle ainda precisam
-de validação. Consulte [o estado da migração](docs/rust-migration.md).
+### A customizable Wayland lock screen, built with Rust and GTK4.
 
-## Executar o preview
+External CSS themes, image and video backgrounds, an embedded keyboard, and a
+native settings window. Designed for Wayland desktops, with optional controller
+support for devices such as the Steam Deck.
 
-Dependências de desenvolvimento: Rust 1.93+, GTK4 4.12+, GStreamer com bibliotecas
-de desenvolvimento, plugins base/good e GL, Linux-PAM, pkg-config e
-gtk4-layer-shell 1.3+. Para o bootstrap local, também Meson, Ninja, compilador C,
-Wayland e wayland-protocols. Os codecs de vídeo dependem dos plugins instalados.
+![DeckLock Wayland lock screen — English preview](docs/assets/lock-screen.png)
 
-Com a biblioteca nativa instalada pela distribuição:
+*Actual application screenshot in preview mode. The session is not locked.*
+
+## Configure visually
 
 ```sh
-cargo run -- --preview --locale pt-BR --keyboard
+scripts/cargo-local run -- --settings
 ```
 
-Se gtk4-layer-shell não estiver disponível, compile-a localmente:
+Choose a theme and background, set the language, move the clock and credentials,
+change spacing and keyboard scale, and adjust idle time. **Open preview** displays
+your current edits without saving. **Save** writes your user configuration without
+changing the theme files. The editor supports English and Brazilian Portuguese.
+
+![Native Rust and GTK4 settings window](docs/assets/settings.png)
+
+This first editor uses controls for existing layout options. Freeform dragging,
+live theme reload and plugins are future work.
+
+## Try it
+
+Development dependencies: Rust 1.93+, GTK4 4.12+, GStreamer development libraries
+with base/good and GL plugins, Linux-PAM, pkg-config and gtk4-layer-shell 1.3+.
+Video formats depend on the installed codecs.
+
+```sh
+git clone https://github.com/yan-vidal/DeckLock.git
+cd DeckLock
+cargo run -- --preview --locale en-US --preview-fullscreen
+```
+
+If your distribution does not provide gtk4-layer-shell 1.3+, build it locally
+(requires Meson, Ninja, a C compiler, Wayland and wayland-protocols):
 
 ```sh
 scripts/bootstrap-native
-scripts/cargo-local run -- --preview --locale pt-BR --keyboard
+scripts/cargo-local run -- --preview --locale en-US --preview-fullscreen
 ```
 
-O bootstrap verifica o SHA-256 do arquivo baixado e instala apenas em `.deps/`.
-O wrapper `cargo-local` configura os caminhos da biblioteca local. Sem argumentos,
-o programa também abre preview. `--preview-fullscreen` preenche o monitor;
-Escape esconde o teclado aberto e, pressionado novamente, fecha a prévia.
+The bootstrap verifies the download's SHA-256 and installs only into `.deps/`.
+Use `cargo` directly with system libraries, or `scripts/cargo-local` with the local
+build. With no arguments, DeckLock opens a preview.
 
-**Preview nunca autentica nem executa ações de energia.** Ele ignora o socket de
-controle salvo na configuração; captura de controle só acontece se você passar
-`--controller` (socket padrão) ou `--controller-socket /caminho/do/socket`
-explicitamente e abrir o teclado.
+**Preview never authenticates, locks the session or executes power actions.**
+Press Escape to hide the keyboard, then Escape again to close the window.
+
+## Embedded keyboard
 
 ```sh
-scripts/cargo-local run -- --preview --background /caminho/video.webm
-scripts/cargo-local run -- --preview --theme themes/contrast --locale en-US
+scripts/cargo-local run -- --preview --keyboard --locale en-US
+```
+
+![Embedded keyboard in mouse preview mode](docs/assets/keyboard.png)
+
+Mouse, physical keyboard and optional controller input share the same password
+field. Double-tap Shift to latch it; tap again to release. The keyboard reads the
+first GDK keymap group at startup and offers supplementary Alt symbols when the
+system layout has no AltGr layer.
+
+To test the optional external sc-controller daemon:
+
+```sh
+scripts/cargo-local run -- --preview --controller --locale en-US
+# From another terminal or a desktop shortcut:
+scripts/cargo-local run -- --toggle-keyboard
+```
+
+Controller mode reveals keys near the fingers. Capture is released when the
+keyboard closes. Preview only enables this integration with an explicit
+`--controller` or `--controller-socket` argument; the settings editor's preview
+never captures a controller. Existing installed `deck-osk --toggle` shortcuts
+remain compatible.
+
+## Themes and configuration
+
+Open `--settings` or copy [config.example.toml](config.example.toml) to
+`~/.config/decklock/config.toml`. Use `--config PATH` for another configuration.
+GUI layout choices are stored under `[layout]` and take precedence over the theme's
+layout. Remove that section to inherit theme defaults again. Existing PAM and
+idle-background settings are preserved when saving through the editor.
+
+Themes contain `theme.toml` and `style.css`; no recompilation is needed.
+
+```sh
+scripts/cargo-local run -- --preview --theme themes/contrast
+scripts/cargo-local run -- --preview --background docs/assets/wallpaper.svg
 scripts/cargo-local run -- --check-config --config config.example.toml
 ```
 
-O bloqueio real exige `--lock` e suporte do compositor a `ext-session-lock-v1`.
-Wayland por si só não garante esse suporte. O programa não implementa X11.
-Não substitua seu bloqueador já configurado antes de validar a versão Rust no seu
-ambiente. SIGTERM/SIGINT e fechamento de janela não pedem desbloqueio; uma saída
-inesperada pode deixar a sessão bloqueada, conforme a política do compositor.
+- [Theme guide](docs/themes.md) — CSS selectors and layout options (Portuguese).
+- [Translation guide](docs/i18n.md) — Fluent catalogs and language fallback (Portuguese).
+- [Implementation status](docs/rust-migration.md) — verification and remaining gaps (Portuguese).
 
-## Testar o controle e o visual Python
+`scripts/import-python-theme` optionally converts legacy local colors and media
+into an external theme. Python is used by that one-time importer and development
+test scripts; the application and native shortcut run in Rust.
 
-```sh
-scripts/cargo-local run -- --preview --locale pt-BR --preview-fullscreen --controller
-```
+## Status and compatibility
 
-Com essa janela ativa, o atalho existente `deck-osk --toggle` alterna o teclado
-embutido. Para novos atalhos, use `decklock --toggle-keyboard` (ou
-`scripts/cargo-local run -- --toggle-keyboard` durante o desenvolvimento), sem
-Python. O atalho antigo instalado no seu desktop continua compatível.
-`--controller` registra temporariamente `scc/deck-lock.pid`; outra
-instância viva não é substituída. O daemon sc-controller continua externo.
-Fechar o teclado libera a captura. Preview sem `--controller` continua sendo o
-modo de teste com mouse/teclado, sem capturar o controle.
+**Experimental.** Real locking requires an explicit `--lock` and a compositor
+that implements `ext-session-lock-v1`. Wayland alone does not guarantee support;
+X11 is outside the scope of this project.
 
-O tema padrão reproduz a disposição do Python. Para importar também suas cores
-do sc-controller e um fundo da pasta `~/.config/midias/bloqueio`:
+Preview and settings have been tested on Hyprland. An isolated compositor test
+covers lock acquisition, monitor hotplug, SIGTERM without unlock and rejection
+of a second locker after the first exits. Real-session PAM, broader compositor
+coverage, controller recovery and haptics still need validation. Test in your
+environment before replacing an existing system locker.
 
-```sh
-scripts/import-python-theme
-scripts/cargo-local run -- --preview --locale pt-BR --preview-fullscreen --controller --theme ~/.config/decklock/themes/python
-```
+Rust is the implementation on `main`. The previous Python application remains in
+[Git history](https://github.com/yan-vidal/DeckLock/tree/7459bb1).
 
-A importação usa Python uma vez para gerar CSS/TOML editáveis; o Rust lê esses
-arquivos diretamente. Executar o importador novamente sobrescreve o tema gerado.
-O importador escolhe o primeiro fundo por nome; edite `background` no TOML para
-escolher outro. O teclado virtual usa a geometria do SVG original e lê o primeiro grupo do mapa
-GDK na abertura (incluindo níveis Shift/AltGr). Mudanças de grupo/layout durante
-a execução ainda exigem reabrir. `system_keyboard = false` na configuração usa
-o mapa brasileiro embutido. Se o mapa do sistema não tiver níveis AltGr,
-o Alt virtual usa os símbolos suplementares desse mapa embutido.
-
-## Personalização e idiomas
-
-Copie [config.example.toml](config.example.toml) para
-`~/.config/decklock/config.toml`, ou use `--config`. Temas são diretórios com
-`theme.toml` e `style.css`. O tema padrão está embutido no binário; os diretórios
-em `themes/` podem ser copiados e editados sem recompilar.
-
-- [Guia de temas](docs/themes.md): CSS, disposição, tamanhos e mídias.
-- [Guia de tradução](docs/i18n.md): catálogos Fluent, português/inglês e novos idiomas.
-- Plugins e Lua ficam para uma etapa posterior; temas não executam scripts.
-
-Mouse e teclado não dependem de sc-controller. A integração opcional usa o daemon
-externo por socket Unix. `SIGUSR1` alterna o teclado da janela ativa.
-
-## Verificação
+## Development checks
 
 ```sh
 scripts/cargo-local test --locked
 scripts/cargo-local fmt --all -- --check
 scripts/cargo-local clippy --locked --all-targets -- -D warnings
 scripts/cargo-local build --locked
+scripts/cargo-local run --locked --example settings_check
 scripts/cargo-local run --locked --example preview_check
+python3 scripts/test-controller-shortcut.py
 scripts/bootstrap-native --tests
 python3 scripts/test-lock-isolated.py
 ```
 
-O exemplo `preview_check` usa apenas uma janela de preview e dados fictícios.
-O teste de protocolo usa **um socket temporário próprio**, nunca o socket Wayland
-da sessão em uso. Ele não fornece senhas ao PAM.
+GUI tests use temporary configuration and preview windows. Protocol tests use a
+separate Wayland socket and never lock the desktop session in use.

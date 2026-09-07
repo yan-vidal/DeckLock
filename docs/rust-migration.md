@@ -47,7 +47,7 @@ após soltar. Os dois defeitos foram reproduzidos nos testes antes da correção
 
 ## Evidência e limites
 
-28 testes unitários/de integração cobrem configuração, Fluent, teclado, estado,
+30 testes unitários/de integração cobrem configuração, Fluent, teclado, estado,
 helper de autenticação simulado e protocolo de controle simulado.
 `examples/preview_check.rs` verifica cliques GTK, Shift, acentos, exclusão Unicode,
 envio sem autenticação, energia desativada e liberação do campo ao destruir janela.
@@ -103,3 +103,13 @@ bloqueador da sessão antes de UAT explícita no ambiente de destino.
 
 Alt virtual: quando o mapa GDK tem somente dois níveis, usa a camada suplementar
 embutida em vez de repetir o nível normal. AltGr nativo continua tendo prioridade.
+
+## Configurações gráficas (2026-09-07)
+
+`--settings` abre uma janela Rust/GTK4 para tema, fundo, idioma, disposição,
+alinhamento, espaçamentos, escala, relógio/avatar, inatividade e uso de controle.
+O layout salvo sobrescreve o do tema. O preview usa alterações ainda não salvas
+em arquivo temporário e não habilita captura de controle. Os testes verificam
+persistência, preservação do serviço PAM, rejeição de tema inválido, preview sem
+salvar e descarte dos controles ao fechar. Capturas reais em inglês estão nos
+READMEs em inglês e português.

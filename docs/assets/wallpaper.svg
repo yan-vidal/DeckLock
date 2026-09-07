@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1200" viewBox="0 0 1920 1200">
+ <defs>
+  <linearGradient id="sky" x2="0.2" y2="1"><stop stop-color="#071825"/><stop offset=".55" stop-color="#163b50"/><stop offset="1" stop-color="#617573"/></linearGradient>
+  <radialGradient id="glow"><stop stop-color="#a9d4bf" stop-opacity=".25"/><stop offset="1" stop-color="#8bbab3" stop-opacity="0"/></radialGradient>
+  <linearGradient id="ridge" x2="0" y2="1"><stop stop-color="#285362"/><stop offset="1" stop-color="#0a293b"/></linearGradient>
+ </defs>
+ <path fill="url(#sky)" d="M0 0h1920v1200H0z"/>
+ <ellipse cx="1430" cy="290" rx="650" ry="500" fill="url(#glow)"/>
+ <circle cx="1480" cy="205" r="43" fill="#dee6cf" opacity=".85"/>
+ <path d="M0 680L210 550 395 630 690 320 1030 705 1290 430 1580 650 1750 525 1920 610V1200H0Z" fill="url(#ridge)"/>
+ <path d="M535 495L690 320 845 495 717 457 665 422 624 478Z" fill="#789499" opacity=".45"/>
+ <path d="M0 890L270 715 560 880 960 655 1280 855 1540 690 1920 805V1200H0Z" fill="#102d3e"/>
+ <path d="M0 1060Q430 840 830 1080T1920 990V1200H0Z" fill="#071e2c"/>
+</svg>

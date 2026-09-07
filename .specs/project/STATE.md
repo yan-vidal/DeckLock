@@ -36,3 +36,11 @@ Alt fallback corrected for two-level system maps. Native --toggle-keyboard
 launcher replaces the Python dispatcher in tests; old installed shortcuts remain
 compatible. Python runtime modules removed from the current tree; development
 utilities may still use Python. No desktop shortcut installation was changed.
+
+2026-09-07: native GTK4 --settings editor added. Config.layout overrides theme
+layout; validated atomic config save preserves PAM/idle background/socket fields.
+Unsaved previews use a temporary config and an explicit --preview subprocess;
+closing settings terminates only that child. File selection uses GTK4 FileDialog.
+30 core tests plus settings save/reload/invalid theme/cleanup GUI checks passed.
+English primary README, Portuguese README.pt-BR.md and real English screenshots
+introduce the application as a general Wayland lock screen.
