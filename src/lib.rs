@@ -6,5 +6,6 @@ pub mod keyboard;
 pub mod lock;
 pub mod media;
 pub mod session;
+pub mod settings;
 pub mod shortcut;
 pub mod ui;

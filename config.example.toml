@@ -9,3 +9,13 @@ idle_seconds = 600
 
 # Follow the first GDK keymap group at startup; false selects the built-in BR map.
 system_keyboard = true
+
+# Optional layout override, also written by --settings. Otherwise use the theme.
+# [layout]
+# alignment = "center"
+# arrangement = "vertical"
+# spacing = 0
+# padding = 0
+# clock_visible = true
+# avatar_visible = true
+# keyboard_scale = 1.0

@@ -1,4 +1,4 @@
-use decklock::{auth, config, controller, i18n, lock, session, shortcut, ui};
+use decklock::{auth, config, controller, i18n, lock, session, settings, shortcut, ui};
 
 use clap::Parser;
 use gtk::{gio, glib, prelude::*};
@@ -20,6 +20,9 @@ struct Args {
     /// Open a normal window; authentication and power actions are disabled.
     #[arg(long, conflicts_with = "lock")]
     preview: bool,
+    /// Open the configuration window (never acquires a lock).
+    #[arg(long, conflicts_with_all = ["lock", "preview", "toggle_keyboard", "check_config"])]
+    settings: bool,
     /// Acquire a real Wayland session lock (requires a supported compositor).
     #[arg(long)]
     lock: bool,
@@ -79,6 +82,14 @@ fn run(args: Args) -> Result<(), String> {
     if args.toggle_keyboard {
         return shortcut::toggle();
     }
+    if args.settings {
+        let path = args.config.unwrap_or(
+            shortcut::config_dir()
+                .ok_or("Cannot locate configuration")?
+                .join("decklock/config.toml"),
+        );
+        return settings::run(path, args.locale);
+    }
     let default_config = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".config")))
@@ -110,7 +121,10 @@ fn run(args: Args) -> Result<(), String> {
     } else {
         None
     };
-    let theme = config::Theme::load(config.theme.as_deref())?;
+    let mut theme = config::Theme::load(config.theme.as_deref())?;
+    if let Some(layout) = &config.layout {
+        theme.layout = layout.clone();
+    }
     let strings = i18n::I18n::new(config.locale.as_deref(), args.translations.as_deref())?;
     if args.check_config {
         println!(
