@@ -654,12 +654,26 @@ pub fn build(
     ] {
         let button = gtk::Button::new();
         let image = gtk::Image::from_icon_name(icon);
-        image.set_pixel_size(24);
-        button.set_child(Some(&image));
-        button.set_tooltip_text(Some(&settings.strings.text(label)));
+        // Some icon themes draw the power glyph smaller inside the same canvas.
+        // Equal slots preserve button sizes while giving that glyph more room.
+        image.set_pixel_size(if command == "poweroff" { 32 } else { 24 });
+        image.set_halign(gtk::Align::Center);
+        image.set_valign(gtk::Align::Center);
+        let slot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        slot.set_size_request(32, 32);
+        slot.set_halign(gtk::Align::Center);
+        slot.set_valign(gtk::Align::Center);
+        image.set_hexpand(true);
+        slot.append(&image);
+        button.set_child(Some(&slot));
+        let title = settings.strings.text(label);
+        button.set_tooltip_text(Some(&title));
         if settings.preview {
-            button.set_sensitive(false);
-            button.set_tooltip_text(Some(&settings.strings.text("preview-power")));
+            // Keep hover/tooltips for theme previews; no power handler is attached.
+            button.set_tooltip_text(Some(&format!(
+                "{title}\n{}",
+                settings.strings.text("preview-power")
+            )));
         } else {
             button.connect_clicked(move |_| {
                 if let Err(err) = std::process::Command::new("systemctl").arg(command).spawn() {

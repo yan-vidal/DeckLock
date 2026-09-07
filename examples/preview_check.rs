@@ -101,7 +101,16 @@ fn main() {
         .filter_map(|w| w.downcast::<gtk::Button>().ok())
         .collect();
     assert_eq!(buttons.len(), 3);
-    assert!(buttons.iter().all(|b| !b.is_sensitive()));
+    for button in &buttons {
+        assert!(
+            button.is_sensitive(),
+            "Preview must show hover and tooltips"
+        );
+        assert!(button.tooltip_text().unwrap().contains("desativadas"));
+        // Preview has no systemctl callback, even though hover is enabled.
+        button.emit_clicked();
+    }
+    assert!(view.window.is_visible());
     let weak_entry = view.entry.downgrade();
     view.window.destroy();
     drop(view);

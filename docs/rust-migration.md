@@ -50,7 +50,7 @@ após soltar. Os dois defeitos foram reproduzidos nos testes antes da correção
 30 testes unitários/de integração cobrem configuração, Fluent, teclado, estado,
 helper de autenticação simulado e protocolo de controle simulado.
 `examples/preview_check.rs` verifica cliques GTK, Shift, acentos, exclusão Unicode,
-envio sem autenticação, energia desativada e liberação do campo ao destruir janela.
+envio sem autenticação, cliques de energia inertes no preview e liberação do campo ao destruir janela.
 
 Previews Python/Rust comparados visualmente no monitor de 1280×800, nos modos
 normal e teclado mouse, com fundo e cores importados. A composição original foi
@@ -113,3 +113,7 @@ em arquivo temporário e não habilita captura de controle. Os testes verificam
 persistência, preservação do serviço PAM, rejeição de tema inválido, preview sem
 salvar e descarte dos controles ao fechar. Capturas reais em inglês estão nos
 READMEs em inglês e português.
+
+Ícones de energia: área comum para os três botões e glifo de desligar ampliado.
+No preview, hover e tooltips continuam funcionando; nenhum callback de systemctl
+é conectado. As dicas incluem o nome da ação e indicam que ela não será executada.
