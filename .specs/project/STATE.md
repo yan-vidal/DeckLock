@@ -111,9 +111,17 @@ Running without arguments or with `--help` prints the command synopsis with conc
 Large monolithic settings-demo.gif split into four focused 1080p clips (`settings-themes`,
 `settings-library`, `settings-rest`, `settings-editor`) mapped to README sections.
 Bundled default media pack includes author-supplied `osaka_dotombori.mp4` under `assets/media/videos`,
-accompanied by `assets/media/CREDITS.md` with explicit CC BY-SA 4.0 redistribution terms.
+accompanied by `assets/media/CREDITS.md` with author attribution; no separate license for other uses was specified.
 Added `packaging/` directory containing desktop entry, Arch PKGBUILD template, and
 `scripts/package-release.py` staging release archives and Arch recipes for version 0.1.
 README.md and README.pt-BR.md restructured to prioritize installation and usage,
 moving build instructions to the development section. 38 core unit tests and clippy pass.
 
+
+2026-09-08 release audit: main and v0.1 matched 7fc9b01; all four public assets
+matched local hashes and included the original Osaka video. Found an uncovered
+Clap conflict rejecting --config PATH with the config subcommand. Removed the
+blanket conflict, explicitly reject GUI/lock flags with config, and added parser
+regression coverage for --config before/after nested commands. Revision 2 keeps
+version 0.1 and preserves the original v0.1 release/tag under a new v0.1-r2 tag.
+Corrected the inaccurate CC BY-SA claim above; media credits never granted it.

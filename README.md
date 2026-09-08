@@ -12,15 +12,15 @@ Optional controller support includes devices such as the Steam Deck.
 
 ### Arch Linux · x86_64
 
-Download the **0.1** package from [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.1),
+Download the **0.1** package from [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.1-r2),
 or use:
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1/decklock-0.1-1-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1-r2/decklock-0.1-2-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1-r2/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.1-1-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.1-2-x86_64.pkg.tar.zst
 ```
 
 The package installs the application, a **DeckLock Settings** launcher and the

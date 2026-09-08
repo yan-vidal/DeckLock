@@ -1,6 +1,6 @@
 # Release packages
 
-Version **0.1** is published as GitHub tag `v0.1`; Cargo retains the required
+Version **0.1** is published as GitHub tag `v0.1-r2`; Cargo retains the required
 three-component SemVer `0.1.0` internally.
 
 Run `scripts/cargo-local build --release --locked`, then
@@ -11,7 +11,7 @@ PAM, or enables idle/lock services. The desktop launcher opens settings only.
 Outputs:
 
 - `decklock-0.1-linux-x86_64.tar.gz`: binary, desktop entry, themes and media.
-- `decklock-0.1-1-x86_64.pkg.tar.zst`: native pacman package containing that payload.
+- `decklock-0.1-2-x86_64.pkg.tar.zst`: native pacman package containing that payload.
 - `PKGBUILD`: recipe with a checksum for the archive.
 - `SHA256SUMS`: archive hash; append the package hash after makepkg.
 

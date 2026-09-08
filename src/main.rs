@@ -14,7 +14,6 @@ use zeroize::Zeroizing;
 #[derive(Parser)]
 #[command(
     version,
-    args_conflicts_with_subcommands = true,
     about = "Customizable Wayland screen locker with graphical and command-line settings.",
     after_help = "Examples:\n  decklock --settings\n  decklock --preview\n  decklock --lock\n  decklock config show\n  decklock config set theme_preset catppuccin-mocha\n  decklock config set layout.padding 48\n  decklock config --help"
 )]
@@ -102,6 +101,27 @@ fn main() {
 
 fn run(args: Args) -> Result<(), String> {
     if let Some(Command::Config { action }) = args.command {
+        if args.preview
+            || args.settings
+            || args.lock
+            || args.theme.is_some()
+            || args.locale.is_some()
+            || args.translations.is_some()
+            || args.background.is_some()
+            || args.keyboard
+            || args.preview_idle
+            || args.preview_fullscreen
+            || args.controller_socket.is_some()
+            || args.controller
+            || args.toggle_keyboard
+            || args.check_config
+            || args.preview_exit_after.is_some()
+        {
+            return Err(
+                "The config command accepts --config PATH; use other options without a subcommand"
+                    .into(),
+            );
+        }
         let path = args.config.unwrap_or(
             shortcut::config_dir()
                 .ok_or("Cannot locate configuration")?
@@ -354,4 +374,44 @@ fn run(args: Args) -> Result<(), String> {
         return Err("Could not acquire session lock".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+    #[test]
+    fn config_path_is_accepted_before_and_after_subcommands() {
+        for argv in [
+            vec![
+                "decklock",
+                "--config",
+                "/tmp/demo.toml",
+                "config",
+                "set",
+                "layout.padding",
+                "48",
+            ],
+            vec![
+                "decklock",
+                "config",
+                "set",
+                "layout.padding",
+                "48",
+                "--config",
+                "/tmp/demo.toml",
+            ],
+        ] {
+            let args = Args::try_parse_from(argv).unwrap();
+            assert_eq!(args.config, Some(PathBuf::from("/tmp/demo.toml")));
+            assert!(matches!(
+                args.command,
+                Some(Command::Config {
+                    action: decklock::config_cli::Action::Set { .. }
+                })
+            ));
+        }
+        assert!(
+            run(Args::try_parse_from(["decklock", "--lock", "config", "show"]).unwrap()).is_err()
+        );
+    }
 }
