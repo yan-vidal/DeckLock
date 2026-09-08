@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import tarfile
+import tomllib
 import tempfile
 
 root=Path(__file__).resolve().parent.parent
@@ -25,13 +26,20 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
     with tarfile.open(archive) as tar:
         assert all(not Path(m.name).is_absolute() and '..' not in Path(m.name).parts and not m.issym() and not m.islnk() for m in tar.getmembers())
         tar.extractall(unpack,filter='data')
-    stage=next(unpack.iterdir())
+    # The PKGBUILD's package() reads $srcdir/<name>/, so the archive root name is
+    # part of the contract, not an implementation detail.
+    version=tomllib.loads((root/'Cargo.toml').read_text())['package']['version'].removesuffix('.0')
+    assert [p.name for p in unpack.iterdir()]==[f'decklock-{version}-linux-x86_64'],[p.name for p in unpack.iterdir()]
+    stage=unpack/f'decklock-{version}-linux-x86_64'
     executable=stage/'bin/decklock'
     assert executable.stat().st_mode&0o111
     assert executable.read_bytes()==binary.read_bytes()
     for path in (root/'assets/media').rglob('*'):
         if path.is_file():assert (stage/'share/decklock/media'/path.relative_to(root/'assets/media')).read_bytes()==path.read_bytes()
-    assert 'Exec=decklock --settings' in (stage/'share/applications/decklock.desktop').read_text()
+    assert 'Exec=decklock --settings' in (stage/'share/applications/io.github.yan_vidal.DeckLock.desktop').read_text()
+    assert 'Icon=io.github.yan_vidal.DeckLock' in (stage/'share/applications/io.github.yan_vidal.DeckLock.desktop').read_text()
+    for source, installed in [('decklock.svg', 'scalable/apps/io.github.yan_vidal.DeckLock.svg'), ('decklock-symbolic.svg', 'symbolic/apps/io.github.yan_vidal.DeckLock-symbolic.svg')]:
+        assert (stage/'share/icons/hicolor'/installed).read_bytes() == (root/'assets/icons'/source).read_bytes()
     manifest=json.loads((stage/'BUILD-INFO.json').read_text())
     assert manifest['source_commit']==subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip()
     env=os.environ.copy()

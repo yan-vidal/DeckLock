@@ -190,6 +190,7 @@ pub fn build(
     locale: Option<&str>,
     _executable: PathBuf,
 ) -> Result<gtk::ApplicationWindow, String> {
+    crate::branding::install();
     let path = absolute(&path)?;
     let original = Config::load(path.exists().then_some(path.as_path()))?;
     let strings = Rc::new(I18n::new(locale.or(original.locale.as_deref()), None)?);
@@ -800,7 +801,7 @@ pub fn build(
 pub fn run(path: PathBuf, locale: Option<String>) -> Result<(), String> {
     gtk::init().map_err(|e| e.to_string())?;
     let app = gtk::Application::new(
-        Some("io.github.yan_vidal.DeckLock.Settings"),
+        Some(crate::branding::APP_ID),
         gio::ApplicationFlags::NON_UNIQUE,
     );
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;

@@ -1,0 +1,6 @@
+<gresources>
+  <gresource prefix="/io/github/yan_vidal/DeckLock/icons">
+    <file alias="scalable/apps/io.github.yan_vidal.DeckLock.svg">decklock.svg</file>
+    <file alias="symbolic/apps/io.github.yan_vidal.DeckLock-symbolic.svg">decklock-symbolic.svg</file>
+  </gresource>
+</gresources>

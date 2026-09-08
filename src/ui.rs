@@ -634,6 +634,7 @@ fn build_in(
     on_submit: Rc<dyn Fn(Zeroizing<String>)>,
     existing: Option<gtk::ApplicationWindow>,
 ) -> View {
+    crate::branding::install();
     let window = existing.unwrap_or_else(|| {
         gtk::ApplicationWindow::builder()
             .title(settings.strings.text(if settings.preview {

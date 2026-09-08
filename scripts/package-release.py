@@ -36,7 +36,15 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-') as work:
     shutil.copytree(root/'assets/media', share/'decklock/media')
     shutil.copytree(root/'themes', share/'decklock/themes')
     (share/'applications').mkdir()
-    shutil.copy2(root/'packaging/decklock.desktop', share/'applications')
+    shutil.copy2(root/'packaging/decklock.desktop', share/'applications/io.github.yan_vidal.DeckLock.desktop')
+    # Do not shadow `name`: it is the archive root the PKGBUILD's package() reads.
+    for source, folder, installed in [
+        ('decklock.svg', 'scalable/apps', 'io.github.yan_vidal.DeckLock.svg'),
+        ('decklock-symbolic.svg', 'symbolic/apps', 'io.github.yan_vidal.DeckLock-symbolic.svg'),
+    ]:
+        destination = share/'icons/hicolor'/folder/installed
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(root/'assets/icons'/source, destination)
     docs = share/'doc/decklock'
     docs.mkdir(parents=True)
     for file in ['README.md', 'README.pt-BR.md', 'config.example.toml']:

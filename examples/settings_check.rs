@@ -19,6 +19,24 @@ fn find(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
 }
 fn main() {
     gtk::init().unwrap();
+    decklock::branding::install();
+    decklock::branding::install();
+    let icons = gtk::IconTheme::for_display(&gtk::gdk::Display::default().unwrap());
+    for name in [
+        decklock::branding::APP_ID,
+        "io.github.yan_vidal.DeckLock-symbolic",
+    ] {
+        assert!(icons.has_icon(name), "Embedded icon missing: {name}");
+    }
+    assert_eq!(
+        icons
+            .resource_path()
+            .iter()
+            .filter(|p| p.as_str() == "/io/github/yan_vidal/DeckLock/icons")
+            .count(),
+        1
+    );
+
     let app = gtk::Application::new(
         Some("io.github.yan_vidal.DeckLock.SettingsCheck"),
         gio::ApplicationFlags::NON_UNIQUE,
