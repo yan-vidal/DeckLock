@@ -93,7 +93,13 @@ fn main() {
     }
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
-    Config::default().save(&path).unwrap();
+    Config {
+        background_pool: Some(vec![]),
+        idle_pool: Some(vec![]),
+        ..Default::default()
+    }
+    .save(&path)
+    .unwrap();
     let window = settings::build(
         &app,
         path.clone(),
@@ -104,39 +110,101 @@ fn main() {
     window.present();
     pump(100);
     let get = |name| find(window.upcast_ref(), name);
-    get("settings-animation-options")
-        .downcast::<gtk::Expander>()
+
+    fn item(window: &gtk::ApplicationWindow, prefix: &str, id: &str) -> gtk::ListBoxRow {
+        let list = find(window.upcast_ref(), &format!("{prefix}-procedurals"))
+            .downcast::<gtk::ListBox>()
+            .unwrap();
+        let mut child = list.first_child();
+        while let Some(row) = child {
+            child = row.next_sibling();
+            if row.first_child().and_then(|c| c.tooltip_text()).as_deref()
+                == Some(&format!("procedural:{id}"))
+            {
+                return row.downcast().unwrap();
+            }
+        }
+        panic!("Missing procedural {id}")
+    }
+    let stars = item(&window, "settings-background", "starfield");
+    get("settings-background-tabs")
+        .downcast::<gtk::Notebook>()
         .unwrap()
-        .set_expanded(true);
-    get("settings-idle-animation-options")
-        .downcast::<gtk::Expander>()
+        .set_current_page(Some(2));
+    let library = get("settings-background-procedurals")
+        .downcast::<gtk::ListBox>()
+        .unwrap();
+    library.select_row(Some(&stars));
+    click(get("settings-background-add"));
+    let rest = item(&window, "settings-idle-background", "lissajous");
+    get("settings-idle-background-tabs")
+        .downcast::<gtk::Notebook>()
         .unwrap()
-        .set_expanded(true);
-    pump(100);
-    get("settings-animation-effect")
-        .downcast::<gtk::DropDown>()
+        .set_current_page(Some(2));
+    get("settings-idle-background-procedurals")
+        .downcast::<gtk::ListBox>()
         .unwrap()
-        .set_selected(1);
-    get("settings-idle-animation-effect")
-        .downcast::<gtk::DropDown>()
-        .unwrap()
-        .set_selected(3);
-    click(get("settings-preview"));
-    pump(500);
-    let preview = top("settings-live-preview");
+        .select_row(Some(&rest));
+    click(get("settings-idle-background-add"));
+    click(find(stars.upcast_ref(), "media-eye"));
+    pump(200);
+    let viewer = top("media-viewer");
     assert!(
-        find(preview.upcast_ref(), "procedural-background")
+        find(viewer.upcast_ref(), "procedural-background")
             .downcast::<gtk::Picture>()
             .unwrap()
             .paintable()
             .is_some()
+    );
+    let before = std::fs::read(&path).unwrap();
+    click(find(stars.upcast_ref(), "media-configure"));
+    pump(100);
+    let editor = top("procedural-editor");
+    capture(&editor, "procedural-editor");
+    let color = find(editor.upcast_ref(), "procedural-color")
+        .downcast::<gtk::Entry>()
+        .unwrap();
+    color.set_text("invalid");
+    click(find(editor.upcast_ref(), "procedural-apply"));
+    assert!(editor.is_visible());
+    color.set_text("#abcdef");
+    find(editor.upcast_ref(), "procedural-speed")
+        .downcast::<gtk::SpinButton>()
+        .unwrap()
+        .set_value(0.6);
+    click(find(editor.upcast_ref(), "procedural-apply"));
+    pump(200);
+    assert!(!editor.is_visible());
+    assert_eq!(top("media-viewer"), viewer);
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        before,
+        "Apply must keep draft changes off disk"
+    );
+    click(get("settings-preview"));
+    pump(500);
+    let preview = top("settings-live-preview");
+    let animation = find(preview.upcast_ref(), "procedural-background")
+        .downcast::<gtk::Picture>()
+        .unwrap();
+    assert!(animation.paintable().is_some());
+    let background = find(preview.upcast_ref(), "background");
+    let stack = background
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Stack>()
+        .unwrap();
+    assert_eq!(
+        stack.visible_child(),
+        Some(animation.clone().upcast()),
+        "Procedural must be the actual background, not an overlay"
     );
     capture(&preview, "animation-starfield");
     get("settings-media-tabs")
         .downcast::<gtk::Stack>()
         .unwrap()
         .set_visible_child_name("rest");
-    pump(700);
+    pump(800);
     assert!(
         find(preview.upcast_ref(), "procedural-background")
             .downcast::<gtk::Picture>()
@@ -144,16 +212,50 @@ fn main() {
             .paintable()
             .is_some()
     );
+    let rest_stack = find(preview.upcast_ref(), "background")
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Stack>()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while rest_stack.is_transition_running() && Instant::now() < deadline {
+        pump(20);
+    }
+    assert!(!rest_stack.is_transition_running());
+    let mut child = rest_stack.first_child();
+    while let Some(widget) = child {
+        child = widget.next_sibling();
+        if Some(&widget) != rest_stack.visible_child().as_ref() {
+            assert!(!widget.is_mapped(), "Previous media must stop rendering");
+        }
+    }
     capture(&preview, "animation-rest");
+    capture(window.upcast_ref(), "procedural-library");
     click(get("settings-save"));
     pump(200);
     let saved = Config::load(Some(&path)).unwrap();
-    assert_eq!(saved.animation.effect, Effect::Starfield);
-    assert_eq!(saved.idle_animation.effect, Effect::Lissajous);
+    assert_eq!(
+        saved.background_pool,
+        Some(vec![decklock::procedural::path("starfield")])
+    );
+    assert_eq!(
+        saved.idle_pool,
+        Some(vec![decklock::procedural::path("lissajous")])
+    );
+    assert_eq!(saved.procedurals.starfield.color, "#abcdef");
+    assert_eq!(saved.procedurals.starfield.speed, 0.6);
+    // Pool removal leaves the library item and its parameters intact.
+    let pool = get("settings-background-pool")
+        .downcast::<gtk::ListBox>()
+        .unwrap();
+    pool.select_row(pool.row_at_index(0).as_ref());
+    click(get("settings-background-remove"));
+    assert!(pool.row_at_index(0).is_none());
+    assert!(library.row_at_index(0).is_some());
     window.destroy();
     preview.destroy();
     pump(100);
     println!(
-        "PASS: animated textures, bounded resolution, unmap/drop lifecycle, GUI save and rest preview"
+        "PASS: procedural library, eye/gear, draft validation, exclusive background/pools, persistence and lifecycle"
     );
 }

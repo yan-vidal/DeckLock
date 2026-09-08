@@ -6,6 +6,8 @@ pub struct Viewer(Rc<RefCell<Option<Content>>>);
 struct Content {
     window: gtk::Window,
     picture: gtk::Picture,
+    body: gtk::Box,
+    path: std::path::PathBuf,
     title: gtk::Label,
     playback: Rc<RefCell<Option<crate::media::Playback>>>,
 }
@@ -16,7 +18,42 @@ impl Viewer {
             content.window.destroy();
         }
     }
+    pub fn set_title(&self, title: &str) {
+        if let Some(content) = self.0.borrow().as_ref() {
+            content.title.set_text(title);
+            content.window.set_title(Some(title));
+        }
+    }
     pub fn show(&self, parent: &gtk::ApplicationWindow, path: &Path) {
+        self.show_configured(parent, path, None);
+    }
+    pub fn refresh_procedural(
+        &self,
+        parent: &gtk::ApplicationWindow,
+        path: &Path,
+        animation: crate::animation::Animation,
+    ) {
+        let refresh = self
+            .0
+            .borrow()
+            .as_ref()
+            .is_some_and(|c| c.window.is_visible() && c.path == path);
+        if refresh {
+            let title = self.0.borrow().as_ref().unwrap().title.text();
+            self.show_configured(parent, path, Some(animation));
+            self.set_title(&title);
+        }
+    }
+    pub fn show_configured(
+        &self,
+        parent: &gtk::ApplicationWindow,
+        path: &Path,
+        animation: Option<crate::animation::Animation>,
+    ) {
+        let animation = animation.or_else(|| {
+            crate::procedural::id(path)
+                .map(|id| crate::procedural::Parameters::default().animation(id))
+        });
         let mut state = self.0.borrow_mut();
         let content = state.get_or_insert_with(|| {
             let window = gtk::Window::builder()
@@ -51,11 +88,27 @@ impl Viewer {
             Content {
                 window,
                 picture,
+                body: root,
+                path: Default::default(),
                 title,
                 playback,
             }
         });
         content.playback.borrow_mut().take();
+        content.path = path.to_path_buf();
+        content.body.remove(&content.picture);
+        content.picture = if let Some(animation) = animation {
+            crate::animation::widget(animation)
+        } else {
+            gtk::Picture::new()
+        };
+        content.picture.set_can_shrink(true);
+        content.picture.set_hexpand(true);
+        content.picture.set_vexpand(true);
+        if crate::procedural::id(path).is_none() {
+            content.picture.set_content_fit(gtk::ContentFit::Contain);
+        }
+        content.body.append(&content.picture);
         content.picture.set_paintable(None::<&gtk::gdk::Paintable>);
         content
             .title
@@ -72,6 +125,7 @@ impl Viewer {
                     Err(error) => content.title.set_text(&error),
                 }
             }
+            Some(crate::library::Kind::Procedural) => {}
             _ => content.picture.set_file(Some(&gio::File::for_path(path))),
         }
         content.window.present();

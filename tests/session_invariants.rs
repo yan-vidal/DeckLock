@@ -91,3 +91,32 @@ fn every_media_choice_stays_in_its_selected_playback_mode() {
         assert_eq!(selection.current(), Some(first.as_path()));
     }
 }
+
+#[test]
+fn procedural_media_are_selected_exclusively_and_stay_for_the_session() {
+    use decklock::{
+        library::{Kind, Selection, kind},
+        procedural,
+    };
+    let paths = vec![
+        "a.png".into(),
+        procedural::path("starfield"),
+        "b.mp4".into(),
+        "c.jpg".into(),
+        procedural::path("lissajous"),
+    ];
+    for seed in 0..100 {
+        let chosen = paths[seed % paths.len()].clone();
+        let mut selection = Selection::new(paths.clone(), seed);
+        assert_eq!(selection.current(), Some(chosen.as_path()));
+        for _ in 0..10 {
+            if kind(&chosen) == Some(Kind::Image) {
+                assert!(selection.advance());
+                assert_eq!(kind(selection.current().unwrap()), Some(Kind::Image));
+            } else {
+                assert!(!selection.advance());
+                assert_eq!(selection.current(), Some(chosen.as_path()));
+            }
+        }
+    }
+}

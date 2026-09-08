@@ -46,34 +46,38 @@ O binário pronto da versão 0.1 usa as bibliotecas do **Arch x86_64 atual**; el
 distribuições ou arquiteturas. Para elas, veja [compilação](#desenvolvimento).
 
 
-## Fundos procedurais (branch de desenvolvimento; previstos para 0.2)
+## Mídias procedurais (branch de desenvolvimento; previstas para 0.2)
 
 Esses recursos ainda não fazem parte da versão 0.1 publicada.
 
-Em **Fundo → Camada procedural**, escolha **Campo de estrelas**, **Partículas
-flutuantes** ou **Curvas de Lissajous**. As animações transparentes aparecem sobre
-sua imagem/vídeo; deixe o pool vazio para usar apenas o fundo do tema. Repouso tem
-opções independentes; **Reutilizar o fundo** preserva a camada normal. O preview
-acompanha as alterações.
+Abra **Fundo → Biblioteca → Procedurais**. Selecione **Campo de estrelas**,
+**Partículas flutuantes** ou **Curvas de Lissajous** e adicione ao pool como uma foto
+ou vídeo. O procedural substitui o fundo; não é uma camada sobre outra mídia.
+Se for sorteado no bloqueio, permanece durante aquela sessão. Fotos continuam
+alternando apenas entre fotos. Repouso tem seu próprio pool; **Reutilizar o fundo**
+mantém a mídia normal.
 
-Configure cor, velocidade, quantidade de partículas, seed e FPS (1–30). Os efeitos
-começam desativados. A textura tem até 640 pixels no maior lado e é ampliada para
-a janela, trocando nitidez dos detalhes por trabalho limitado de CPU. Widgets
-ocultos deixam de solicitar quadros. Economia de bateria ainda não foi medida.
+O **olho** abre a mídia no visualizador único. A **engrenagem** ajusta as cores,
+velocidade, quantidade de partículas, seed e FPS (1–30) daquele item. **Aplicar**
+atualiza o rascunho e as prévias abertas; **Salvar** nas configurações grava no disco.
+Fechar o editor sem aplicar descarta suas edições. Os parâmetros valem para todos
+os pools que usam o item; removê-lo do pool mantém suas configurações.
 
 ```sh
-decklock config set animation.effect starfield
-decklock config set animation.color '#b4befe'
-decklock config set animation.speed 0.3
-decklock config set idle_animation.effect lissajous
+decklock config set background_pool '["procedural:starfield"]'
+decklock config set procedurals.starfield.color '#b4befe'
+decklock config set procedurals.starfield.speed 0.3
+decklock config set idle_pool '["procedural:lissajous"]'
 decklock config set idle_reuse_background false
 decklock --preview
 ```
 
-A configuração externa aceita tabelas TOML `[animation]` e `[idle_animation]`.
-Os IDs são `none`, `starfield`, `particles`, `lissajous`; nenhum código de terceiros
-é executado. `config unset animation` restaura os padrões. Veja a
-[configuração de exemplo](config.example.toml).
+IDs: `procedural:starfield`, `procedural:particles`, `procedural:lissajous`.
+As tabelas TOML individuais ficam em `[procedurals.starfield]` (e nos outros IDs).
+`config unset procedurals` restaura os parâmetros. Nenhum código de terceiros é
+executado. A textura opaca tem até 640 pixels no maior lado e é ampliada para a
+janela. Widgets ocultos deixam de solicitar quadros. Economia de bateria ainda
+não foi medida. Veja a [configuração de exemplo](config.example.toml).
 
 
 ## Preview e bloqueio

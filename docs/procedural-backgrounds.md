@@ -187,3 +187,16 @@ e `[idle_animation]` em config.toml (ver config.example.toml); a sintaxe de tema
 esboçada anteriormente não foi adotada. Não há importação de código nem novos
 decoders. O preview e a interface traduzida permitem ajustar ambos os modos.
 Os resultados das sondas históricas não são benchmarks desta implementação.
+
+
+## Revisão do fluxo solicitada pelo usuário — mídias, não camadas
+
+O usuário esclareceu que cada procedural deve aparecer na biblioteca, com olho e
+engrenagem, ser adicionado ao pool e substituir a mídia normal. A implementação
+anterior de overlay foi substituída. Os três IDs internos são procedural:starfield,
+procedural:particles e procedural:lissajous. Parâmetros por item ficam em
+procedurals.<id> no config.toml, compartilhados entre pools. O olho reutiliza o
+visualizador de mídia; a engrenagem altera um rascunho validado, persistido pelo
+Salvar principal. Cores incluem fundo opaco. Imagens continuam em slideshow;
+vídeos e procedurais selecionados permanecem durante a sessão. O formato não
+executa código externo. A migração lê rascunhos da versão de overlay não publicada.

@@ -26,3 +26,7 @@ pub mod config_cli;
 pub mod animation;
 
 pub mod branding;
+
+pub mod procedural;
+
+pub mod procedural_editor;

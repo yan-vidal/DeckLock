@@ -172,32 +172,36 @@ fn importing_relative_media_resolves_against_source_and_preserves_them() {
 }
 
 #[test]
-fn procedural_options_roundtrip_and_reject_invalid_writes() {
+fn procedural_media_options_roundtrip_and_reject_invalid_writes() {
     let cli = Cli::new();
     for (key, value) in [
-        ("animation.effect", "starfield"),
-        ("animation.color", "#abcdef"),
-        ("animation.speed", "0.5"),
-        ("animation.seed", "4294967295"),
-        ("idle_animation.effect", "lissajous"),
+        ("background_pool", "['procedural:starfield']"),
+        ("procedurals.starfield.color", "#abcdef"),
+        ("procedurals.starfield.speed", "0.5"),
+        ("procedurals.starfield.seed", "4294967295"),
+        ("idle_pool", "['procedural:lissajous']"),
     ] {
         cli.config(&["set", key, value], true);
-        let output = cli.config(&["get", key], true);
-        assert!(String::from_utf8_lossy(&output.stdout).contains(value));
     }
+    let output = cli.config(&["get", "background_pool"], true);
+    assert!(String::from_utf8_lossy(&output.stdout).contains("procedural:starfield"));
     let saved = std::fs::read(&cli.file).unwrap();
     for (key, value) in [
-        ("animation.fps", "60"),
-        ("animation.speed", "nan"),
-        ("animation.color", "bad"),
-        ("idle_animation.effect", "shader"),
+        ("procedurals.starfield.fps", "60"),
+        ("procedurals.starfield.speed", "nan"),
+        ("procedurals.starfield.color", "bad"),
+        ("background_pool", "['procedural:unknown']"),
     ] {
         cli.config(&["set", key, value], false);
         assert_eq!(std::fs::read(&cli.file).unwrap(), saved);
     }
-    cli.config(&["unset", "animation"], true);
-    assert!(
-        String::from_utf8_lossy(&cli.config(&["get", "animation.effect"], true).stdout)
-            .contains("none")
+    cli.config(&["unset", "procedurals"], true);
+    assert_eq!(
+        String::from_utf8_lossy(
+            &cli.config(&["get", "procedurals.starfield.speed"], true)
+                .stdout
+        )
+        .trim(),
+        "0.3"
     );
 }

@@ -46,32 +46,37 @@ not a universal Linux binary. Packages for other distributions and architectures
 are not yet provided. See [build from source](#development) for another distribution.
 
 
-## Procedural backgrounds (development branch; planned for 0.2)
+## Procedural media (development branch; planned for 0.2)
 
 These features are not included in the published 0.1 release.
 
-In **Background → Procedural overlay**, choose **Starfield**, **Floating particles**
-or **Lissajous curves**. These transparent animations run over your image/video;
-use an empty media pool for a plain theme background. Rest has independent options,
-and **Reuse background** preserves the normal overlay. Preview updates live.
+Open **Background → Library → Procedurals**. Select **Starfield**, **Floating
+particles** or **Lissajous curves** and add it to the pool, just like a photo or
+video. A procedural replaces the background; it is not an overlay. If selected
+for a lock, it keeps playing throughout that session. Photo selections still cycle
+only among photos. Rest has its own pool; **Reuse background** keeps the normal media.
 
-Customize color, speed, particle count, seed and FPS (1–30). Effects are off by
-default. Frames use a bounded raster texture (up to 640 pixels on the longest side)
-scaled to the window; this trades fine-detail sharpness for bounded CPU work.
-Hidden widgets stop requesting frames. Actual battery savings are not yet measured.
+Use the **eye** to view an item in the reusable media viewer, and the **gear** to
+adjust that item's colors, speed, particle count, seed and FPS (1–30). **Apply**
+updates the draft and open previews; **Save** in settings writes the configuration.
+Closing the item editor without applying discards its edits. Settings belong to the
+item and are shared by every pool using it; removing it from a pool keeps its settings.
 
 ```sh
-decklock config set animation.effect starfield
-decklock config set animation.color '#b4befe'
-decklock config set animation.speed 0.3
-decklock config set idle_animation.effect lissajous
+decklock config set background_pool '["procedural:starfield"]'
+decklock config set procedurals.starfield.color '#b4befe'
+decklock config set procedurals.starfield.speed 0.3
+decklock config set idle_pool '["procedural:lissajous"]'
 decklock config set idle_reuse_background false
 decklock --preview
 ```
 
-The external configuration accepts `[animation]` and `[idle_animation]` TOML tables.
-Effect IDs are `none`, `starfield`, `particles`, `lissajous`; no third-party code is
-executed. `config unset animation` restores defaults. See [example configuration](config.example.toml).
+The IDs are `procedural:starfield`, `procedural:particles`, `procedural:lissajous`.
+Per-item TOML tables live under `[procedurals.starfield]` (and the other IDs).
+`config unset procedurals` restores default parameters. No third-party code runs.
+Rendering uses an opaque raster texture capped at 640 pixels on the longest side,
+scaled to the window. Hidden widgets stop requesting frames. Battery savings are
+not yet measured. See [example configuration](config.example.toml).
 
 
 ## Preview and lock

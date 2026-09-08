@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
+    pub procedurals: crate::procedural::Presets,
+    #[serde(skip_serializing)]
     pub animation: crate::animation::Animation,
+    #[serde(skip_serializing)]
     pub idle_animation: crate::animation::Animation,
     pub theme: Option<PathBuf>,
     pub theme_preset: String,
@@ -27,6 +30,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            procedurals: Default::default(),
             animation: Default::default(),
             idle_animation: Default::default(),
             theme: None,
@@ -50,12 +54,42 @@ impl Default for Config {
 }
 
 impl Config {
+    // Unreleased overlay drafts migrate to media items without deleting existing media.
+    fn migrate_overlays(&mut self) {
+        for (old, pool) in [
+            (&mut self.animation, &mut self.background_pool),
+            (&mut self.idle_animation, &mut self.idle_pool),
+        ] {
+            if old.effect != crate::animation::Effect::None {
+                let id = old.effect.id();
+                self.procedurals.set(
+                    id,
+                    crate::procedural::Parameters {
+                        density: old.density,
+                        speed: old.speed,
+                        fps: old.fps,
+                        color: old.color.clone(),
+                        background: old.background.clone(),
+                        seed: old.seed,
+                    },
+                );
+                let path = crate::procedural::path(id);
+                let pool = pool.get_or_insert_with(Vec::new);
+                if !pool.contains(&path) {
+                    pool.push(path);
+                }
+                old.effect = crate::animation::Effect::None;
+            }
+        }
+    }
+
     pub fn load(path: Option<&Path>) -> Result<Self, String> {
         let Some(path) = path else {
             return Ok(Self::default());
         };
         let mut config: Self =
             toml::from_str(&read_text(path)?).map_err(|e| format!("{}: {e}", path.display()))?;
+        config.migrate_overlays();
         config.validate()?;
         let base = path.parent().unwrap_or(Path::new("."));
         config.resolve_paths(base);
@@ -78,7 +112,9 @@ impl Config {
             .flatten()
         {
             for path in paths {
-                *path = resolve(base, path);
+                if !path.to_string_lossy().starts_with("procedural:") {
+                    *path = resolve(base, path);
+                }
             }
         }
     }
@@ -104,6 +140,18 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        self.procedurals.validate()?;
+        for path in [&self.background_pool, &self.idle_pool]
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            if path.to_string_lossy().starts_with("procedural:")
+                && crate::procedural::id(path).is_none()
+            {
+                return Err("Unknown procedural media ID".into());
+            }
+        }
         self.animation.validate()?;
         self.idle_animation.validate()?;
         if !(1..=86400).contains(&self.slideshow_seconds)
@@ -133,7 +181,9 @@ impl Config {
     pub fn save(&self, path: &Path) -> Result<(), String> {
         use std::io::Write;
         self.validate()?;
-        let text = toml::to_string_pretty(self).map_err(|e| e.to_string())?;
+        let mut migrated = self.clone();
+        migrated.migrate_overlays();
+        let text = toml::to_string_pretty(&migrated).map_err(|e| e.to_string())?;
         let parent = path
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
@@ -324,6 +374,31 @@ fn read_text(path: &Path) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn procedural_ids_and_unreleased_overlay_drafts_migrate_without_path_expansion() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "background_pool=['photo.png']\n[animation]\neffect='starfield'\nspeed=0.8\n",
+        )
+        .unwrap();
+        let config = Config::load(Some(&path)).unwrap();
+        assert_eq!(
+            config.background_pool,
+            Some(vec![
+                dir.path().join("photo.png"),
+                crate::procedural::path("starfield")
+            ])
+        );
+        assert_eq!(config.procedurals.starfield.speed, 0.8);
+        config.save(&path).unwrap();
+        let source = std::fs::read_to_string(&path).unwrap();
+        assert!(!source.contains("[animation]"));
+        let reloaded = Config::load(Some(&path)).unwrap();
+        assert_eq!(reloaded.background_pool, config.background_pool);
+        assert_eq!(reloaded.procedurals.starfield.speed, 0.8);
+    }
     #[test]
     fn pools_round_trip_and_resolve_relative_media() {
         let dir = tempfile::tempdir().unwrap();

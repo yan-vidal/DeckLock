@@ -31,6 +31,7 @@ pub struct Animation {
     pub speed: f64,
     pub fps: u32,
     pub color: String,
+    pub background: String,
     pub seed: u32,
 }
 impl Default for Animation {
@@ -41,6 +42,7 @@ impl Default for Animation {
             speed: 0.3,
             fps: 30,
             color: "#b4befe".into(),
+            background: "#141725".into(),
             seed: 1,
         }
     }
@@ -54,20 +56,24 @@ impl Animation {
         {
             return Err("Animation requires density 1..300, fps 1..30 and speed 0.01..2".into());
         }
+        parse_color(&self.background)?;
         self.rgb().map(|_| ())
     }
     fn rgb(&self) -> Result<(f64, f64, f64), String> {
-        let s = self.color.as_bytes();
-        if s.len() != 7 || s[0] != b'#' || !s[1..].iter().all(u8::is_ascii_hexdigit) {
-            return Err("Animation color must be #RRGGBB".into());
-        }
-        let value = u32::from_str_radix(&self.color[1..], 16).map_err(|e| e.to_string())?;
-        Ok((
-            ((value >> 16) & 255) as f64 / 255.,
-            ((value >> 8) & 255) as f64 / 255.,
-            (value & 255) as f64 / 255.,
-        ))
+        parse_color(&self.color)
     }
+}
+fn parse_color(color: &str) -> Result<(f64, f64, f64), String> {
+    let s = color.as_bytes();
+    if s.len() != 7 || s[0] != b'#' || !s[1..].iter().all(u8::is_ascii_hexdigit) {
+        return Err("Animation color must be #RRGGBB".into());
+    }
+    let value = u32::from_str_radix(&color[1..], 16).map_err(|e| e.to_string())?;
+    Ok((
+        ((value >> 16) & 255) as f64 / 255.,
+        ((value >> 8) & 255) as f64 / 255.,
+        (value & 255) as f64 / 255.,
+    ))
 }
 // Stable hashing: the scene depends only on seed, element index and injected time.
 fn random(seed: u32, index: u32) -> f64 {
@@ -91,6 +97,9 @@ pub fn render(
         .map_err(|e| e.to_string())?;
     let cr = cairo::Context::new(&surface).map_err(|e| e.to_string())?;
     let (r, g, b) = config.rgb()?;
+    let (br, bg, bb) = parse_color(&config.background)?;
+    cr.set_source_rgb(br, bg, bb);
+    cr.paint().map_err(|e| e.to_string())?;
     let t = (time % 100000.) * config.speed;
     let (w, h) = (width as f64, height as f64);
     match config.effect {
@@ -218,13 +227,13 @@ mod tests {
         .to_vec()
     }
     #[test]
-    fn scenes_are_repeatable_animated_and_transparent() {
+    fn scenes_are_repeatable_animated_and_opaque() {
         for effect in [Effect::Starfield, Effect::Particles, Effect::Lissajous] {
             assert_eq!(frame(effect, 2.), frame(effect, 2.));
             assert_ne!(frame(effect, 2.), frame(effect, 3.));
-            assert!(frame(effect, 2.).contains(&0));
+            assert!(frame(effect, 2.).chunks_exact(4).all(|p| p[3] == 255));
         }
-        assert!(frame(Effect::None, 0.).iter().all(|b| *b == 0));
+        assert!(frame(Effect::None, 0.).chunks_exact(4).all(|p| p[3] == 255));
     }
     #[test]
     fn rejects_unbounded_work_and_invalid_parameters() {

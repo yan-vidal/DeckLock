@@ -14,6 +14,9 @@ type LibraryViews = Rc<RefCell<Vec<(glib::WeakRef<gtk::ListBox>, Kind)>>>;
 #[derive(Clone)]
 pub struct Catalog {
     paths: Rc<RefCell<Vec<PathBuf>>>,
+    pub procedurals: Rc<RefCell<crate::procedural::Presets>>,
+    strings: Rc<RefCell<Option<Rc<I18n>>>>,
+    editor: Rc<RefCell<Option<gtk::Window>>>,
     views: LibraryViews,
     viewer: crate::media_viewer::Viewer,
     parent: Rc<RefCell<glib::WeakRef<gtk::ApplicationWindow>>>,
@@ -22,6 +25,9 @@ impl Catalog {
     pub fn new(paths: Vec<PathBuf>) -> Self {
         Self {
             paths: Rc::new(RefCell::new(paths)),
+            procedurals: Default::default(),
+            strings: Default::default(),
+            editor: Default::default(),
             views: Rc::new(RefCell::new(Vec::new())),
             viewer: Default::default(),
             parent: Default::default(),
@@ -67,12 +73,27 @@ fn media_row(path: &Path, catalog: &Catalog) -> gtk::Box {
         picture.set_size_request(88, 58);
         row.append(&picture);
     } else {
-        let image = gtk::Image::from_icon_name("video-x-generic-symbolic");
+        let image = gtk::Image::from_icon_name(if library::kind(path) == Some(Kind::Procedural) {
+            "applications-graphics-symbolic"
+        } else {
+            "video-x-generic-symbolic"
+        });
         image.set_pixel_size(36);
         image.set_size_request(88, 58);
         row.append(&image);
     }
-    let label = gtk::Label::new(path.file_name().and_then(|p| p.to_str()));
+    let translated = crate::procedural::id(path).and_then(|id| {
+        catalog
+            .strings
+            .borrow()
+            .as_ref()
+            .map(|s| s.text(&format!("animation-{id}")))
+    });
+    let label = gtk::Label::new(
+        translated
+            .as_deref()
+            .or_else(|| path.file_name().and_then(|p| p.to_str())),
+    );
     label.set_xalign(0.0);
     label.set_hexpand(true);
     label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
@@ -87,12 +108,63 @@ fn media_row(path: &Path, catalog: &Catalog) -> gtk::Box {
     let viewer = catalog.viewer.clone();
     let parent = catalog.parent.clone();
     let target = path.to_path_buf();
+    let presets = catalog.procedurals.clone();
+    let strings = catalog.strings.clone();
     eye.connect_clicked(move |_| {
         if let Some(parent) = parent.borrow().upgrade() {
-            viewer.show(&parent, &target);
+            let animation =
+                crate::procedural::id(&target).map(|id| presets.borrow().get(id).animation(id));
+            viewer.show_configured(&parent, &target, animation);
+            if let Some(id) = crate::procedural::id(&target)
+                && let Some(strings) = strings.borrow().as_ref()
+            {
+                viewer.set_title(&strings.text(&format!("animation-{id}")));
+            }
         }
     });
     row.append(&eye);
+    if let Some(id) = crate::procedural::id(path) {
+        let gear = gtk::Button::from_icon_name("emblem-system-symbolic");
+        gear.set_widget_name("media-configure");
+        if let Some(strings) = catalog.strings.borrow().as_ref() {
+            gear.set_tooltip_text(Some(&strings.text("procedural-configure")));
+        }
+        let catalog = catalog.clone();
+        let id = id.to_owned();
+        gear.connect_clicked(move |_| {
+            let Some(parent) = catalog.parent.borrow().upgrade() else {
+                return;
+            };
+            let Some(strings) = catalog.strings.borrow().clone() else {
+                return;
+            };
+            if let Some(window) = catalog.editor.borrow_mut().take() {
+                window.destroy();
+            }
+            let viewer = catalog.viewer.clone();
+            let presets = catalog.procedurals.clone();
+            let target = crate::procedural::path(&id);
+            let callback_id = id.clone();
+            let weak_parent = parent.downgrade();
+            let window = crate::procedural_editor::open(
+                &parent,
+                &id,
+                catalog.procedurals.clone(),
+                &strings,
+                move || {
+                    if let Some(parent) = weak_parent.upgrade() {
+                        viewer.refresh_procedural(
+                            &parent,
+                            &target,
+                            presets.borrow().get(&callback_id).animation(&callback_id),
+                        );
+                    }
+                },
+            );
+            catalog.editor.replace(Some(window));
+        });
+        row.append(&gear);
+    }
     row.set_tooltip_text(Some(&path.to_string_lossy()));
     row
 }
@@ -121,6 +193,13 @@ pub fn build(
     name: &str,
 ) -> Editor {
     catalog.parent.replace(window.downgrade());
+    catalog.strings.replace(Some(strings.clone()));
+    let close_editor = catalog.editor.clone();
+    window.connect_destroy(move |_| {
+        if let Some(window) = close_editor.borrow_mut().take() {
+            window.destroy();
+        }
+    });
     let close_viewer = catalog.viewer.clone();
     window.connect_destroy(move |_| close_viewer.close());
     let root = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -137,17 +216,20 @@ pub fn build(
     left.append(&tabs);
     let images = gtk::ListBox::new();
     let videos = gtk::ListBox::new();
+    let procedurals = gtk::ListBox::new();
+    tabs.set_widget_name(&format!("{name}-tabs"));
     for (list, kind, label) in [
         (&images, Kind::Image, "media-images"),
         (&videos, Kind::Video, "media-videos"),
+        (&procedurals, Kind::Procedural, "media-procedurals"),
     ] {
         list.set_selection_mode(gtk::SelectionMode::Single);
         list.set_widget_name(&format!(
             "{name}-{}",
-            if kind == Kind::Image {
-                "images"
-            } else {
-                "videos"
+            match kind {
+                Kind::Image => "images",
+                Kind::Video => "videos",
+                Kind::Procedural => "procedurals",
             }
         ));
         tabs.append_page(
@@ -208,6 +290,7 @@ pub fn build(
         images.downgrade(),
         videos.downgrade(),
     );
+    let weak_procedurals = procedurals.downgrade();
     let pool = paths.clone();
     let choices = catalog.clone();
     add.connect_clicked(move |_| {
@@ -219,10 +302,15 @@ pub fn build(
         ) else {
             return;
         };
-        let (source, kind) = if tabs.current_page() == Some(1) {
-            (videos, Kind::Video)
-        } else {
-            (images, Kind::Image)
+        let (source, kind) = match tabs.current_page() {
+            Some(2) => {
+                let Some(list) = weak_procedurals.upgrade() else {
+                    return;
+                };
+                (list, Kind::Procedural)
+            }
+            Some(1) => (videos, Kind::Video),
+            _ => (images, Kind::Image),
         };
         if let Some(row) = source.selected_row()
             && let Some(path) = choices.filtered(kind).get(row.index() as usize)

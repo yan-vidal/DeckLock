@@ -126,6 +126,7 @@ fn set_background(
     container: &gtk::Box,
     path: Option<&Path>,
     stream: &RefCell<Option<crate::media::Playback>>,
+    procedurals: &crate::procedural::Presets,
 ) {
     stream.borrow_mut().take();
     let stack = container
@@ -154,6 +155,12 @@ fn set_background(
         }
         return;
     };
+    if let Some(id) = crate::procedural::id(&path) {
+        let picture = crate::animation::widget(procedurals.get(id).animation(id));
+        stack.add_child(&picture);
+        stack.set_visible_child(&picture);
+        return;
+    }
     let picture = gtk::Picture::new();
     picture.set_can_shrink(true);
     picture.set_content_fit(gtk::ContentFit::Fill);
@@ -678,15 +685,12 @@ fn build_in(
         crate::library::pool(&settings.config, &settings.theme, true),
         crate::library::seed(),
     );
-    set_background(&background, normal_selection.current(), &stream);
-    let animation_layer = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    animation_layer.set_can_target(false);
-    animation_layer.set_hexpand(true);
-    animation_layer.set_vexpand(true);
-    overlay.add_overlay(&animation_layer);
-    if settings.config.animation.effect != crate::animation::Effect::None {
-        animation_layer.append(&crate::animation::widget(settings.config.animation.clone()));
-    }
+    set_background(
+        &background,
+        normal_selection.current(),
+        &stream,
+        &settings.config.procedurals,
+    );
 
     let close_stream = stream.clone();
     bindings
@@ -1125,20 +1129,6 @@ fn build_in(
                         >= settings_idle.config.idle_seconds as u64,
             );
         if idle.replace(is_idle) != is_idle {
-            if !settings_idle.config.idle_reuse_background {
-                while let Some(child) = animation_layer.first_child() {
-                    animation_layer.remove(&child);
-                }
-                let animation = if is_idle {
-                    &settings_idle.config.idle_animation
-                } else {
-                    &settings_idle.config.animation
-                };
-                if animation.effect != crate::animation::Effect::None {
-                    animation_layer.append(&crate::animation::widget(animation.clone()));
-                }
-            }
-
             if let Some(power) = weak_power.upgrade() {
                 power.set_visible(!is_idle);
             }
@@ -1166,7 +1156,12 @@ fn build_in(
                 } else {
                     &normal_selection
                 };
-                set_background(&background, selected.current(), &stream);
+                set_background(
+                    &background,
+                    selected.current(),
+                    &stream,
+                    &settings_idle.config.procedurals,
+                );
                 changed_at = Instant::now();
             }
         }
@@ -1185,7 +1180,12 @@ fn build_in(
         };
         if changed_at.elapsed().as_secs() >= interval as u64 {
             if selection.advance() {
-                set_background(&background, selection.current(), &stream);
+                set_background(
+                    &background,
+                    selection.current(),
+                    &stream,
+                    &settings_idle.config.procedurals,
+                );
             }
             changed_at = Instant::now();
         }

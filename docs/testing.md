@@ -85,9 +85,9 @@ Cargo `0.1.0` and package revision `2` still describe the existing `v0.1-r2`.
 Procedural effects are on a development branch for the planned 0.2; no release
 bump, merge or tag is authorized until the user finishes defining that scope.
 
-Procedural overlays add deterministic frame/validation tests, actual CLI
+Procedural media add deterministic frame/validation tests, actual CLI
 round trips and a private GTK contract for texture updates, bounded dimensions,
-unmap/drop cleanup, settings saves and rest preview. Rendering performance and
+unmap/drop cleanup, library/pool selection, per-item eye/gear drafts, settings saves and rest preview. Rendering performance and
 battery use on physical GPUs still require measurement.
 
 ## Manual validation still required

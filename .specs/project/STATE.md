@@ -158,3 +158,19 @@ still to be specified. PR #3 was opened prematurely and was closed without
 merge. Restore Cargo 0.1.0/package revision 2 and current release installation
 links; procedural code stays on feat/procedural-backgrounds-0.2. No new tag or
 release was created. Await the remaining scope before reopening a PR for 0.2.
+
+
+Latest user scope: procedural effects are media library items, not overlays.
+They must be added to either pool, have eye/gear actions per item, and replace
+images/videos. A selected procedural stays for the session like a video. Shared
+parameters live in procedurals.<id>; reserved procedural:<id> media IDs remain
+unresolved by filesystem path expansion. Unreleased overlay drafts migrate on
+load/save. Draft apply does not write settings until main Save.
+Design PR #4 (including Opus's archive-root variable fix/test) was merged alone
+as 239928a after both checks passed. No release/tag/version bump. This branch is
+for a draft PR only; wait for the rest of 0.2 before merging/releasing.
+All eight local gates passed for the media-item implementation, including
+reserved-ID rejection, overlay-draft migration, opaque/repeatable frames, stable
+pool selection, eye/gear drafts, persistence and previous-media unmapping after
+transition. Captures of library, item editor and rest inspected. Main design
+post-merge run 34282111819 also passed. Procedural draft CI still to be run.

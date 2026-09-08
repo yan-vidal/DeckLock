@@ -5,8 +5,12 @@ use std::path::{Path, PathBuf};
 pub enum Kind {
     Image,
     Video,
+    Procedural,
 }
 pub fn kind(path: &Path) -> Option<Kind> {
+    if crate::procedural::id(path).is_some() {
+        return Some(Kind::Procedural);
+    }
     match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
         "png" | "jpg" | "jpeg" | "webp" | "avif" | "bmp" | "svg" => Some(Kind::Image),
         "mp4" | "mkv" | "webm" | "mov" => Some(Kind::Video),
@@ -14,6 +18,9 @@ pub fn kind(path: &Path) -> Option<Kind> {
     }
 }
 pub fn files(path: &Path) -> Vec<PathBuf> {
+    if crate::procedural::id(path).is_some() {
+        return vec![path.into()];
+    }
     if path.is_file() {
         return kind(path).map(|_| vec![path.into()]).unwrap_or_default();
     }
@@ -101,6 +108,7 @@ pub fn pool(
 }
 pub fn catalog(config: &crate::config::Config, theme: &crate::config::Theme) -> Vec<PathBuf> {
     let mut result = bundled();
+    result.extend(crate::procedural::ITEMS.map(crate::procedural::path));
     result.extend(files(&user_dir()));
     for paths in [&config.background_pool, &config.idle_pool]
         .into_iter()
@@ -125,7 +133,7 @@ pub fn import(source: &Path, root: &Path) -> Result<PathBuf, String> {
     let folder = match kind(source) {
         Some(Kind::Image) => "images",
         Some(Kind::Video) => "videos",
-        None => return Err("Unsupported media format".into()),
+        Some(Kind::Procedural) | None => return Err("Unsupported media format".into()),
     };
     if !source.is_file() {
         return Err("Media file does not exist".into());
@@ -176,7 +184,7 @@ impl Selection {
             };
         }
         let chosen = pool[seed % pool.len()].clone();
-        let paths = if kind(&chosen) == Some(Kind::Video) {
+        let paths = if matches!(kind(&chosen), Some(Kind::Video | Kind::Procedural)) {
             vec![chosen.clone()]
         } else {
             pool.into_iter()
