@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import tarfile
+import tomllib
 import tempfile
 
 root=Path(__file__).resolve().parent.parent
@@ -25,7 +26,11 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
     with tarfile.open(archive) as tar:
         assert all(not Path(m.name).is_absolute() and '..' not in Path(m.name).parts and not m.issym() and not m.islnk() for m in tar.getmembers())
         tar.extractall(unpack,filter='data')
-    stage=next(unpack.iterdir())
+    # The PKGBUILD's package() reads $srcdir/<name>/, so the archive root name is
+    # part of the contract, not an implementation detail.
+    version=tomllib.loads((root/'Cargo.toml').read_text())['package']['version'].removesuffix('.0')
+    assert [p.name for p in unpack.iterdir()]==[f'decklock-{version}-linux-x86_64'],[p.name for p in unpack.iterdir()]
+    stage=unpack/f'decklock-{version}-linux-x86_64'
     executable=stage/'bin/decklock'
     assert executable.stat().st_mode&0o111
     assert executable.read_bytes()==binary.read_bytes()
