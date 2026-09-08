@@ -135,3 +135,19 @@ GitHub workflows add Ubuntu/Rust-1.93 native/GTK/mock checks, an unprivileged Ar
 candidate build, and tag-only publishing after checks plus metadata/main ancestry
 verification. AGENTS.md and docs/testing.md define invariants and honest UAT limits.
 Remote CI and required branch protection still pending validation at this checkpoint.
+
+
+2026-09-08 verified guardrails handoff: c46d51a passed Checks on main (run
+34236755257), including the Arch package. Active mainProtect ruleset requires
+PRs and both Actions checks with no bypass; tagProtect prevents version tag
+updates/deletion. Earlier pending status above is superseded.
+
+0.2 implementation in progress: user authorized the procedural effects now.
+Animation settings are external config.toml tables animation/idle_animation,
+not executable theme plugins. Starfield, particles and Lissajous use bounded
+transparent raster textures scaled over existing media. Default off; separate
+rest settings follow idle reuse. CLI and translated GUI share validation.
+See src/animation.rs and examples/animation_check.rs for pure rendering and
+mapped/unmapped lifecycle contracts. All eight local gates passed, including animated GTK lifecycle/settings and
+Wayland protocol. Preview captures inspected in target/check-logs. Remote CI
+and release publication remain pending.

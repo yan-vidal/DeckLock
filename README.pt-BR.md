@@ -12,15 +12,15 @@ Suporte opcional a controles, incluindo dispositivos como o Steam Deck.
 
 ### Arch Linux · x86_64
 
-Baixe o pacote **0.1** no [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.1-r2),
+Baixe o pacote **0.2** no [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.2),
 ou use:
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1-r2/decklock-0.1-2-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1-r2/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.2/decklock-0.2-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.2/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.1-2-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.2-1-x86_64.pkg.tar.zst
 ```
 
 O pacote instala o aplicativo, o atalho **Configurações do DeckLock** e as mídias
@@ -39,9 +39,38 @@ O DeckLock não é exclusivo do Arch. Precisa de GTK4, GStreamer, Linux-PAM e
 `gtk4-layer-shell` 1.3+, além de um compositor Wayland com `ext-session-lock-v1`
 para bloquear a sessão. X11 não é suportado.
 
-O binário pronto da versão 0.1 usa as bibliotecas do **Arch x86_64 atual**; ele não
+O binário pronto da versão 0.2 usa as bibliotecas do **Arch x86_64 atual**; ele não
 é um binário universal para Linux. Ainda não fornecemos pacotes para outras
 distribuições ou arquiteturas. Para elas, veja [compilação](#desenvolvimento).
+
+
+## Fundos procedurais (0.2)
+
+Em **Fundo → Camada procedural**, escolha **Campo de estrelas**, **Partículas
+flutuantes** ou **Curvas de Lissajous**. As animações transparentes aparecem sobre
+sua imagem/vídeo; deixe o pool vazio para usar apenas o fundo do tema. Repouso tem
+opções independentes; **Reutilizar o fundo** preserva a camada normal. O preview
+acompanha as alterações.
+
+Configure cor, velocidade, quantidade de partículas, seed e FPS (1–30). Os efeitos
+começam desativados. A textura tem até 640 pixels no maior lado e é ampliada para
+a janela, trocando nitidez dos detalhes por trabalho limitado de CPU. Widgets
+ocultos deixam de solicitar quadros. Economia de bateria ainda não foi medida.
+
+```sh
+decklock config set animation.effect starfield
+decklock config set animation.color '#b4befe'
+decklock config set animation.speed 0.3
+decklock config set idle_animation.effect lissajous
+decklock config set idle_reuse_background false
+decklock --preview
+```
+
+A configuração externa aceita tabelas TOML `[animation]` e `[idle_animation]`.
+Os IDs são `none`, `starfield`, `particles`, `lissajous`; nenhum código de terceiros
+é executado. `config unset animation` restaura os padrões. Veja a
+[configuração de exemplo](config.example.toml).
+
 
 ## Preview e bloqueio
 
@@ -55,7 +84,7 @@ Sem argumentos, `decklock` mostra a ajuda. Use `decklock --help` ou
 `decklock config --help` para comandos e exemplos. O preview não autentica nem
 executa ações de energia. Escape oculta o teclado e, depois, fecha a janela.
 
-**A versão 0.1 é experimental.** Preview e configurações foram testados no Hyprland.
+**A versão 0.2 é experimental.** Preview e configurações foram testados no Hyprland.
 Testes de protocolo isolados cobrem aquisição do bloqueio, mudanças de monitores e
 encerramento sem desbloquear. PAM na sessão real e uma variedade maior de
 compositores/controles ainda precisam de validação antes de substituir seu bloqueador.

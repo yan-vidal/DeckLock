@@ -98,3 +98,15 @@ theme-editor-title = Editar CSS e theme.toml
 theme-editor-hint = As alterações aparecem ao vivo após validação. Salve nas configurações para guardar uma cópia editável deste tema.
 theme-editor-valid = Alterações válidas aplicadas ao preview.
 theme-editor-pending = Validando alterações do tema…
+
+animation-title = Camada procedural
+animation-none = Nenhum
+animation-starfield = Campo de estrelas
+animation-particles = Partículas flutuantes
+animation-lissajous = Curvas de Lissajous
+animation-effect = Efeito
+animation-density = Quantidade de partículas
+animation-speed = Velocidade
+animation-fps = Limite de FPS
+animation-color = Cor (#RRGGBB)
+animation-seed = Seed

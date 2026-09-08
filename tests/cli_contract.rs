@@ -170,3 +170,34 @@ fn importing_relative_media_resolves_against_source_and_preserves_them() {
     );
     assert_eq!(config.pam_service, "keep-me");
 }
+
+#[test]
+fn procedural_options_roundtrip_and_reject_invalid_writes() {
+    let cli = Cli::new();
+    for (key, value) in [
+        ("animation.effect", "starfield"),
+        ("animation.color", "#abcdef"),
+        ("animation.speed", "0.5"),
+        ("animation.seed", "4294967295"),
+        ("idle_animation.effect", "lissajous"),
+    ] {
+        cli.config(&["set", key, value], true);
+        let output = cli.config(&["get", key], true);
+        assert!(String::from_utf8_lossy(&output.stdout).contains(value));
+    }
+    let saved = std::fs::read(&cli.file).unwrap();
+    for (key, value) in [
+        ("animation.fps", "60"),
+        ("animation.speed", "nan"),
+        ("animation.color", "bad"),
+        ("idle_animation.effect", "shader"),
+    ] {
+        cli.config(&["set", key, value], false);
+        assert_eq!(std::fs::read(&cli.file).unwrap(), saved);
+    }
+    cli.config(&["unset", "animation"], true);
+    assert!(
+        String::from_utf8_lossy(&cli.config(&["get", "animation.effect"], true).stdout)
+            .contains("none")
+    );
+}

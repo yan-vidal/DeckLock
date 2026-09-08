@@ -98,3 +98,15 @@ theme-editor-title = Edit CSS & theme.toml
 theme-editor-hint = Changes appear live after validation. Save in settings to keep an editable copy of this theme.
 theme-editor-valid = Valid changes applied to the preview.
 theme-editor-pending = Validating theme changes…
+
+animation-title = Procedural overlay
+animation-none = None
+animation-starfield = Starfield
+animation-particles = Floating particles
+animation-lissajous = Lissajous curves
+animation-effect = Effect
+animation-density = Particle count
+animation-speed = Speed
+animation-fps = FPS limit
+animation-color = Color (#RRGGBB)
+animation-seed = Seed

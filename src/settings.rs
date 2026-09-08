@@ -54,6 +54,68 @@ fn row(form: &gtk::Box, title: &str, widget: &impl IsA<gtk::Widget>) {
     row.append(widget);
     form.append(&row);
 }
+fn animation_options(
+    parent: &gtk::Box,
+    original: &crate::animation::Animation,
+    strings: &I18n,
+    prefix: &str,
+) -> Rc<dyn Fn() -> crate::animation::Animation> {
+    let group = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    let expander = gtk::Expander::new(Some(&strings.text("animation-title")));
+    expander.set_widget_name(&format!("{prefix}-options"));
+    expander.set_child(Some(&group));
+    parent.append(&expander);
+    let effect = combo(
+        &[
+            ("none", strings.text("animation-none")),
+            ("starfield", strings.text("animation-starfield")),
+            ("particles", strings.text("animation-particles")),
+            ("lissajous", strings.text("animation-lissajous")),
+        ],
+        original.effect.id(),
+        &format!("{prefix}-effect"),
+    );
+    row(&group, &strings.text("animation-effect"), &effect.widget);
+    let density = spin(
+        original.density as f64,
+        1.,
+        300.,
+        1.,
+        &format!("{prefix}-density"),
+    );
+    row(&group, &strings.text("animation-density"), &density);
+    let speed = spin(original.speed, 0.01, 2., 0.01, &format!("{prefix}-speed"));
+    speed.set_digits(2);
+    row(&group, &strings.text("animation-speed"), &speed);
+    let fps = spin(original.fps as f64, 1., 30., 1., &format!("{prefix}-fps"));
+    row(&group, &strings.text("animation-fps"), &fps);
+    let color = gtk::Entry::new();
+    color.set_text(&original.color);
+    color.set_widget_name(&format!("{prefix}-color"));
+    row(&group, &strings.text("animation-color"), &color);
+    let seed = spin(
+        original.seed as f64,
+        0.,
+        u32::MAX as f64,
+        1.,
+        &format!("{prefix}-seed"),
+    );
+    row(&group, &strings.text("animation-seed"), &seed);
+    Rc::new(move || crate::animation::Animation {
+        effect: match effect.active_id().as_deref() {
+            Some("starfield") => crate::animation::Effect::Starfield,
+            Some("particles") => crate::animation::Effect::Particles,
+            Some("lissajous") => crate::animation::Effect::Lissajous,
+            _ => crate::animation::Effect::None,
+        },
+        density: density.value_as_int() as u32,
+        speed: speed.value(),
+        fps: fps.value_as_int() as u32,
+        color: color.text().to_string(),
+        seed: seed.value() as u32,
+    })
+}
+
 fn chooser(
     window: &gtk::ApplicationWindow,
     entry: &gtk::Entry,
@@ -398,6 +460,12 @@ pub fn build(
         &strings.text("media-interval"),
         &slideshow,
     );
+    let animation = animation_options(
+        &background_page,
+        &original.animation,
+        &strings,
+        "settings-animation",
+    );
     let appearance = gtk::Box::new(gtk::Orientation::Vertical, 10);
     appearance.set_margin_top(12);
     let expander = gtk::Expander::new(Some(&strings.text("settings-layout-options")));
@@ -480,6 +548,12 @@ pub fn build(
     let idle_group = gtk::Box::new(gtk::Orientation::Vertical, 8);
     idle_group.set_widget_name("settings-idle-media");
     idle_options.append(&idle_group);
+    let idle_animation = animation_options(
+        &idle_group,
+        &original.idle_animation,
+        &strings,
+        "settings-idle-animation",
+    );
     let idle_background = crate::media_editor::build(
         &window,
         catalog,
@@ -624,6 +698,8 @@ pub fn build(
     let read: Rc<dyn Fn() -> Result<Config, String>> = Rc::new(move || {
         read_drafts.validate()?;
         let mut config = original.clone();
+        config.animation = animation();
+        config.idle_animation = idle_animation();
         let selected_theme = theme_choice.active_id().unwrap_or_else(|| "classic".into());
         config.theme = if selected_theme == "external" {
             Some(selected_path(&theme_path, &base).ok_or_else(|| missing_theme.clone())?)

@@ -30,3 +30,16 @@ system_keyboard = true
 # idle_clock_visible = true
 # avatar_visible = true
 # keyboard_scale = 1.0
+
+# Optional procedural overlays. These are config tables, not theme.toml fields.
+# Defaults preserve existing backgrounds. Use an empty pool for a plain backdrop.
+[animation]
+effect = "none" # none, starfield, particles, lissajous
+color = "#b4befe"
+density = 120 # 1..300 (particle effects)
+speed = 0.3 # 0.01..2.0
+fps = 30 # 1..30
+seed = 1
+
+[idle_animation]
+effect = "none" # used when idle_reuse_background = false

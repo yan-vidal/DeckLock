@@ -81,9 +81,13 @@ on Arch and include their linked-library provenance.
 protection enforce the merge policy. A repository administrator can still change
 these policies; changes to safeguards must be reviewed as such.
 
-For the current Cargo `0.1.0` and package revision `2`, metadata describes
-`v0.1-r2`, which already exists. Bump the version or package revision in a reviewed
-PR before creating another tag. Do not reuse the existing tag to trigger CI.
+Cargo `0.2.0` and package revision `1` describe tag `v0.2`. Bump metadata in a
+reviewed PR before another release; existing tags must never be reused.
+
+Procedural overlays add deterministic frame/validation tests, actual CLI
+round trips and a private GTK contract for texture updates, bounded dimensions,
+unmap/drop cleanup, settings saves and rest preview. Rendering performance and
+battery use on physical GPUs still require measurement.
 
 ## Manual validation still required
 

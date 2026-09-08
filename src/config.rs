@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
+    pub animation: crate::animation::Animation,
+    pub idle_animation: crate::animation::Animation,
     pub theme: Option<PathBuf>,
     pub theme_preset: String,
     pub locale: Option<String>,
@@ -25,6 +27,8 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            animation: Default::default(),
+            idle_animation: Default::default(),
             theme: None,
             theme_preset: "classic".into(),
             locale: None,
@@ -100,6 +104,8 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        self.animation.validate()?;
+        self.idle_animation.validate()?;
         if !(1..=86400).contains(&self.slideshow_seconds)
             || !(1..=86400).contains(&self.idle_slideshow_seconds)
         {
