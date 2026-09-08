@@ -202,6 +202,6 @@ fn procedural_media_options_roundtrip_and_reject_invalid_writes() {
                 .stdout
         )
         .trim(),
-        "0.3"
+        "1.0"
     );
 }

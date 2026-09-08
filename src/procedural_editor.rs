@@ -11,14 +11,14 @@ pub fn open(
     id: &str,
     presets: Rc<RefCell<Presets>>,
     strings: &I18n,
-    changed: impl Fn() + 'static,
+    changed: impl Fn(Parameters) + 'static,
 ) -> gtk::Window {
     let window = gtk::Window::builder()
         .transient_for(parent)
         .destroy_with_parent(true)
         .title(strings.text("procedural-configure"))
         .default_width(440)
-        .modal(true)
+        .modal(false)
         .build();
     window.set_widget_name("procedural-editor");
     window.add_css_class("settings");
@@ -52,7 +52,7 @@ pub fn open(
         spin
     }
     let density = number(current.density as f64, 1., 300., 1., "procedural-density");
-    density.set_sensitive(id != "lissajous");
+    density.set_sensitive(!matches!(id, "lissajous" | "doom-fire"));
     row(&body, &strings.text("animation-density"), &density);
     let speed = number(current.speed, 0.01, 2., 0.01, "procedural-speed");
     speed.set_digits(2);
@@ -90,23 +90,69 @@ pub fn open(
     let apply = gtk::Button::with_label(&strings.text("procedural-apply"));
     apply.set_widget_name("procedural-apply");
     body.append(&apply);
+    let changed: Rc<dyn Fn(Parameters)> = Rc::new(changed);
+    let controls = (
+        density.clone(),
+        speed.clone(),
+        fps.clone(),
+        seed.clone(),
+        color.clone(),
+        background.clone(),
+    );
+    let read: Rc<dyn Fn() -> Result<Parameters, String>> = Rc::new(move || {
+        let value = Parameters {
+            density: controls.0.value_as_int() as u32,
+            speed: controls.1.value(),
+            fps: controls.2.value_as_int() as u32,
+            seed: controls.3.value() as u32,
+            color: controls.4.text().to_string(),
+            background: controls.5.text().to_string(),
+        };
+        value.validate()?;
+        Ok(value)
+    });
+    let update: Rc<dyn Fn()> = Rc::new({
+        let read = read.clone();
+        let changed = changed.clone();
+        let status = status.clone();
+        move || match read() {
+            Ok(value) => {
+                status.set_text("");
+                changed(value);
+            }
+            Err(error) => status.set_text(&error),
+        }
+    });
+    for spin in [density, speed, fps, seed] {
+        let update = update.clone();
+        spin.connect_value_changed(move |_| update());
+    }
+    for entry in [color, background] {
+        let update = update.clone();
+        entry.connect_changed(move |_| update());
+    }
+    let accepted = Rc::new(std::cell::Cell::new(false));
+    let rollback = changed.clone();
+    let kept = accepted.clone();
+    window.connect_close_request(move |_| {
+        if !kept.get() {
+            rollback(current.clone());
+        }
+        glib::Propagation::Proceed
+    });
     let weak = window.downgrade();
     let id = id.to_string();
     apply.connect_clicked(move |_| {
-        let value = Parameters {
-            density: density.value_as_int() as u32,
-            speed: speed.value(),
-            fps: fps.value_as_int() as u32,
-            seed: seed.value() as u32,
-            color: color.text().to_string(),
-            background: background.text().to_string(),
+        let value = match read() {
+            Ok(value) => value,
+            Err(error) => {
+                status.set_text(&error);
+                return;
+            }
         };
-        if let Err(error) = value.validate() {
-            status.set_text(&error);
-            return;
-        }
-        presets.borrow_mut().set(&id, value);
-        changed();
+        presets.borrow_mut().set(&id, value.clone());
+        changed(value);
+        accepted.set(true);
         if let Some(window) = weak.upgrade() {
             window.close();
         }

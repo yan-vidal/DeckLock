@@ -66,13 +66,14 @@ os pools que usam o item; removê-lo do pool mantém suas configurações.
 ```sh
 decklock config set background_pool '["procedural:starfield"]'
 decklock config set procedurals.starfield.color '#b4befe'
-decklock config set procedurals.starfield.speed 0.3
+decklock config set procedurals.starfield.speed 1.0
 decklock config set idle_pool '["procedural:lissajous"]'
 decklock config set idle_reuse_background false
 decklock --preview
 ```
 
-IDs: `procedural:starfield`, `procedural:particles`, `procedural:lissajous`.
+IDs: `procedural:starfield`, `procedural:particles`, `procedural:lissajous`,
+`procedural:matrix` e `procedural:doom-fire`.
 As tabelas TOML individuais ficam em `[procedurals.starfield]` (e nos outros IDs).
 `config unset procedurals` restaura os parâmetros. Nenhum código de terceiros é
 executado. A textura opaca tem até 640 pixels no maior lado e é ampliada para a

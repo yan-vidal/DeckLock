@@ -30,3 +30,5 @@ pub mod branding;
 pub mod procedural;
 
 pub mod procedural_editor;
+
+pub mod preview_stats;

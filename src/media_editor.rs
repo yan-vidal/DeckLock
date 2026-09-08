@@ -10,11 +10,13 @@ use std::{
     rc::Rc,
 };
 
+type Thumbnails = Rc<RefCell<Vec<(glib::WeakRef<gtk::Picture>, String)>>>;
 type LibraryViews = Rc<RefCell<Vec<(glib::WeakRef<gtk::ListBox>, Kind)>>>;
 #[derive(Clone)]
 pub struct Catalog {
     paths: Rc<RefCell<Vec<PathBuf>>>,
     pub procedurals: Rc<RefCell<crate::procedural::Presets>>,
+    thumbnails: Thumbnails,
     strings: Rc<RefCell<Option<Rc<I18n>>>>,
     editor: Rc<RefCell<Option<gtk::Window>>>,
     views: LibraryViews,
@@ -26,12 +28,64 @@ impl Catalog {
         Self {
             paths: Rc::new(RefCell::new(paths)),
             procedurals: Default::default(),
+            thumbnails: Default::default(),
             strings: Default::default(),
             editor: Default::default(),
             views: Rc::new(RefCell::new(Vec::new())),
             viewer: Default::default(),
             parent: Default::default(),
         }
+    }
+    fn configure_action(&self, id: &str) -> Rc<dyn Fn()> {
+        let parent = self.parent.clone();
+        let strings = self.strings.clone();
+        let editor = self.editor.clone();
+        let viewer = self.viewer.downgrade();
+        let presets = self.procedurals.clone();
+        let id = id.to_string();
+        let thumbnails = self.thumbnails.clone();
+        Rc::new(move || {
+            let Some(parent) = parent.borrow().upgrade() else {
+                return;
+            };
+            let Some(strings) = strings.borrow().clone() else {
+                return;
+            };
+            if let Some(window) = editor.borrow_mut().take() {
+                window.close();
+            }
+            let target = crate::procedural::path(&id);
+            let callback_id = id.clone();
+            let weak_parent = parent.downgrade();
+            let viewer = viewer.clone();
+            let thumbnails = thumbnails.clone();
+            let window = crate::procedural_editor::open(
+                &parent,
+                &id,
+                presets.clone(),
+                &strings,
+                move |value| {
+                    if let Some(parent) = weak_parent.upgrade()
+                        && let Some(viewer) = viewer.upgrade()
+                    {
+                        viewer.refresh_procedural(&parent, &target, value.animation(&callback_id));
+                    }
+                    thumbnails.borrow_mut().retain(|(weak, id)| {
+                        let Some(picture) = weak.upgrade() else {
+                            return false;
+                        };
+                        if id == &callback_id
+                            && let Ok(texture) =
+                                crate::animation::texture(&value.animation(id), 2., 320, 180)
+                        {
+                            picture.set_paintable(Some(&texture));
+                        }
+                        true
+                    });
+                },
+            );
+            editor.replace(Some(window));
+        })
     }
     fn filtered(&self, kind: Kind) -> Vec<PathBuf> {
         self.paths
@@ -63,7 +117,26 @@ fn media_row(path: &Path, catalog: &Catalog) -> gtk::Box {
     ] {
         setter(&row, 6);
     }
-    if library::kind(path) == Some(Kind::Image)
+    if let Some(id) = crate::procedural::id(path) {
+        let picture = gtk::Picture::new();
+        picture.set_widget_name("procedural-thumbnail");
+        picture.set_can_shrink(true);
+        picture.set_content_fit(gtk::ContentFit::Cover);
+        picture.set_size_request(88, 58);
+        if let Ok(texture) = crate::animation::texture(
+            &catalog.procedurals.borrow().get(id).animation(id),
+            2.,
+            320,
+            180,
+        ) {
+            picture.set_paintable(Some(&texture));
+        }
+        catalog
+            .thumbnails
+            .borrow_mut()
+            .push((picture.downgrade(), id.to_string()));
+        row.append(&picture);
+    } else if library::kind(path) == Some(Kind::Image)
         && let Ok(pixbuf) = gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(path, 88, 58, true)
     {
         let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
@@ -110,6 +183,7 @@ fn media_row(path: &Path, catalog: &Catalog) -> gtk::Box {
     let target = path.to_path_buf();
     let presets = catalog.procedurals.clone();
     let strings = catalog.strings.clone();
+    let configure = crate::procedural::id(path).map(|id| catalog.configure_action(id));
     eye.connect_clicked(move |_| {
         if let Some(parent) = parent.borrow().upgrade() {
             let animation =
@@ -119,6 +193,9 @@ fn media_row(path: &Path, catalog: &Catalog) -> gtk::Box {
                 && let Some(strings) = strings.borrow().as_ref()
             {
                 viewer.set_title(&strings.text(&format!("animation-{id}")));
+                if let Some(configure) = configure.as_ref() {
+                    viewer.set_configure(configure.clone(), strings);
+                }
             }
         }
     });
@@ -129,40 +206,8 @@ fn media_row(path: &Path, catalog: &Catalog) -> gtk::Box {
         if let Some(strings) = catalog.strings.borrow().as_ref() {
             gear.set_tooltip_text(Some(&strings.text("procedural-configure")));
         }
-        let catalog = catalog.clone();
-        let id = id.to_owned();
-        gear.connect_clicked(move |_| {
-            let Some(parent) = catalog.parent.borrow().upgrade() else {
-                return;
-            };
-            let Some(strings) = catalog.strings.borrow().clone() else {
-                return;
-            };
-            if let Some(window) = catalog.editor.borrow_mut().take() {
-                window.destroy();
-            }
-            let viewer = catalog.viewer.clone();
-            let presets = catalog.procedurals.clone();
-            let target = crate::procedural::path(&id);
-            let callback_id = id.clone();
-            let weak_parent = parent.downgrade();
-            let window = crate::procedural_editor::open(
-                &parent,
-                &id,
-                catalog.procedurals.clone(),
-                &strings,
-                move || {
-                    if let Some(parent) = weak_parent.upgrade() {
-                        viewer.refresh_procedural(
-                            &parent,
-                            &target,
-                            presets.borrow().get(&callback_id).animation(&callback_id),
-                        );
-                    }
-                },
-            );
-            catalog.editor.replace(Some(window));
-        });
+        let configure = catalog.configure_action(id);
+        gear.connect_clicked(move |_| configure());
         row.append(&gear);
     }
     row.set_tooltip_text(Some(&path.to_string_lossy()));

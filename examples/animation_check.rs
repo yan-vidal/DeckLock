@@ -59,7 +59,13 @@ fn main() {
     );
     app.register(None::<&gio::Cancellable>).unwrap();
     // Texture updates while mapped; unmapping stops work; dropping releases callbacks.
-    for effect in [Effect::Starfield, Effect::Particles, Effect::Lissajous] {
+    for effect in [
+        Effect::Starfield,
+        Effect::Particles,
+        Effect::Lissajous,
+        Effect::Matrix,
+        Effect::DoomFire,
+    ] {
         let picture = animation::widget(Animation {
             effect,
             ..Default::default()
@@ -146,6 +152,15 @@ fn main() {
         .unwrap()
         .select_row(Some(&rest));
     click(get("settings-idle-background-add"));
+    // The library row carries a rendered still, not an empty placeholder.
+    assert!(
+        find(stars.upcast_ref(), "procedural-thumbnail")
+            .downcast::<gtk::Picture>()
+            .unwrap()
+            .paintable()
+            .is_some(),
+        "Procedural rows must show a thumbnail"
+    );
     click(find(stars.upcast_ref(), "media-eye"));
     pump(200);
     let viewer = top("media-viewer");
@@ -156,6 +171,26 @@ fn main() {
             .paintable()
             .is_some()
     );
+    // Diagnostics report after their first full second; the wait text precedes it.
+    let stats = find(viewer.upcast_ref(), "procedural-metrics")
+        .downcast::<gtk::Label>()
+        .unwrap();
+    assert!(stats.is_visible(), "Procedurals must show the stats panel");
+    let waiting = stats.text().to_string();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while stats.text() == waiting && Instant::now() < deadline {
+        pump(100);
+    }
+    let reported = stats.text().to_string();
+    assert!(
+        reported.contains("FPS") && reported.contains("MiB") && reported.contains('%'),
+        "Stats must report FPS, memory and CPU: {reported}"
+    );
+    // The viewer's gear reaches the same editor as the library row's.
+    click(find(viewer.upcast_ref(), "media-viewer-configure"));
+    pump(200);
+    top("procedural-editor").destroy();
+    pump(100);
     let before = std::fs::read(&path).unwrap();
     click(find(stars.upcast_ref(), "media-configure"));
     pump(100);
@@ -256,6 +291,6 @@ fn main() {
     preview.destroy();
     pump(100);
     println!(
-        "PASS: procedural library, eye/gear, draft validation, exclusive background/pools, persistence and lifecycle"
+        "PASS: procedural library, thumbnails, eye/gear, viewer gear and stats, draft validation, exclusive background/pools, persistence and lifecycle"
     );
 }

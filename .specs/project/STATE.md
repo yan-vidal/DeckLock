@@ -174,3 +174,17 @@ reserved-ID rejection, overlay-draft migration, opaque/repeatable frames, stable
 pool selection, eye/gear drafts, persistence and previous-media unmapping after
 transition. Captures of library, item editor and rest inspected. Main design
 post-merge run 34282111819 also passed. Procedural draft CI still to be run.
+
+
+2026-09-08 preview diagnostics and two new effects: the tick callback is Fn, so
+the metrics accumulator is a RefCell like the origin/last cells beside it; the
+earlier `mut` capture did not compile. Matrix rain and Doom fire ship as library
+items with their own colour presets and bitmap glyphs, no fonts or new
+dependencies. Default speed is 1.0 in code, example config and both READMEs.
+preview_stats reports drawing CPU (CLOCK_THREAD_CPUTIME_ID around the render)
+apart from whole-process CPU and VmRSS, which include GTK and belong to the
+settings process, not to the locker; the panel says so and must keep saying so.
+Six new catalogue keys added to both locales. animation_check now asserts the
+library thumbnail, the viewer gear and that the stats panel reports FPS, memory
+and CPU, so isolated-gtk covers them. All eight local gates passed. Still a
+draft PR: no merge, no tag, no release.

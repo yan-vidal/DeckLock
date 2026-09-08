@@ -3,7 +3,7 @@ use crate::animation::{Animation, Effect};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const ITEMS: [&str; 3] = ["starfield", "particles", "lissajous"];
+pub const ITEMS: [&str; 5] = ["starfield", "particles", "lissajous", "matrix", "doom-fire"];
 pub fn id(path: &Path) -> Option<&str> {
     let id = path.to_str()?.strip_prefix("procedural:")?;
     ITEMS.contains(&id).then_some(id)
@@ -16,6 +16,8 @@ pub fn effect(id: &str) -> Effect {
         "starfield" => Effect::Starfield,
         "particles" => Effect::Particles,
         "lissajous" => Effect::Lissajous,
+        "matrix" => Effect::Matrix,
+        "doom-fire" => Effect::DoomFire,
         _ => Effect::None,
     }
 }
@@ -33,7 +35,7 @@ impl Default for Parameters {
     fn default() -> Self {
         Self {
             density: 120,
-            speed: 0.3,
+            speed: 1.0,
             fps: 30,
             color: "#b4befe".into(),
             background: "#141725".into(),
@@ -57,18 +59,42 @@ impl Parameters {
         self.animation("starfield").validate()
     }
 }
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Presets {
     pub starfield: Parameters,
     pub particles: Parameters,
     pub lissajous: Parameters,
+    pub matrix: Parameters,
+    #[serde(rename = "doom-fire")]
+    pub doom_fire: Parameters,
+}
+impl Default for Presets {
+    fn default() -> Self {
+        Self {
+            starfield: Default::default(),
+            particles: Default::default(),
+            lissajous: Default::default(),
+            matrix: Parameters {
+                color: "#38f277".into(),
+                background: "#020806".into(),
+                ..Default::default()
+            },
+            doom_fire: Parameters {
+                color: "#ffcc66".into(),
+                background: "#080304".into(),
+                ..Default::default()
+            },
+        }
+    }
 }
 impl Presets {
     pub fn get(&self, id: &str) -> &Parameters {
         match id {
             "particles" => &self.particles,
             "lissajous" => &self.lissajous,
+            "matrix" => &self.matrix,
+            "doom-fire" => &self.doom_fire,
             _ => &self.starfield,
         }
     }
@@ -77,6 +103,8 @@ impl Presets {
             "starfield" => self.starfield = value,
             "particles" => self.particles = value,
             "lissajous" => self.lissajous = value,
+            "matrix" => self.matrix = value,
+            "doom-fire" => self.doom_fire = value,
             _ => {}
         }
     }
