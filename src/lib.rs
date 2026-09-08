@@ -24,3 +24,5 @@ pub mod theme_editor;
 pub mod config_cli;
 
 pub mod animation;
+
+pub mod branding;

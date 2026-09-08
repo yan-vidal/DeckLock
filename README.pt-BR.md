@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icons/decklock.svg" width="112" height="112" alt="DeckLock"></p>
+
 # DeckLock
 
 [English](README.md) · **Português (Brasil)**
