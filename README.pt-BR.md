@@ -12,15 +12,15 @@ Suporte opcional a controles, incluindo dispositivos como o Steam Deck.
 
 ### Arch Linux · x86_64
 
-Baixe o pacote **0.2** no [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.2),
+Baixe o pacote **0.1** no [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.1-r2),
 ou use:
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.2/decklock-0.2-1-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.2/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1-r2/decklock-0.1-2-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1-r2/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.2-1-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.1-2-x86_64.pkg.tar.zst
 ```
 
 O pacote instala o aplicativo, o atalho **Configurações do DeckLock** e as mídias
@@ -39,12 +39,14 @@ O DeckLock não é exclusivo do Arch. Precisa de GTK4, GStreamer, Linux-PAM e
 `gtk4-layer-shell` 1.3+, além de um compositor Wayland com `ext-session-lock-v1`
 para bloquear a sessão. X11 não é suportado.
 
-O binário pronto da versão 0.2 usa as bibliotecas do **Arch x86_64 atual**; ele não
+O binário pronto da versão 0.1 usa as bibliotecas do **Arch x86_64 atual**; ele não
 é um binário universal para Linux. Ainda não fornecemos pacotes para outras
 distribuições ou arquiteturas. Para elas, veja [compilação](#desenvolvimento).
 
 
-## Fundos procedurais (0.2)
+## Fundos procedurais (branch de desenvolvimento; previstos para 0.2)
+
+Esses recursos ainda não fazem parte da versão 0.1 publicada.
 
 Em **Fundo → Camada procedural**, escolha **Campo de estrelas**, **Partículas
 flutuantes** ou **Curvas de Lissajous**. As animações transparentes aparecem sobre
@@ -84,7 +86,7 @@ Sem argumentos, `decklock` mostra a ajuda. Use `decklock --help` ou
 `decklock config --help` para comandos e exemplos. O preview não autentica nem
 executa ações de energia. Escape oculta o teclado e, depois, fecha a janela.
 
-**A versão 0.2 é experimental.** Preview e configurações foram testados no Hyprland.
+**A versão 0.1 é experimental.** Preview e configurações foram testados no Hyprland.
 Testes de protocolo isolados cobrem aquisição do bloqueio, mudanças de monitores e
 encerramento sem desbloquear. PAM na sessão real e uma variedade maior de
 compositores/controles ainda precisam de validação antes de substituir seu bloqueador.

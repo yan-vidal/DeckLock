@@ -151,3 +151,10 @@ See src/animation.rs and examples/animation_check.rs for pure rendering and
 mapped/unmapped lifecycle contracts. All eight local gates passed, including animated GTK lifecycle/settings and
 Wayland protocol. Preview captures inspected in target/check-logs. Remote CI
 and release publication remain pending.
+
+
+User correction: do not open a release PR or finalize 0.2 yet; more features are
+still to be specified. PR #3 was opened prematurely and was closed without
+merge. Restore Cargo 0.1.0/package revision 2 and current release installation
+links; procedural code stays on feat/procedural-backgrounds-0.2. No new tag or
+release was created. Await the remaining scope before reopening a PR for 0.2.

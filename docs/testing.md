@@ -81,8 +81,9 @@ on Arch and include their linked-library provenance.
 protection enforce the merge policy. A repository administrator can still change
 these policies; changes to safeguards must be reviewed as such.
 
-Cargo `0.2.0` and package revision `1` describe tag `v0.2`. Bump metadata in a
-reviewed PR before another release; existing tags must never be reused.
+Cargo `0.1.0` and package revision `2` still describe the existing `v0.1-r2`.
+Procedural effects are on a development branch for the planned 0.2; no release
+bump, merge or tag is authorized until the user finishes defining that scope.
 
 Procedural overlays add deterministic frame/validation tests, actual CLI
 round trips and a private GTK contract for texture updates, bounded dimensions,
