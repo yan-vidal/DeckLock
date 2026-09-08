@@ -7,7 +7,7 @@ of the named palettes, not official ports or an endorsement by their authors.
 Selecting a preset immediately updates the settings window. Save persists
 `theme_preset` in the user configuration; Open preview uses the unsaved choice.
 The lock screen and embedded keyboard use the same palette. Presets preserve the
-existing lock geometry and readable white clock/password overlays on media.
+existing lock geometry and readable white clock/date overlays on media.
 
 ```toml
 theme_preset = "catppuccin-mocha"
@@ -35,3 +35,17 @@ Default lock geometry: [default/style.css](default/style.css).
 
 The CSS and widget layouts here are DeckLock's own implementation. Some muted,
 hover and selection colors are adapted for readable GTK controls.
+
+## Live editing and idle layout
+
+**Edit CSS & theme.toml** applies valid drafts live. Saving settings creates a new
+editable theme copy under the configuration directory; bundled/original themes
+are never overwritten. Invalid drafts keep the last valid appearance and block Save.
+
+The settings Background/Rest tabs control the open preview without acquiring a
+session lock or capturing the controller. `clock_visible` controls the normal
+clock; `idle_clock_visible` controls the idle clock independently (default `true`).
+
+The settings background has a subtle woven CSS texture. Remove it in an external
+theme with `window.settings { background-image: none; }`, or adjust the two
+repeating gradients in [settings.css](settings.css). Cards retain solid surfaces.

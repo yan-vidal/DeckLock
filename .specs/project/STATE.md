@@ -77,3 +77,29 @@ removes the provider on window destruction. Empty external selection cannot save
 36 core tests, clippy/fmt and GTK tests passed; GUI validation cycles all presets,
 checks color changes and persistence, tabs/tooltips and invalid external folders.
 Dark/light settings screenshots inspected; themes/README.md records palette sources.
+
+2026-09-07: dropdown listview styling fixed contrast across dark and light presets.
+Disabling idle mode now dynamically hides dependent duration and background reuse options.
+Added transient, reusable media viewer modal for inspecting images and muted videos from the library.
+Added integrated theme editor with draft isolation, syntax validation, and persistent copies for style.css
+and theme.toml. Settings preview now updates live while preserving window identity. Full-screen
+showcase on workspace 3 recorded to docs/assets/settings-demo.gif. 36 unit tests, clippy and
+live integration checks passed.
+
+2026-09-07 review and capture follow-up: settings-showcase now waits for pointer
+acknowledgement before each GTK action; duplicate synthetic clicks removed.
+record-settings.py captures only workspace 3's Full HD monitor at native scale,
+restores workspace/cursor, and preserves source frames plus timing under the cache.
+Desktop bar/watermark are masked in encoded demos. Master and focused GIFs are 1080p.
+Palette-only live preview edits preserve the existing video paintable, avoiding
+restarts. Light-palette clock/date remain white over arbitrary footage; controls
+use semantic surfaces. A subtle woven CSS texture styles the settings background.
+Language selector moved to the top and translates current settings without saving
+or discarding drafts. Background/Rest tabs pin the settings preview state; the
+normal lock still uses real inactivity. Layout.idle_clock_visible defaults true,
+independent of clock_visible and idle_reuse_background, and is editable in TOML.
+The previous subprocess note describes the initial implementation only: current
+settings previews share a process but do not construct a session lock/PAM/controller.
+GUI regressions include language, draft preservation, idle clock overrides and
+paintable retention. Recording actions are instrumented GTK operations after real
+pointer movement, not an assertion that each operation used a physical click.

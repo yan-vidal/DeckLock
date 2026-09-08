@@ -1,6 +1,11 @@
 /* Python deck_lock.py appearance, using GTK4's stable theme hooks. */
 @define-color accent #7aa2f7;
 @define-color foreground #e6e6e6;
+@define-color settings_bg #16181d;
+@define-color settings_surface #20232b;
+@define-color settings_raised #2c303b;
+@define-color settings_text #e6e6e6;
+@define-color settings_muted #a0a7b4;
 @define-color keyboard_background #101010;
 @define-color keyboard_dark #2e3436;
 @define-color keyboard_text #eeeeec;
@@ -11,20 +16,20 @@ window.decklock, #background { background-color: black; color: @foreground; }
 #content { background: transparent; }
 #clock { color: white; font-size: 96px; font-weight: 300; text-shadow: 0 2px 12px rgba(0,0,0,0.8); }
 #date { color: white; font-size: 22px; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
-#avatar { border: 2px solid rgba(255,255,255,0.55); border-radius: 50%; margin-bottom: 8px; }
+#avatar { border: 2px solid alpha(@accent, 0.85); border-radius: 50%; margin-bottom: 8px; }
 #username { color: white; font-size: 20px; font-weight: bold; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
-#password { background-color: rgba(255,255,255,0.15); color: white; border: 1px solid alpha(@accent,0.8); border-radius: 20px; padding: 10px 18px; min-width: 260px; min-height: 30px; font-size: 16px; }
-#password:focus-within { border-color: @accent; outline: none; }
-#password placeholder { color: rgba(255,255,255,0.55); }
+#password { background-color: alpha(@settings_surface, 0.70); color: @foreground; border: 1.5px solid alpha(@accent, 0.85); border-radius: 20px; padding: 10px 18px; min-width: 260px; min-height: 30px; font-size: 16px; }
+#password:focus-within { border-color: @accent; background-color: alpha(@settings_surface, 0.85); outline: none; }
+#password placeholder { color: alpha(@foreground, 0.55); }
 button { background-image: none; box-shadow: none; text-shadow: none; }
-#submit { background-color: rgba(255,255,255,0.15); color: white; border: 1px solid alpha(@accent,0.8); border-radius: 20px; padding: 10px 14px; min-width: 0; min-height: 0; }
-#submit:hover { background-color: rgba(230,230,230,0.14); }
+#submit { background-color: alpha(@settings_raised, 0.80); color: @foreground; border: 1.5px solid alpha(@accent, 0.85); border-radius: 20px; padding: 10px 14px; min-width: 0; min-height: 0; }
+#submit:hover { background-color: alpha(@accent, 0.40); }
 #submit:disabled { opacity: 0.45; }
-#power button { background-color: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.20); border-radius: 18px; padding: 6px; margin: 4px; color: white; min-width: 0; min-height: 0; }
-#power button:hover { background-color: alpha(@accent,0.55); }
+#power button { background-color: alpha(@settings_surface, 0.70); border: 1px solid alpha(@accent, 0.50); border-radius: 18px; padding: 6px; margin: 4px; color: @foreground; min-width: 0; min-height: 0; }
+#power button:hover { background-color: alpha(@accent, 0.65); }
 #caps { color: #ffd166; font-size: 13px; font-weight: bold; text-shadow: 0 2px 8px rgba(0,0,0,0.9); }
 #status { color: #ffd9e2; font-size: 14px; text-shadow: 0 2px 8px rgba(0,0,0,0.9); }
-#preview-banner { color: rgba(255,255,255,0.55); font-size: 12px; margin: 12px; }
+#preview-banner { color: rgba(255,255,255,0.65); font-size: 12px; margin: 12px; }
 #keyboard { background: transparent; padding: 0; }
 #keyboard button.key { background-color: @keyboard_background; border: 1px solid @keyboard_background; color: @keyboard_text; border-radius: 0; padding: 0; margin: 0; min-width: 0; min-height: 0; font-family: "DejaVu Sans"; font-size: 29.76px; font-weight: normal; }
 #keyboard button.key-dark { background-color: @keyboard_dark; }

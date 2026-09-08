@@ -14,3 +14,9 @@ pub mod library;
 pub mod media_editor;
 
 pub mod themes;
+
+pub mod media_viewer;
+
+pub mod live_preview;
+
+pub mod theme_editor;

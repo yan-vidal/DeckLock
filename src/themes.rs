@@ -26,13 +26,13 @@ pub fn colors(id: &str, keyboard: bool) -> Result<String, String> {
         .find(|p| p.id == id)
         .ok_or_else(|| format!("Unknown theme preset: {id}"))?;
     let mut css = format!(
-        "@define-color settings_bg {};\n@define-color settings_surface {};\n@define-color settings_raised {};\n@define-color settings_text {};\n@define-color settings_muted {};\n@define-color accent {};\n",
-        p.bg, p.surface, p.raised, p.text, p.muted, p.accent
+        "@define-color settings_bg {};\n@define-color settings_surface {};\n@define-color settings_raised {};\n@define-color settings_text {};\n@define-color settings_muted {};\n@define-color accent {};\n@define-color foreground {};\n",
+        p.bg, p.surface, p.raised, p.text, p.muted, p.accent, p.text
     );
     if keyboard {
         css += &format!(
-            "@define-color foreground {};\n@define-color keyboard_background {};\n@define-color keyboard_dark {};\n@define-color keyboard_text {};\n@define-color keyboard_hilight {};\n@define-color keyboard_pressed {};\n",
-            p.text, p.surface, p.raised, p.text, p.raised, p.accent
+            "@define-color keyboard_background {};\n@define-color keyboard_dark {};\n@define-color keyboard_text {};\n@define-color keyboard_hilight {};\n@define-color keyboard_pressed {};\n",
+            p.surface, p.raised, p.text, p.raised, p.accent
         );
     }
     Ok(css)

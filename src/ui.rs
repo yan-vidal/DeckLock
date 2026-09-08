@@ -32,9 +32,60 @@ pub struct View {
     pub keyboard: gtk::Box,
     pub controller_event: Rc<dyn Fn(ControllerEvent)>,
     pub activity: Rc<Cell<Instant>>,
+    bindings: Rc<Bindings>,
+    preview: bool,
+    forced_idle: Rc<Cell<Option<bool>>>,
+}
+
+struct Bindings {
+    window: glib::WeakRef<gtk::ApplicationWindow>,
+    signals: RefCell<Vec<glib::SignalHandlerId>>,
+    controllers: RefCell<Vec<gtk::EventController>>,
+    stream: Rc<RefCell<Option<crate::media::Playback>>>,
+}
+impl Bindings {
+    fn clear(&self) {
+        self.stream.borrow_mut().take();
+        if let Some(window) = self.window.upgrade() {
+            for id in self.signals.borrow_mut().drain(..) {
+                window.disconnect(id);
+            }
+            for controller in self.controllers.borrow_mut().drain(..) {
+                window.remove_controller(&controller);
+            }
+        }
+    }
+}
+impl Drop for Bindings {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+/// Rebuild only a settings preview, retaining the same native window.
+pub fn rebuild_preview(view: View, app: &gtk::Application, settings: Rc<Settings>) -> View {
+    assert!(
+        view.preview && settings.preview,
+        "Only preview windows may be rebuilt"
+    );
+    let window = view.window.clone();
+    let text = Zeroizing::new(view.entry.text().to_string());
+    let keyboard = view.keyboard.is_visible();
+    let shown = gtk::prelude::EntryExt::is_visible(&view.entry);
+    view.bindings.clear();
+    drop(view);
+    let view = build_in(app, settings, Rc::new(|_| {}), Some(window));
+    view.entry.set_text(&text);
+    view.entry.set_visibility(shown);
+    view.keyboard.set_visible(keyboard);
+    view
 }
 
 impl View {
+    pub fn set_preview_idle(&self, idle: bool) {
+        assert!(self.preview, "Idle override is only available in preview");
+        self.forced_idle.set(Some(idle));
+    }
     pub fn busy(&self, busy: bool, message: &str) {
         self.entry.set_sensitive(!busy);
         self.submit
@@ -574,15 +625,26 @@ pub fn build(
     settings: Rc<Settings>,
     on_submit: Rc<dyn Fn(Zeroizing<String>)>,
 ) -> View {
-    let window = gtk::ApplicationWindow::builder()
-        .title(settings.strings.text(if settings.preview {
-            "preview-title"
-        } else {
-            "lock-title"
-        }))
-        .default_width(1000)
-        .default_height(720)
-        .build();
+    build_in(app, settings, on_submit, None)
+}
+
+fn build_in(
+    app: &gtk::Application,
+    settings: Rc<Settings>,
+    on_submit: Rc<dyn Fn(Zeroizing<String>)>,
+    existing: Option<gtk::ApplicationWindow>,
+) -> View {
+    let window = existing.unwrap_or_else(|| {
+        gtk::ApplicationWindow::builder()
+            .title(settings.strings.text(if settings.preview {
+                "preview-title"
+            } else {
+                "lock-title"
+            }))
+            .default_width(1000)
+            .default_height(720)
+            .build()
+    });
     // Session-lock destroys/unrealizes surfaces itself. Registering those windows
     // with GtkApplication makes GTK 4.22's removal handler access a gone surface.
     // The lock mode holds the application explicitly; only preview uses its
@@ -601,6 +663,12 @@ pub fn build(
     background.set_widget_name("background");
     overlay.set_child(Some(&background));
     let stream = Rc::new(RefCell::new(None));
+    let bindings = Rc::new(Bindings {
+        window: window.downgrade(),
+        signals: RefCell::new(Vec::new()),
+        controllers: RefCell::new(Vec::new()),
+        stream: stream.clone(),
+    });
     let mut normal_selection = crate::library::Selection::new(
         crate::library::pool(&settings.config, &settings.theme, false),
         crate::library::seed(),
@@ -611,9 +679,12 @@ pub fn build(
     );
     set_background(&background, normal_selection.current(), &stream);
     let close_stream = stream.clone();
-    window.connect_destroy(move |_| {
-        close_stream.borrow_mut().take();
-    });
+    bindings
+        .signals
+        .borrow_mut()
+        .push(window.connect_destroy(move |_| {
+            close_stream.borrow_mut().take();
+        }));
     let veil = gtk::Box::new(gtk::Orientation::Vertical, 0);
     veil.set_widget_name("veil");
     overlay.add_overlay(&veil);
@@ -992,14 +1063,26 @@ pub fn build(
         }
         glib::Propagation::Proceed
     });
+    bindings
+        .controllers
+        .borrow_mut()
+        .push(key_events.clone().upcast());
     window.add_controller(key_events);
     let motion = gtk::EventControllerMotion::new();
     let activity_motion = activity.clone();
     motion.connect_motion(move |_, _, _| activity_motion.set(Instant::now()));
+    bindings
+        .controllers
+        .borrow_mut()
+        .push(motion.clone().upcast());
     window.add_controller(motion);
     let gesture = gtk::GestureClick::new();
     let activity_click = activity.clone();
     gesture.connect_pressed(move |_, _, _, _| activity_click.set(Instant::now()));
+    bindings
+        .controllers
+        .borrow_mut()
+        .push(gesture.clone().upcast());
     window.add_controller(gesture);
     let weak_window = window.downgrade();
     let weak_form = form.downgrade();
@@ -1019,22 +1102,28 @@ pub fn build(
         );
     }
     let idle_activity = activity.clone();
+    let forced_idle = Rc::new(Cell::new(None));
+    let idle_override = forced_idle.clone();
     glib::timeout_add_local(Duration::from_millis(250), move || {
-        if weak_window.upgrade().is_none() {
+        if weak_window.upgrade().is_none() || weak_form.upgrade().is_none() {
             return glib::ControlFlow::Break;
         }
         let is_idle = settings_idle.config.idle_enabled
-            && settings_idle.config.idle_seconds > 0
-            && idle_activity.get().elapsed().as_secs() >= settings_idle.config.idle_seconds as u64;
+            && idle_override.get().unwrap_or(
+                settings_idle.config.idle_seconds > 0
+                    && idle_activity.get().elapsed().as_secs()
+                        >= settings_idle.config.idle_seconds as u64,
+            );
         if idle.replace(is_idle) != is_idle {
             if let Some(power) = weak_power.upgrade() {
                 power.set_visible(!is_idle);
             }
             if let Some(clock) = weak_clock_box.upgrade() {
-                clock.set_visible(
+                clock.set_visible(if is_idle {
+                    settings_idle.theme.layout.idle_clock_visible
+                } else {
                     settings_idle.theme.layout.clock_visible
-                        && !(is_idle && settings_idle.config.idle_reuse_background),
-                );
+                });
                 clock.set_valign(if is_idle {
                     gtk::Align::Center
                 } else {
@@ -1079,13 +1168,19 @@ pub fn build(
         glib::ControlFlow::Continue
     });
     let entry_focus = entry.downgrade();
-    window.connect_map(move |_| {
-        if let Some(entry) = entry_focus.upgrade() {
-            entry.grab_focus();
-        }
-    });
+    bindings
+        .signals
+        .borrow_mut()
+        .push(window.connect_map(move |_| {
+            if let Some(entry) = entry_focus.upgrade() {
+                entry.grab_focus();
+            }
+        }));
     if !settings.preview {
-        window.connect_close_request(|_| glib::Propagation::Stop);
+        bindings
+            .signals
+            .borrow_mut()
+            .push(window.connect_close_request(|_| glib::Propagation::Stop));
     }
     View {
         window,
@@ -1095,6 +1190,9 @@ pub fn build(
         keyboard,
         controller_event,
         activity,
+        bindings,
+        preview: settings.preview,
+        forced_idle,
     }
 }
 

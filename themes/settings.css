@@ -40,3 +40,24 @@ window.settings { background: @settings_bg; color: @settings_text; font-family: 
 .settings .section-tabs { background: @settings_surface; padding: 4px; border-radius: 11px; }
 .settings .section-tabs button { border: none; background: transparent; padding: 5px 20px; }
 .settings .section-tabs button:checked { background: alpha(@accent,0.18); color: @accent; }
+/* DropDown menus use listview, not the ListBox nodes in the media cards. */
+.settings dropdown popover contents, .settings dropdown popover listview,
+.decklock-menu contents, .decklock-menu listview {
+  background-color: @settings_surface; color: @settings_text;
+}
+.settings dropdown popover row, .decklock-menu row { background-color: @settings_surface; color: @settings_text; }
+.settings dropdown popover row:hover, .settings dropdown popover row:selected,
+.decklock-menu row:hover, .decklock-menu row:selected { background-color: @settings_raised; color: @settings_text; }
+.settings dropdown popover label, .decklock-menu label { color: @settings_text; }
+.settings .media-divider { background: alpha(@settings_muted,0.32); min-width: 1px; margin: 4px 2px; }
+.settings .media-eye { min-width: 22px; padding: 4px; border: none; background: transparent; }
+.settings textview, .settings textview text { background: @settings_surface; color: @settings_text; caret-color: @accent; }
+
+/* Fine woven texture. External themes can use background-image: none. */
+window.settings {
+    background-image:
+        repeating-linear-gradient(0deg, transparent, transparent 2px, alpha(@settings_muted,0.045) 2px, alpha(@settings_muted,0.045) 3px),
+        repeating-linear-gradient(90deg, transparent, transparent 2px, alpha(@settings_muted,0.035) 2px, alpha(@settings_muted,0.035) 3px);
+}
+
+.settings headerbar { background: @settings_surface; color: @settings_text; box-shadow: none; }

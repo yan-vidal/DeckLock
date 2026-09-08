@@ -43,7 +43,7 @@ month-11 = November
 month-12 = December
 
 settings-title = DeckLock settings
-settings-hint = Adjust the screen and preview before saving. Reopen to change the language.
+settings-hint = Customize your screen. Preview changes live before saving.
 settings-browse = Browse…
 settings-cancel = Cancel
 settings-theme = Theme
@@ -69,8 +69,8 @@ settings-idle = Idle time (seconds)
 settings-controller = Use sc-controller when locking
 settings-preview = Open preview
 settings-save = Save
-settings-saved = Settings saved. Reopen the preview to apply.
-settings-preview-open = Preview opened with your changes. It does not capture controllers or lock the session.
+settings-saved = Settings saved. The open preview updates automatically.
+settings-preview-open = Preview opened. Changes update this window live; authentication and power actions are disabled.
 
 hibernate = Hibernate
 settings-idle-background = Idle background
@@ -93,3 +93,8 @@ settings-rest = Rest
 settings-layout-options = Layout & preferences
 media-pool-help = A random item is chosen from this pool for each lock. If it is a photo, only the photos in this pool cycle at the configured interval. If it is a video, that video loops for the session. Removing an item here does not delete its file.
 settings-theme-required = Choose a theme folder to use an external theme.
+
+theme-editor-title = Edit CSS & theme.toml
+theme-editor-hint = Changes appear live after validation. Save in settings to keep an editable copy of this theme.
+theme-editor-valid = Valid changes applied to the preview.
+theme-editor-pending = Validating theme changes…

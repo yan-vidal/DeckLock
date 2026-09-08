@@ -2,7 +2,7 @@ use fluent_bundle::{FluentBundle, FluentResource};
 use std::path::Path;
 
 pub struct I18n {
-    catalogs: Vec<FluentBundle<FluentResource>>,
+    catalogs: std::cell::RefCell<Vec<FluentBundle<FluentResource>>>,
 }
 
 impl I18n {
@@ -52,11 +52,30 @@ impl I18n {
             "en-US".parse().unwrap(),
             include_str!("../locales/en-US.ftl").into(),
         )?);
-        Ok(Self { catalogs })
+        Ok(Self {
+            catalogs: std::cell::RefCell::new(catalogs),
+        })
+    }
+
+    pub fn set_locale(&self, locale: Option<&str>) -> Result<(), String> {
+        self.catalogs
+            .replace(Self::new(locale, None)?.catalogs.into_inner());
+        Ok(())
+    }
+
+    pub fn keys() -> impl Iterator<Item = &'static str> {
+        include_str!("../locales/en-US.ftl")
+            .lines()
+            .filter_map(|line| {
+                if line.starts_with(char::is_whitespace) || line.starts_with('#') {
+                    return None;
+                }
+                line.split_once('=').map(|(key, _)| key.trim())
+            })
     }
 
     pub fn text(&self, key: &str) -> String {
-        for catalog in &self.catalogs {
+        for catalog in self.catalogs.borrow().iter() {
             if let Some(pattern) = catalog.get_message(key).and_then(|message| message.value()) {
                 let mut errors = Vec::new();
                 let text = catalog.format_pattern(pattern, None, &mut errors);

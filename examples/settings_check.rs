@@ -85,9 +85,11 @@ fn main() {
     reuse.set_active(true);
     assert!(!media.is_visible());
     disable.set_active(true);
+    assert!(!get("settings-idle-options").is_visible());
     assert!(!reuse.is_sensitive());
     assert!(!get("settings-idle").is_sensitive());
     disable.set_active(false);
+    assert!(get("settings-idle-options").is_visible());
     assert!(reuse.is_sensitive());
     assert!(!media.is_visible());
     reuse.set_active(false);

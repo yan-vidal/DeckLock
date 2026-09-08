@@ -43,7 +43,7 @@ month-11 = novembro
 month-12 = dezembro
 
 settings-title = Configurações do DeckLock
-settings-hint = Ajuste a tela e confira no preview antes de salvar. O idioma muda ao reabrir.
+settings-hint = Personalize sua tela. Veja as alterações ao vivo antes de salvar.
 settings-browse = Escolher…
 settings-cancel = Cancelar
 settings-theme = Tema
@@ -69,8 +69,8 @@ settings-idle = Inatividade (segundos)
 settings-controller = Usar sc-controller no bloqueio
 settings-preview = Abrir preview
 settings-save = Salvar
-settings-saved = Configurações salvas. Reabra o preview para aplicar.
-settings-preview-open = Preview aberto com as alterações. Não captura o controle nem bloqueia a sessão.
+settings-saved = Configurações salvas. O preview aberto é atualizado automaticamente.
+settings-preview-open = Preview aberto. As alterações aparecem ao vivo; autenticação e ações de energia ficam desativadas.
 
 hibernate = Hibernar
 settings-idle-background = Fundo do modo ocioso
@@ -93,3 +93,8 @@ settings-rest = Repouso
 settings-layout-options = Layout e preferências
 media-pool-help = Uma mídia deste pool é sorteada a cada bloqueio. Se for foto, apenas as fotos deste pool se alternam no intervalo configurado. Se for vídeo, ele permanece em loop nessa sessão. Remover daqui não apaga o arquivo.
 settings-theme-required = Escolha uma pasta para usar um tema externo.
+
+theme-editor-title = Editar CSS e theme.toml
+theme-editor-hint = As alterações aparecem ao vivo após validação. Salve nas configurações para guardar uma cópia editável deste tema.
+theme-editor-valid = Alterações válidas aplicadas ao preview.
+theme-editor-pending = Validando alterações do tema…

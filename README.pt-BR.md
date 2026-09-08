@@ -24,11 +24,11 @@ escala do teclado e tempo de inatividade. **Abrir preview** mostra as alteraçõ
 atuais sem salvar. **Salvar** grava sua configuração sem modificar os arquivos do
 tema. A interface está disponível em português e inglês.
 
-![Janela nativa de configurações em Rust e GTK4](docs/assets/settings-library.png)
+![Janela nativa de configurações em Rust e GTK4](docs/assets/settings-themes.gif)
 
-Esta primeira interface oferece controles para as opções de layout existentes.
-Arrastar elementos livremente, recarregar temas ao editar e plugins ficam para
-etapas futuras.
+*Demonstração das configurações: troca dinâmica de temas com contraste aprimorado, atualização do preview em tempo real, gerenciamento de pools com visualizador modal e editor integrado de CSS e theme.toml.*
+
+A interface conta com atualização do preview em tempo real, visualização de mídias e editor integrado para CSS e layout do tema (`theme.toml`) com validação de rascunhos. Arrastar elementos livremente e plugins ficam para etapas futuras.
 
 ## Experimente
 
@@ -86,6 +86,10 @@ compatíveis.
 
 ## Temas e configuração
 
+O seletor de idioma fica no topo e troca inglês/português imediatamente, preservando alterações não salvas. A aba **Repouso** mostra esse estado no preview aberto; **Fundo** retorna à tela normal. O relógio permanece no repouso por padrão, inclusive ao reutilizar o fundo. Para ocultá-lo, use `idle_clock_visible = false` em `[layout]` no editor de tema.
+
+[Demonstração completa](docs/assets/settings-demo.gif) (80 segundos, 36 MiB). GIFs em **1920×1080**: [temas](docs/assets/settings-themes.gif) · [repouso](docs/assets/settings-rest.gif) · [CSS e layout](docs/assets/settings-editor.gif). O roteiro instrumentado espera o ponteiro chegar antes de cada ação, sem salvar a configuração nem bloquear a sessão.
+
 Selecione Classic, Catppuccin Mocha/Latte, Dracula, Nord, Tokyo Night ou Gruvbox
 no seletor de temas. As cores mudam imediatamente na janela de configurações e
 também são aplicadas ao preview do bloqueio. Pastas de temas externos continuam aceitas.
@@ -97,6 +101,10 @@ expande os controles gerais abaixo da área de mídias.
 Veja a [configuração de temas e os créditos das paletas](themes/README.md).
 
 ![Tema claro das configurações — Catppuccin Latte](docs/assets/settings-light.png)
+
+Clique em **Editar CSS e theme.toml** nas opções de layout para abrir o editor ao vivo. As alterações ficam isoladas em rascunhos temporários e são refletidas no preview assim que validadas. Salvar as configurações grava uma cópia editável em `~/.config/decklock/themes`.
+
+![Editor integrado de CSS e theme.toml](docs/assets/theme-editor.png)
 
 Abra `--settings` ou copie [config.example.toml](config.example.toml) para
 `~/.config/decklock/config.toml`. Use `--config CAMINHO` para outro arquivo.
@@ -173,10 +181,13 @@ Pool ocioso vazio mantém o fundo normal; pool normal explicitamente vazio fica 
 mídia. Configurações antigas com arquivo/pasta continuam aceitas até definir um pool.
 
 **Manter o fundo e apenas ocultar a interface** oculta o card de mídias ociosas e
-preserva a reprodução. **Desativar modo ocioso** oculta o card e desabilita as opções
-de reutilização e tempo, guardando as preferências para quando reativar o idle.
+preserva a reprodução. **Desativar modo ocioso** oculta todas as opções dependentes, inclusive reutilização e tempo, guardando as preferências para quando reativar o idle.
 
 ![Configurações independentes de mídia ociosa](docs/assets/settings-idle.png)
+
+Clique no ícone de olho ao lado de qualquer item da biblioteca ou do pool para abrir o visualizador único reutilizável, reproduzindo fotos ou vídeos sem som sem interromper a navegação da biblioteca.
+
+![Visualizador de mídia reutilizável](docs/assets/media-viewer.png)
 
 As mídias padrão acompanham o programa como arquivos, fora do binário Rust.
 Veja a [estrutura do pacote e os créditos](assets/media/README.md). O pacote está

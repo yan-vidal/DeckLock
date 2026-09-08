@@ -163,6 +163,7 @@ pub struct Layout {
     pub spacing: i32,
     pub padding: i32,
     pub clock_visible: bool,
+    pub idle_clock_visible: bool,
     pub avatar_visible: bool,
     pub keyboard_scale: f64,
 }
@@ -175,6 +176,7 @@ impl Default for Layout {
             spacing: 16,
             padding: 32,
             clock_visible: true,
+            idle_clock_visible: true,
             avatar_visible: true,
             keyboard_scale: 1.0,
         }
@@ -205,7 +207,7 @@ pub struct Theme {
     pub background: Option<PathBuf>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 struct ThemeFile {
     name: String,
@@ -226,6 +228,36 @@ impl Default for ThemeFile {
 }
 
 impl Theme {
+    pub fn document(&self) -> Result<String, String> {
+        toml::to_string_pretty(&ThemeFile {
+            name: self.name.clone(),
+            css: "style.css".into(),
+            layout: self.layout.clone(),
+            background: self.background.clone(),
+        })
+        .map_err(|e| e.to_string())
+    }
+    pub fn from_document(source: &str, css: &str, base: &Path) -> Result<Self, String> {
+        let file: ThemeFile = toml::from_str(source).map_err(|e| e.to_string())?;
+        file.layout.validate()?;
+        if file.css != Path::new("style.css") {
+            return Err(
+                "The CSS tab is saved as style.css; keep css = 'style.css' in theme.toml".into(),
+            );
+        }
+        Ok(Self {
+            name: file.name,
+            css: format!(
+                "{}\n{}\n{}",
+                crate::themes::colors("classic", false)?,
+                crate::themes::settings_css(),
+                css
+            ),
+            layout: file.layout,
+            background: file.background.map(|p| resolve(base, &p)),
+        })
+    }
+
     pub fn from_config(config: &Config) -> Result<Self, String> {
         if config.theme.is_some() {
             return Self::load(config.theme.as_deref());

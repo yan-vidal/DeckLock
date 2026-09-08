@@ -15,12 +15,16 @@ type LibraryViews = Rc<RefCell<Vec<(glib::WeakRef<gtk::ListBox>, Kind)>>>;
 pub struct Catalog {
     paths: Rc<RefCell<Vec<PathBuf>>>,
     views: LibraryViews,
+    viewer: crate::media_viewer::Viewer,
+    parent: Rc<RefCell<glib::WeakRef<gtk::ApplicationWindow>>>,
 }
 impl Catalog {
     pub fn new(paths: Vec<PathBuf>) -> Self {
         Self {
             paths: Rc::new(RefCell::new(paths)),
             views: Rc::new(RefCell::new(Vec::new())),
+            viewer: Default::default(),
+            parent: Default::default(),
         }
     }
     fn filtered(&self, kind: Kind) -> Vec<PathBuf> {
@@ -36,7 +40,7 @@ impl Catalog {
             let Some(list) = weak.upgrade() else {
                 return false;
             };
-            fill(&list, &self.filtered(*kind));
+            fill(&list, &self.filtered(*kind), self);
             true
         });
     }
@@ -45,7 +49,7 @@ pub struct Editor {
     pub widget: gtk::Box,
     pub paths: Rc<RefCell<Vec<PathBuf>>>,
 }
-fn media_row(path: &Path) -> gtk::Box {
+fn media_row(path: &Path, catalog: &Catalog) -> gtk::Box {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     for setter in [
         gtk::prelude::WidgetExt::set_margin_top,
@@ -74,15 +78,30 @@ fn media_row(path: &Path) -> gtk::Box {
     label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
     label.set_max_width_chars(24);
     row.append(&label);
+    let eye = gtk::Button::from_icon_name("view-reveal-symbolic");
+    eye.add_css_class("media-eye");
+    eye.set_widget_name("media-eye");
+    eye.set_tooltip_text(Some(
+        &path.file_name().unwrap_or_default().to_string_lossy(),
+    ));
+    let viewer = catalog.viewer.clone();
+    let parent = catalog.parent.clone();
+    let target = path.to_path_buf();
+    eye.connect_clicked(move |_| {
+        if let Some(parent) = parent.borrow().upgrade() {
+            viewer.show(&parent, &target);
+        }
+    });
+    row.append(&eye);
     row.set_tooltip_text(Some(&path.to_string_lossy()));
     row
 }
-fn fill(list: &gtk::ListBox, paths: &[PathBuf]) {
+fn fill(list: &gtk::ListBox, paths: &[PathBuf], catalog: &Catalog) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
     for path in paths {
-        list.append(&media_row(path));
+        list.append(&media_row(path, catalog));
     }
 }
 fn scroll(list: &gtk::ListBox) -> gtk::ScrolledWindow {
@@ -101,6 +120,9 @@ pub fn build(
     strings: Rc<I18n>,
     name: &str,
 ) -> Editor {
+    catalog.parent.replace(window.downgrade());
+    let close_viewer = catalog.viewer.clone();
+    window.connect_destroy(move |_| close_viewer.close());
     let root = gtk::Box::new(gtk::Orientation::Vertical, 8);
     root.set_widget_name(name);
     let card = gtk::Box::new(gtk::Orientation::Horizontal, 10);
@@ -141,7 +163,19 @@ pub fn build(
     let add = gtk::Button::with_label(&strings.text("media-add"));
     add.set_valign(gtk::Align::Center);
     add.set_widget_name(&format!("{name}-add"));
-    card.append(&add);
+    let transfer = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    transfer.set_vexpand(false);
+    for before in [true, false] {
+        let line = gtk::Separator::new(gtk::Orientation::Vertical);
+        line.add_css_class("media-divider");
+        line.set_vexpand(true);
+        line.set_halign(gtk::Align::Center);
+        transfer.append(&line);
+        if before {
+            transfer.append(&add);
+        }
+    }
+    card.append(&transfer);
     let right = gtk::Box::new(gtk::Orientation::Vertical, 8);
     right.set_hexpand(true);
     let pool_header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -159,7 +193,7 @@ pub fn build(
     list.set_widget_name(&format!("{name}-pool"));
     list.set_selection_mode(gtk::SelectionMode::Single);
     list.set_placeholder(Some(&gtk::Label::new(Some(&strings.text("media-empty")))));
-    fill(&list, &initial);
+    fill(&list, &initial, &catalog);
     let pool_scroll = scroll(&list);
     pool_scroll.set_height_request(208);
     right.append(&pool_scroll);
@@ -195,17 +229,18 @@ pub fn build(
             && !pool.borrow().contains(path)
         {
             pool.borrow_mut().push(path.clone());
-            fill(&list, &pool.borrow());
+            fill(&list, &pool.borrow(), &choices);
         }
     });
     let weak_list = list.downgrade();
+    let choices = catalog.clone();
     let pool = paths.clone();
     remove.connect_clicked(move |_| {
         if let Some(list) = weak_list.upgrade()
             && let Some(row) = list.selected_row()
         {
             pool.borrow_mut().remove(row.index() as usize);
-            fill(&list, &pool.borrow());
+            fill(&list, &pool.borrow(), &choices);
         }
     });
     let message = gtk::Label::new(None);

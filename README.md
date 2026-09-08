@@ -24,10 +24,13 @@ change spacing and keyboard scale, and adjust idle time. **Open preview** displa
 your current edits without saving. **Save** writes your user configuration without
 changing the theme files. The editor supports English and Brazilian Portuguese.
 
-![Native Rust and GTK4 settings window](docs/assets/settings-library.png)
+![Native Rust and GTK4 settings window](docs/assets/settings-themes.gif)
 
-This first editor uses controls for existing layout options. Freeform dragging,
-live theme reload and plugins are future work.
+*1920×1080 recording of the real GTK interface. The instrumented demo waits for the visible pointer before each action; it never saves settings or locks the session.*
+
+[Full walkthrough](docs/assets/settings-demo.gif) (80 seconds, 36 MiB). Short Full HD demos: [themes](docs/assets/settings-themes.gif) · [rest mode](docs/assets/settings-rest.gif) · [CSS and layout](docs/assets/settings-editor.gif).
+
+The editor includes live preview updates, media previews, and an integrated editor for theme CSS and layout (`theme.toml`) with draft validation. Freeform dragging and plugins are future work.
 
 ## Try it
 
@@ -90,12 +93,18 @@ from the theme selector. Colors update the settings window immediately and apply
 to the lock preview as well. External theme folders remain supported.
 
 **Background** and **Rest** have separate tabs. The pool's ⓘ tooltip explains
-selection, photo slideshows and video looping. **Layout & preferences** expands
+selection, photo slideshows and video looping. The language selector at the top switches English/Portuguese immediately, preserving unsaved edits. Selecting **Rest** shows that state in the open preview; **Background** returns to the normal screen.
+
+**Layout & preferences** expands
 the general controls below the media section.
 
 See [theme configuration and palette credits](themes/README.md).
 
 ![Light settings theme — Catppuccin Latte](docs/assets/settings-light.png)
+
+Click **Edit CSS & theme.toml** inside layout options to open the live theme editor. Edits are isolated in temporary drafts and applied live to the preview window once validated. Saving settings persists an editable copy under `~/.config/decklock/themes`.
+
+![Built-in theme and CSS editor](docs/assets/theme-editor.png)
 
 Open `--settings` or copy [config.example.toml](config.example.toml) to
 `~/.config/decklock/config.toml`. Use `--config PATH` for another configuration.
@@ -143,6 +152,7 @@ scripts/cargo-local clippy --locked --all-targets -- -D warnings
 scripts/cargo-local build --locked
 scripts/cargo-local run --locked --example media_check
 scripts/cargo-local run --locked --example settings_check
+scripts/cargo-local run --locked --example settings_live_check
 scripts/cargo-local run --locked --example preview_check
 python3 scripts/test-controller-shortcut.py
 scripts/bootstrap-native --tests
@@ -170,10 +180,13 @@ keeps the normal background. An explicitly empty normal pool has no media.
 Existing single-file/folder configurations remain supported until a pool overrides them.
 
 **Keep background and only hide the interface** hides the idle media card and
-preserves ongoing playback. **Disable idle mode** hides that card and disables the
-reuse/time controls, preserving their saved preferences for re-enabling later.
+preserves ongoing playback. **Disable idle mode** hides all dependent controls, preserving their preferences for re-enabling later. The idle clock remains visible by default, including when reusing the normal background. Set `[layout] idle_clock_visible = false` in the theme editor to hide it.
 
 ![Independent idle media settings](docs/assets/settings-idle.png)
+
+Click the eye icon next to any media file in the library or pool to open the reusable media viewer, previewing photos or muted videos without interrupting library navigation.
+
+![Reusable media viewer](docs/assets/media-viewer.png)
 
 Default artwork is distributed as ordinary files alongside the application, not
 inside the Rust binary. See [media pack layout and credits](assets/media/README.md).

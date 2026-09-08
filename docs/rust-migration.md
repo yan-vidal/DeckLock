@@ -109,7 +109,7 @@ embutida em vez de repetir o nível normal. AltGr nativo continua tendo priorida
 `--settings` abre uma janela Rust/GTK4 para tema, fundo, idioma, disposição,
 alinhamento, espaçamentos, escala, relógio/avatar, inatividade e uso de controle.
 O layout salvo sobrescreve o do tema. O preview usa alterações ainda não salvas
-em arquivo temporário e não habilita captura de controle. Os testes verificam
+na mesma janela, sem habilitar captura de controle. Mudanças somente de CSS preservam o vídeo; mudanças estruturais reconstroem o conteúdo sem trocar a janela nativa. Os testes verificam
 persistência, preservação do serviço PAM, rejeição de tema inválido, preview sem
 salvar e descarte dos controles ao fechar. Capturas reais em inglês estão nos
 READMEs em inglês e português.

@@ -1,4 +1,4 @@
-//! GTK4 settings editor. Previews always run separately with --preview.
+//! GTK4 settings editor. Settings previews update in place without session-lock or controller capture.
 use crate::{
     config::{Alignment, Arrangement, Config, Layout, Theme},
     i18n::I18n,
@@ -7,20 +7,8 @@ use gtk::{gio, prelude::*};
 use std::{
     cell::RefCell,
     path::{Path, PathBuf},
-    process::{Child, Command},
     rc::Rc,
 };
-
-struct Preview {
-    child: Child,
-    _files: tempfile::TempDir,
-}
-impl Drop for Preview {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
 
 fn absolute(path: &Path) -> Result<PathBuf, String> {
     if path.is_absolute() {
@@ -125,6 +113,18 @@ fn combo(values: &[(&str, String)], selected: &str, name: &str) -> Choice {
         gtk::DropDown::from_strings(&labels.iter().map(String::as_str).collect::<Vec<_>>());
     widget.set_selected(ids.iter().position(|id| id == selected).unwrap_or(0) as u32);
     widget.set_widget_name(name);
+    fn mark(widget: &gtk::Widget) {
+        if widget.is::<gtk::Popover>() {
+            widget.add_css_class("decklock-menu");
+        }
+        let mut child = widget.first_child();
+        while let Some(node) = child {
+            child = node.next_sibling();
+            mark(&node);
+        }
+    }
+    mark(widget.upcast_ref());
+    widget.connect_map(|widget| mark(widget.upcast_ref()));
     Choice { widget, ids }
 }
 fn validate_theme(config: &Config) -> Result<(), String> {
@@ -141,16 +141,61 @@ fn validate_theme(config: &Config) -> Result<(), String> {
     Ok(())
 }
 
+// Translate existing widgets without replacing their values, selection or drafts.
+fn translate_widgets(widget: &gtk::Widget, messages: &std::collections::HashMap<String, String>) {
+    if let Some(label) = widget.downcast_ref::<gtk::Label>()
+        && let Some(text) = messages.get(label.text().as_str())
+    {
+        label.set_text(text);
+    }
+    if let Some(text) = widget
+        .tooltip_text()
+        .and_then(|old| messages.get(old.as_str()).cloned())
+    {
+        widget.set_tooltip_text(Some(&text));
+    }
+    if let Some(window) = widget.downcast_ref::<gtk::Window>()
+        && let Some(text) = window
+            .title()
+            .and_then(|old| messages.get(old.as_str()).cloned())
+    {
+        window.set_title(Some(&text));
+    }
+    if let Some(dropdown) = widget.downcast_ref::<gtk::DropDown>()
+        && let Some(model) = dropdown.model().and_downcast::<gtk::StringList>()
+    {
+        let selected = dropdown.selected();
+        for index in 0..model.n_items() {
+            if let Some(text) = model.string(index).and_then(|old| {
+                messages
+                    .get(old.as_str())
+                    .filter(|new| new.as_str() != old.as_str())
+                    .cloned()
+            }) {
+                model.splice(index, 1, &[&text]);
+            }
+        }
+        dropdown.set_selected(selected);
+    }
+    let mut child = widget.first_child();
+    while let Some(node) = child {
+        child = node.next_sibling();
+        translate_widgets(&node, messages);
+    }
+}
+
 pub fn build(
     app: &gtk::Application,
     path: PathBuf,
     locale: Option<&str>,
-    executable: PathBuf,
+    _executable: PathBuf,
 ) -> Result<gtk::ApplicationWindow, String> {
     let path = absolute(&path)?;
     let original = Config::load(path.exists().then_some(path.as_path()))?;
     let strings = Rc::new(I18n::new(locale.or(original.locale.as_deref()), None)?);
+    let translating = Rc::new(std::cell::Cell::new(false));
     let theme = Theme::from_config(&original)?;
+    let drafts = crate::theme_editor::Drafts::new()?;
     let layout = original.layout.as_ref().unwrap_or(&theme.layout);
     let window = gtk::ApplicationWindow::builder()
         .application(app)
@@ -185,6 +230,16 @@ pub fn build(
     root.append(&scroll);
     let form = gtk::Box::new(gtk::Orientation::Vertical, 12);
     scroll.set_child(Some(&form));
+    let language = combo(
+        &[
+            ("auto", strings.text("settings-system")),
+            ("pt-BR", "Português (Brasil)".into()),
+            ("en-US", "English".into()),
+        ],
+        locale.or(original.locale.as_deref()).unwrap_or("auto"),
+        "settings-language",
+    );
+    row(&form, &strings.text("settings-language"), &language.widget);
     let presets = crate::themes::presets();
     let mut options: Vec<_> = presets
         .iter()
@@ -280,12 +335,21 @@ pub fn build(
     });
     refresh_theme();
     let refresh = refresh_theme.clone();
-    theme_choice
-        .widget
-        .connect_selected_notify(move |_| refresh());
+    let reset_drafts = drafts.clone();
+    let theme_translation = translating.clone();
+    theme_choice.widget.connect_selected_notify(move |_| {
+        if theme_translation.get() {
+            return;
+        }
+        reset_drafts.clear();
+        refresh();
+    });
     theme_path.connect_changed(move |_| refresh_theme());
+    let document_provider = provider.clone();
+    let close_drafts = drafts.clone();
     let display = gtk::prelude::WidgetExt::display(&window);
     window.connect_destroy(move |_| {
+        close_drafts.close();
         if let Some(css) = provider.borrow_mut().take() {
             gtk::style_context_remove_provider_for_display(&display, &css);
         }
@@ -341,20 +405,6 @@ pub fn build(
     expander.add_css_class("layout-options");
     expander.set_child(Some(&appearance));
     form.append(&expander);
-    let language = combo(
-        &[
-            ("auto", strings.text("settings-system")),
-            ("pt-BR", "Português (Brasil)".into()),
-            ("en-US", "English".into()),
-        ],
-        original.locale.as_deref().unwrap_or("auto"),
-        "settings-language",
-    );
-    row(
-        &appearance,
-        &strings.text("settings-language"),
-        &language.widget,
-    );
     let alignment = combo(
         &[
             ("start", strings.text("settings-left")),
@@ -412,10 +462,13 @@ pub fn build(
     disable_idle.set_widget_name("settings-disable-idle");
     disable_idle.set_active(!original.idle_enabled);
     idle_page.append(&disable_idle);
+    let idle_options = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    idle_options.set_widget_name("settings-idle-options");
+    idle_page.append(&idle_options);
     let reuse = gtk::CheckButton::with_label(&strings.text("idle-reuse"));
     reuse.set_widget_name("settings-reuse-background");
     reuse.set_active(original.idle_reuse_background);
-    idle_page.append(&reuse);
+    idle_options.append(&reuse);
     let idle = spin(
         original.idle_seconds as f64,
         1.0,
@@ -423,10 +476,10 @@ pub fn build(
         30.0,
         "settings-idle",
     );
-    row(&idle_page, &strings.text("settings-idle"), &idle);
+    row(&idle_options, &strings.text("settings-idle"), &idle);
     let idle_group = gtk::Box::new(gtk::Orientation::Vertical, 8);
     idle_group.set_widget_name("settings-idle-media");
-    idle_page.append(&idle_group);
+    idle_options.append(&idle_group);
     let idle_background = crate::media_editor::build(
         &window,
         catalog,
@@ -456,6 +509,7 @@ pub fn build(
         idle_group.downgrade(),
         idle.downgrade(),
     );
+    let weak_options = idle_options.downgrade();
     let update: Rc<dyn Fn()> = Rc::new(move || {
         if let (Some(disable), Some(reuse), Some(group), Some(idle)) = (
             weak_disable.upgrade(),
@@ -463,6 +517,9 @@ pub fn build(
             weak_group.upgrade(),
             weak_idle.upgrade(),
         ) {
+            if let Some(options) = weak_options.upgrade() {
+                options.set_visible(!disable.is_active());
+            }
             reuse.set_sensitive(!disable.is_active());
             idle.set_sensitive(!disable.is_active());
             group.set_visible(!disable.is_active() && !reuse.is_active());
@@ -475,6 +532,74 @@ pub fn build(
     let controller = gtk::CheckButton::with_label(&strings.text("settings-controller"));
     controller.set_active(original.controller_socket.is_some());
     appearance.append(&controller);
+    let edit_theme = gtk::Button::with_label(&strings.text("theme-editor-title"));
+    edit_theme.set_widget_name("settings-edit-theme");
+    appearance.append(&edit_theme);
+    let (
+        weak_spacing,
+        weak_padding,
+        weak_scale,
+        weak_clock,
+        weak_avatar,
+        weak_alignment,
+        weak_arrangement,
+    ) = (
+        spacing.downgrade(),
+        padding.downgrade(),
+        scale.downgrade(),
+        clock.downgrade(),
+        avatar.downgrade(),
+        alignment.widget.downgrade(),
+        arrangement.widget.downgrade(),
+    );
+    let idle_clock_visible = Rc::new(std::cell::Cell::new(layout.idle_clock_visible));
+    let document_idle_clock = idle_clock_visible.clone();
+    let weak_theme_window = window.downgrade();
+    let apply_document: Rc<dyn Fn(Theme)> = Rc::new(move |theme| {
+        document_idle_clock.set(theme.layout.idle_clock_visible);
+        if let Some(window) = weak_theme_window.upgrade() {
+            let display = gtk::prelude::WidgetExt::display(&window);
+            let css = gtk::CssProvider::new();
+            css.load_from_string(&theme.css);
+            if let Some(old) = document_provider.replace(Some(css.clone())) {
+                gtk::style_context_remove_provider_for_display(&display, &old);
+            }
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &css,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+        if let Some(w) = weak_spacing.upgrade() {
+            w.set_value(theme.layout.spacing as f64);
+        }
+        if let Some(w) = weak_padding.upgrade() {
+            w.set_value(theme.layout.padding as f64);
+        }
+        if let Some(w) = weak_scale.upgrade() {
+            w.set_value(theme.layout.keyboard_scale);
+        }
+        if let Some(w) = weak_clock.upgrade() {
+            w.set_active(theme.layout.clock_visible);
+        }
+        if let Some(w) = weak_avatar.upgrade() {
+            w.set_active(theme.layout.avatar_visible);
+        }
+        if let Some(w) = weak_alignment.upgrade() {
+            w.set_selected(match theme.layout.alignment {
+                Alignment::Start => 0,
+                Alignment::Center => 1,
+                Alignment::End => 2,
+            });
+        }
+        if let Some(w) = weak_arrangement.upgrade() {
+            w.set_selected(if theme.layout.arrangement == Arrangement::Vertical {
+                0
+            } else {
+                1
+            });
+        }
+    });
     let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     buttons.set_halign(gtk::Align::End);
     let preview = gtk::Button::with_label(&strings.text("settings-preview"));
@@ -493,7 +618,11 @@ pub fn build(
     root.append(&status);
     let base = path.parent().unwrap().to_path_buf();
     let missing_theme = strings.text("settings-theme-required");
+    let read_drafts = drafts.clone();
+    let language_widget = language.widget.clone();
+    let read_idle_clock = idle_clock_visible.clone();
     let read: Rc<dyn Fn() -> Result<Config, String>> = Rc::new(move || {
+        read_drafts.validate()?;
         let mut config = original.clone();
         let selected_theme = theme_choice.active_id().unwrap_or_else(|| "classic".into());
         config.theme = if selected_theme == "external" {
@@ -503,6 +632,9 @@ pub fn build(
         };
         if selected_theme != "external" {
             config.theme_preset = selected_theme;
+        }
+        if let Some(path) = read_drafts.path() {
+            config.theme = Some(path);
         }
         config.background_pool = Some(background.paths.borrow().clone());
         config.idle_pool = Some(idle_background.paths.borrow().clone());
@@ -537,55 +669,129 @@ pub fn build(
             spacing: spacing.value_as_int(),
             padding: padding.value_as_int(),
             clock_visible: clock.is_active(),
+            idle_clock_visible: read_idle_clock.get(),
             avatar_visible: avatar.is_active(),
             keyboard_scale: scale.value(),
         });
         validate_theme(&config)?;
         Ok(config)
     });
+    let language_strings = strings.clone();
+    let language_window = window.downgrade();
+    language_widget.connect_selected_notify(move |selector| {
+        if translating.replace(true) {
+            return;
+        }
+        let locale = match selector.selected() {
+            1 => Some("pt-BR"),
+            2 => Some("en-US"),
+            _ => None,
+        };
+        let Ok(next) = I18n::new(locale, None) else {
+            translating.set(false);
+            return;
+        };
+        let messages: std::collections::HashMap<_, _> = I18n::keys()
+            .map(|key| (language_strings.text(key), next.text(key)))
+            .collect();
+        if let Some(window) = language_window.upgrade() {
+            translate_widgets(window.upcast_ref(), &messages);
+            for child in gtk::Window::list_toplevels() {
+                if let Some(child_window) = child.downcast_ref::<gtk::Window>()
+                    && child_window.transient_for().as_ref() == Some(window.upcast_ref())
+                {
+                    translate_widgets(&child, &messages);
+                }
+            }
+        }
+        let _ = language_strings.set_locale(locale);
+        translating.set(false);
+    });
+    let edit_read = read.clone();
+    let edit_drafts = drafts.clone();
+    let weak_edit_parent = window.downgrade();
+    let edit_strings = strings.clone();
+    let edit_status = status.downgrade();
+    edit_theme.connect_clicked(move |_| {
+        let Some(parent) = weak_edit_parent.upgrade() else {
+            return;
+        };
+        let result = edit_read().and_then(|config| {
+            edit_drafts.open(
+                &parent,
+                &config,
+                edit_strings.clone(),
+                apply_document.clone(),
+            )
+        });
+        if let Err(error) = result
+            && let Some(status) = edit_status.upgrade()
+        {
+            status.set_text(&error);
+        }
+    });
     let read_save = read.clone();
     let save_status = status.downgrade();
-    let saved = strings.text("settings-saved");
+    let save_strings = strings.clone();
     save.connect_clicked(move |_| {
-        let result = read_save().and_then(|config| config.save(&path));
+        let result = read_save().and_then(|mut config| {
+            drafts.persist(&mut config, &path)?;
+            config.save(&path)
+        });
         if let Some(status) = save_status.upgrade() {
             status.set_text(&match result {
-                Ok(()) => saved.clone(),
+                Ok(()) => save_strings.text("settings-saved"),
                 Err(error) => error,
             });
         }
     });
-    let child: Rc<RefCell<Option<Preview>>> = Rc::new(RefCell::new(None));
-    let cleanup = child.clone();
-    window.connect_destroy(move |_| {
-        cleanup.borrow_mut().take();
-    });
+    let live = Rc::new(RefCell::new(crate::live_preview::LivePreview::default()));
+    let cleanup = live.clone();
+    window.connect_destroy(move |_| cleanup.borrow_mut().close());
     let preview_status = status.downgrade();
-    let previewed = strings.text("settings-preview-open");
+    let preview_strings = strings.clone();
+    let preview_read = read.clone();
+    let preview_live = live.clone();
+    let preview_app = app.clone();
+    let preview_tabs = media_tabs.clone();
     preview.connect_clicked(move |_| {
-        let result = (|| -> Result<(), String> {
-            let config = read()?;
-            let files = tempfile::tempdir().map_err(|e| e.to_string())?;
-            let path = files.path().join("config.toml");
-            config.save(&path)?;
-            child.borrow_mut().take();
-            let process = Command::new(&executable)
-                .arg("--preview")
-                .arg("--config")
-                .arg(path)
-                .spawn()
-                .map_err(|e| e.to_string())?;
-            child.replace(Some(Preview {
-                child: process,
-                _files: files,
-            }));
-            Ok(())
-        })();
+        preview_live
+            .borrow_mut()
+            .set_idle(preview_tabs.visible_child_name().as_deref() == Some("rest"));
+        let result = preview_read()
+            .and_then(|config| preview_live.borrow_mut().update(&preview_app, config, true));
         if let Some(status) = preview_status.upgrade() {
             status.set_text(&match result {
-                Ok(()) => previewed.clone(),
-                Err(error) => error,
+                Ok(()) => preview_strings.text("settings-preview-open"),
+                Err(e) => e,
             });
+        }
+    });
+    let weak_window = window.downgrade();
+    let weak_status = status.downgrade();
+    let live_app = app.clone();
+    let timer = glib::timeout_add_local(std::time::Duration::from_millis(350), move || {
+        if weak_window.upgrade().is_none() {
+            return glib::ControlFlow::Break;
+        }
+        let open = live.borrow().is_open();
+        if !open {
+            return glib::ControlFlow::Continue;
+        }
+        live.borrow_mut()
+            .set_idle(media_tabs.visible_child_name().as_deref() == Some("rest"));
+        let result = read().and_then(|config| live.borrow_mut().update(&live_app, config, false));
+        if let Err(error) = result
+            && let Some(status) = weak_status.upgrade()
+        {
+            status.set_text(&error);
+        }
+        glib::ControlFlow::Continue
+    });
+    let timer = RefCell::new(Some(timer));
+    window.connect_destroy(move |_| {
+        if let Some(timer) = timer.borrow_mut().take() {
+            timer.remove();
         }
     });
     Ok(window)
