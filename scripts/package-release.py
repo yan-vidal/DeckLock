@@ -2,7 +2,7 @@
 """Stage an Arch-built binary + author media as an archive and a makepkg recipe.
 
 Does not install anything on the host. Build the Arch package with the emitted
-PKGBUILD using makepkg --nodeps (runtime dependencies are not build dependencies).
+PKGBUILD using makepkg (with the declared runtime dependencies installed).
 """
 import argparse
 import hashlib

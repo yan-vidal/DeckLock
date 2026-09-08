@@ -6,6 +6,6 @@ cargo test --release --locked --test cli_contract --test session_invariants
 python3 scripts/test-package.py --binary target/release/decklock
 python3 scripts/package-release.py
 cd dist
-makepkg --nodeps
+makepkg
 sha256sum decklock-*.pkg.tar.zst >> SHA256SUMS
 sha256sum --check SHA256SUMS

@@ -4,7 +4,7 @@ Version **0.1** is published as GitHub tag `v0.1-r2`; Cargo retains the required
 three-component SemVer `0.1.0` internally.
 
 Run `scripts/cargo-local build --release --locked`, then
-`python3 scripts/package-release.py`. On Arch, run `makepkg --nodeps` inside
+`python3 scripts/package-release.py`. On Arch, run `makepkg` inside
 `dist/`. Packaging never installs on the host, writes user settings, configures
 PAM, or enables idle/lock services. The desktop launcher opens settings only.
 
