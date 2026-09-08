@@ -31,6 +31,25 @@ def until(check, seconds=8, alive=None):
     raise AssertionError("Timed out waiting for isolated compositor/client")
 
 
+def read_response(fd, seconds=3):
+    """Read one whole response line from the mock's FIFO.
+
+    The mock writes the text and its newline in separate write() calls, so a
+    partial read leaves the newline pending and shifts every later response by
+    one. Skip stale newlines and only accept a line the mock finished writing.
+    """
+    buffer = b""
+    deadline = time.monotonic() + seconds
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([fd], [], [], remaining)[0]:
+            return buffer.decode(errors="replace").strip()
+        buffer += os.read(fd, 1024)
+        line = buffer.lstrip(b"\n")
+        if b"\n" in line:
+            return line.split(b"\n", 1)[0].decode()
+
+
 def run():
     assert MOCK.is_file() and BINARY.is_file(), "Build DeckLock and upstream mock-server first"
     with tempfile.TemporaryDirectory(prefix="decklock-protocol-") as directory:
@@ -65,14 +84,14 @@ def run():
             os.mkfifo(response, 0o600)
             response_fd = os.open(response, os.O_RDWR | os.O_NONBLOCK)
 
-            def command(message):
+            def command(message, expected):
                 fd = os.open(root / "gtkls-test-command", os.O_WRONLY | os.O_NONBLOCK)
                 try:
                     os.write(fd, (message + "\n").encode())
                 finally:
                     os.close(fd)
-                assert select.select([response_fd], [], [], 3)[0], server_log.read_text()
-                return os.read(response_fd, 1024).decode().strip()
+                reply = read_response(response_fd)
+                assert reply == expected, (message, reply, server_log.read_text()[-2000:])
 
             logs.append(client_log.open("w"))
             debugger = ["gdb", "-batch", "-ex", "run", "-ex", "bt", "--args"] if os.getenv("DECKLOCK_TEST_GDB") else []
@@ -83,12 +102,12 @@ def run():
             assert client.poll() is None, client_log.read_text()[-4000:]
             until(lambda: ".get_lock_surface(" in client_log.read_text(), alive=client)
             initial = client_log.read_text().count(".get_lock_surface(")
-            assert command("create_output 800 600") == "output_created"
+            command("create_output 800 600", "output_created")
             until(lambda: client_log.read_text().count(".get_lock_surface(") > initial, alive=client)
-            assert command("destroy_output 1") == "output_destroyed"
+            command("destroy_output 1", "output_destroyed")
             time.sleep(.15)
             assert client.poll() is None, client_log.read_text()[-4000:]
-            assert command("create_output 1024 768") == "output_created"
+            command("create_output 1024 768", "output_created")
             until(lambda: client_log.read_text().count(".get_lock_surface(") > initial + 1, alive=client)
             client.send_signal(signal.SIGTERM)
             assert client.wait(timeout=5) == -signal.SIGTERM
