@@ -196,6 +196,13 @@ Permissions and working sleep/hibernate behavior belong to the host system.
 Preview buttons only show tooltips. Procedural backgrounds and plugins are not
 implemented; media playback uses installed GStreamer codecs.
 
+## Automated checks
+
+Every PR runs the full regression gate and builds an Arch candidate package on
+GitHub. Main requires passing checks; public releases are built and verified from
+version tags after merge. See [test coverage and limits](docs/testing.md) and
+[agent rules](AGENTS.md).
+
 ## Development
 
 Requires Rust 1.93+, GTK4 4.12+ development files, GStreamer base/good/GL libraries

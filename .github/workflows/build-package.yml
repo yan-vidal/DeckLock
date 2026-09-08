@@ -1,0 +1,33 @@
+name: Arch package
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Arch package contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: archlinux:base-devel@sha256:84cd9ef000b3cff245ec028e87965b84724f4bf1cc63fc2741ba927b88515ed6
+    steps:
+      - name: Arch build dependencies
+        run: pacman -Syu --noconfirm --needed git rust python gtk4 gtk4-layer-shell gstreamer gst-plugins-base gst-plugins-good gst-libav pam
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Unprivileged package build
+        run: |
+          useradd --create-home builder
+          chown -R builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- scripts/ci-build-package
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: arch-package
+          path: |
+            dist/*.pkg.tar.zst
+            dist/*.tar.gz
+            dist/PKGBUILD
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14

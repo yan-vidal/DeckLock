@@ -1,0 +1,46 @@
+name: Checks
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  merge_group:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  check:
+    name: DeckLock checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Native test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-gl libpam0g-dev libwayland-dev wayland-protocols libxkbcommon-dev meson ninja-build xvfb xauth dbus-x11
+      - name: Pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.93.0 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.93.0
+      - name: Locked dependencies and pinned mock compositor
+        run: |
+          cargo fetch --locked
+          scripts/bootstrap-native --tests
+      - name: Required gate
+        run: scripts/check --all
+      - name: Verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: check-evidence
+          path: target/check-logs/
+          if-no-files-found: warn
+          retention-days: 14
+  package:
+    name: Package
+    needs: check
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group'
+    uses: ./.github/workflows/build-package.yml

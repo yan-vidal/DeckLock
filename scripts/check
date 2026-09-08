@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""One failing gate for CLI, invariants, packaging, and optional isolated GTK/Wayland checks."""
+import argparse
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+ROOT=Path(__file__).resolve().parent.parent
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--all',action='store_true',help='Require isolated GTK and Wayland protocol tests as well')
+args=parser.parse_args()
+logs=ROOT/'target/check-logs'
+logs.mkdir(parents=True,exist_ok=True)
+results=[]
+
+def step(name, command, env, timeout=600):
+    print(f'CHECK {name}',flush=True)
+    start=time.monotonic()
+    with (logs/(name+'.log')).open('w') as output:
+        child=subprocess.Popen(command,cwd=ROOT,env=env,stdout=output,stderr=subprocess.STDOUT,start_new_session=True)
+        try: code=child.wait(timeout=timeout)
+        except (subprocess.TimeoutExpired,KeyboardInterrupt):
+            os.killpg(child.pid,signal.SIGTERM)
+            try:child.wait(timeout=3)
+            except subprocess.TimeoutExpired:os.killpg(child.pid,signal.SIGKILL);child.wait()
+            code=124
+    results.append({'name':name,'exit_code':code,'seconds':round(time.monotonic()-start,2)})
+    (logs/'results.json').write_text(json.dumps(results,indent=2)+'\n')
+    if code:
+        print((logs/(name+'.log')).read_text()[-12000:],file=sys.stderr)
+        raise SystemExit(f'FAIL {name} ({code}). Logs: {logs}')
+    print(f'PASS {name}',flush=True)
+
+with tempfile.TemporaryDirectory(prefix='decklock-check-') as temporary:
+    temp=Path(temporary)
+    env=os.environ.copy()
+    original_home=Path.home()
+    for key in ['DISPLAY','WAYLAND_DISPLAY','WAYLAND_SOCKET','DBUS_SESSION_BUS_ADDRESS','SESSION_MANAGER']:
+        env.pop(key,None)
+    for key,folder in [('HOME','home'),('XDG_CONFIG_HOME','config'),('XDG_DATA_HOME','data'),('XDG_CACHE_HOME','cache'),('XDG_RUNTIME_DIR','runtime')]:
+        path=temp/folder;path.mkdir(mode=0o700);env[key]=str(path)
+    env.update(CARGO_HOME=os.environ.get('CARGO_HOME',str(original_home/'.cargo')),
+               RUSTUP_HOME=os.environ.get('RUSTUP_HOME',str(original_home/'.rustup')),
+               LANG='C.UTF-8',LC_ALL='C.UTF-8',TZ='UTC',GTK_A11Y='none',GSK_RENDERER='cairo',
+               LD_LIBRARY_PATH=str(ROOT/'.deps/install/lib')+':'+os.environ.get('LD_LIBRARY_PATH',''))
+    cargo=str(ROOT/'scripts/cargo-local')
+    step('format',[cargo,'fmt','--all','--','--check'],env)
+    step('clippy',[cargo,'clippy','--locked','--offline','--all-targets','--','-D','warnings'],env)
+    step('rust-tests',[cargo,'test','--locked','--offline'],env)
+    step('build-examples',[cargo,'build','--locked','--offline','--examples','--bin','decklock'],env)
+    step('package-contract',[sys.executable,'scripts/test-package.py','--binary','target/debug/decklock'],env)
+    step('whitespace',['git','diff','--check'],env)
+    if args.all:
+        step('isolated-gtk',['xvfb-run','-a','-s','-screen 0 1280x800x24 -nolisten tcp','dbus-run-session','--',sys.executable,'scripts/test-gui-isolated.py'],env,240)
+        step('wayland-protocol',[sys.executable,'scripts/test-lock-isolated.py'],env,60)
+print(f'PASS: {len(results)} gates. Evidence: {logs}',flush=True)

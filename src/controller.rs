@@ -26,9 +26,17 @@ mod tests {
             "must not capture automatically"
         );
         client.set_active(true).unwrap();
-        let n = peer.read(&mut buf).unwrap();
-        assert!(String::from_utf8_lossy(&buf[..n]).contains("Controller: test\n"));
-        peer.write_all(b"OK.\nOK.\nEvent: test LP").unwrap();
+        use std::io::{BufRead, BufReader};
+        peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        let mut reader = BufReader::new(peer.try_clone().unwrap());
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        assert_eq!(line, "Controller: test\n");
+        peer.write_all(b"OK.\n").unwrap();
+        line.clear();
+        reader.read_line(&mut line).unwrap();
+        assert!(line.starts_with("Lock: "));
+        peer.write_all(b"OK.\nEvent: test LP").unwrap();
         peer.write_all(b"AD 12 -34\nEvent: test RT 255 0\n")
             .unwrap();
         assert_eq!(
@@ -46,13 +54,10 @@ mod tests {
                 value: 255
             }
         );
-        // Drain the Lock line if it arrived separately from Controller selection.
-        peer.set_read_timeout(Some(Duration::from_millis(150)))
-            .unwrap();
-        let _ = peer.read(&mut buf);
         drop(client);
-        let n = peer.read(&mut buf).unwrap();
-        assert!(String::from_utf8_lossy(&buf[..n]).contains("Unlock.\n"));
+        line.clear();
+        reader.read_line(&mut line).unwrap();
+        assert_eq!(line, "Unlock.\n");
     }
 
     #[test]
