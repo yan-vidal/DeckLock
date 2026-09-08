@@ -196,6 +196,13 @@ As permissões e o funcionamento da suspensão/hibernação dependem do sistema.
 No preview, os botões só mostram dicas. Fundos procedurais e plugins ainda não
 estão implementados; a reprodução depende dos codecs GStreamer instalados.
 
+## Verificações automáticas
+
+Cada PR executa a suíte completa e gera um pacote Arch de teste no GitHub. A main
+exige verificações aprovadas; releases públicos são compilados e validados a partir
+de tags de versão após o merge. Veja [cobertura e limites](docs/testing.md) e
+[regras para agentes](AGENTS.md).
+
 ## Desenvolvimento
 
 Requer Rust 1.93+, arquivos de desenvolvimento do GTK4 4.12+, bibliotecas GStreamer

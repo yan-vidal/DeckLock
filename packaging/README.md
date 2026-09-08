@@ -4,7 +4,7 @@ Version **0.1** is published as GitHub tag `v0.1-r2`; Cargo retains the required
 three-component SemVer `0.1.0` internally.
 
 Run `scripts/cargo-local build --release --locked`, then
-`python3 scripts/package-release.py`. On Arch, run `makepkg --nodeps` inside
+`python3 scripts/package-release.py`. On Arch, run `makepkg` inside
 `dist/`. Packaging never installs on the host, writes user settings, configures
 PAM, or enables idle/lock services. The desktop launcher opens settings only.
 
@@ -31,3 +31,11 @@ Extract into a staging directory to check the binary and media before uploading.
 Publish the archive, package, PKGBUILD and checksums as release assets, not Git
 source files. Source media are intentionally versioned so future commits can add
 artwork. Include verification limits in release notes.
+
+## Automated builds
+
+Pull requests build candidate packages through `build-package.yml`. Publishable
+releases are built by `release.yml` from a new version/revision tag after merge.
+The workflow runs the required checks, verifies tag metadata and main ancestry,
+then uploads the checked assets. Manual commands above are for local inspection;
+CI is the normal release path. See [verification policy](../docs/testing.md).

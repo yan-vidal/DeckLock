@@ -19,11 +19,14 @@ MOCK = ROOT / ".deps/layer-build-1.3/test/mock-server/mock-server"
 BINARY = ROOT / "target/debug/decklock"
 
 
-def until(check, seconds=8):
+def until(check, seconds=8, alive=None):
+    """Wait for a condition; a dead client is a failure, never a timeout."""
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         if check():
             return
+        if alive is not None and alive.poll() is not None:
+            raise AssertionError(f"Lock client exited with {alive.returncode} while waiting")
         time.sleep(0.05)
     raise AssertionError("Timed out waiting for isolated compositor/client")
 
@@ -78,15 +81,15 @@ def run():
             processes.append(client)
             until(lambda: ".locked(" in client_log.read_text() or client.poll() is not None)
             assert client.poll() is None, client_log.read_text()[-4000:]
-            until(lambda: ".get_lock_surface(" in client_log.read_text())
+            until(lambda: ".get_lock_surface(" in client_log.read_text(), alive=client)
             initial = client_log.read_text().count(".get_lock_surface(")
             assert command("create_output 800 600") == "output_created"
-            until(lambda: client_log.read_text().count(".get_lock_surface(") > initial)
+            until(lambda: client_log.read_text().count(".get_lock_surface(") > initial, alive=client)
             assert command("destroy_output 1") == "output_destroyed"
             time.sleep(.15)
             assert client.poll() is None, client_log.read_text()[-4000:]
             assert command("create_output 1024 768") == "output_created"
-            until(lambda: client_log.read_text().count(".get_lock_surface(") > initial + 1)
+            until(lambda: client_log.read_text().count(".get_lock_surface(") > initial + 1, alive=client)
             client.send_signal(signal.SIGTERM)
             assert client.wait(timeout=5) == -signal.SIGTERM
             assert ".unlock_and_destroy(" not in client_log.read_text(), "SIGTERM requested unlock"
@@ -98,6 +101,10 @@ def run():
             assert b"Session lock failed" in denied.stderr, (denied.stderr[-2000:], server_log.read_text()[-2500:])
             assert server.poll() is None, server_log.read_text()[-2000:]
             print("PASS: acquire, hotplug/remove/re-add, SIGTERM without unlock, second lock refused")
+        except BaseException:
+            print("MOCK COMPOSITOR LOG:\n" + server_log.read_text()[-16000:], flush=True)
+            print("LOCK CLIENT LOG:\n" + client_log.read_text()[-24000:], flush=True)
+            raise
         finally:
             for process in reversed(processes):
                 if process.poll() is None:

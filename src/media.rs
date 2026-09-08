@@ -10,8 +10,15 @@ pub struct Playback {
 
 impl Playback {
     pub fn new(path: &Path, picture: &gtk::Picture) -> Result<Self, String> {
-        gst::init().map_err(|e| e.to_string())?;
-        gstgtk4::plugin_register_static().map_err(|e| e.to_string())?;
+        // Re-registering the static plugin swaps it in the global registry and frees
+        // factories a running pipeline's typefind thread still walks; once per process.
+        static REGISTER: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
+        REGISTER
+            .get_or_init(|| {
+                gst::init().map_err(|e| e.to_string())?;
+                gstgtk4::plugin_register_static().map_err(|e| e.to_string())
+            })
+            .clone()?;
         let gtk_sink = gst::ElementFactory::make("gtk4paintablesink")
             .build()
             .map_err(|e| e.to_string())?;

@@ -125,3 +125,13 @@ blanket conflict, explicitly reject GUI/lock flags with config, and added parser
 regression coverage for --config before/after nested commands. Revision 2 keeps
 version 0.1 and preserves the original v0.1 release/tag under a new v0.1-r2 tag.
 Corrected the inaccurate CC BY-SA claim above; media credits never granted it.
+
+2026-09-08 regression guardrails (in progress): introduced scripts/check with
+isolated HOME/XDG state, bounded subprocesses and retained logs; real executable
+CLI tests, archive payload/CLI contract and exhaustive seven-event session traces.
+Controller test reads framed lines and acknowledges commands before expecting the
+next command. Core gate passed locally (38 library + 1 parser + 6 integration tests).
+GitHub workflows add Ubuntu/Rust-1.93 native/GTK/mock checks, an unprivileged Arch
+candidate build, and tag-only publishing after checks plus metadata/main ancestry
+verification. AGENTS.md and docs/testing.md define invariants and honest UAT limits.
+Remote CI and required branch protection still pending validation at this checkpoint.
