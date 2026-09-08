@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">DeckLock</title>
+  <desc id="desc">A violet padlock with a landscape inside its screen, representing customizable lock-screen media.</desc>
+  <defs>
+    <linearGradient id="tile" x1="24" y1="16" x2="224" y2="248" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#292d48"/>
+      <stop offset="1" stop-color="#141725"/>
+    </linearGradient>
+    <linearGradient id="frame" x1="48" y1="102" x2="208" y2="206" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c4b5fd"/>
+      <stop offset="1" stop-color="#8b9dff"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#tile)"/>
+  <path d="M90 108V84a38 38 0 0 1 76 0v24" fill="none" stroke="#e2ddff" stroke-width="16"/>
+  <rect x="40" y="100" width="176" height="112" rx="24" fill="url(#frame)"/>
+  <rect x="54" y="114" width="148" height="72" rx="12" fill="#1c2034"/>
+  <circle cx="151" cy="133" r="7" fill="#e2ddff"/>
+  <path d="M89 168l25-29 18 21 12-13 23 21z" fill="url(#frame)"/>
+  <path d="M119 199h18" stroke="#333856" stroke-width="4" stroke-linecap="round"/>
+</svg>

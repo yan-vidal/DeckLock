@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">DeckLock</title>
+  <desc id="desc">Monochrome version of the DeckLock padlock and landscape, with matching geometry and transparent screen cutouts.</desc>
+  <g fill="#2e3436">
+    <path d="M90 108V84a38 38 0 0 1 76 0v24" fill="none" stroke="#2e3436" stroke-width="16"/>
+    <path fill-rule="evenodd" d="M64 100h128a24 24 0 0 1 24 24v64a24 24 0 0 1-24 24H64a24 24 0 0 1-24-24v-64a24 24 0 0 1 24-24z M66 114h124a12 12 0 0 1 12 12v48a12 12 0 0 1-12 12H66a12 12 0 0 1-12-12v-48a12 12 0 0 1 12-12z M119 197h18a2 2 0 0 1 0 4h-18a2 2 0 0 1 0-4z"/>
+    <circle cx="151" cy="133" r="7"/>
+    <path d="M89 168l25-29 18 21 12-13 23 21z"/>
+  </g>
+</svg>
