@@ -114,7 +114,8 @@ fn main() {
     pump(Duration::from_millis(400));
     assert_eq!(stack.visible_child(), initial, "Reuse restarted background");
     assert!(!find(view.window.upcast_ref(), "power").is_visible());
-    assert!(!find(view.window.upcast_ref(), "clock-block").is_visible());
+    // Approved behavior: the idle clock stays visible even when reusing media.
+    assert!(find(view.window.upcast_ref(), "clock-block").is_visible());
     view.activity.set(Instant::now());
     pump(Duration::from_millis(300));
     assert!(find(view.window.upcast_ref(), "power").is_visible());
