@@ -54,18 +54,22 @@ impl Config {
             toml::from_str(&read_text(path)?).map_err(|e| format!("{}: {e}", path.display()))?;
         config.validate()?;
         let base = path.parent().unwrap_or(Path::new("."));
+        config.resolve_paths(base);
+        Ok(config)
+    }
+    pub fn resolve_paths(&mut self, base: &Path) {
         for path in [
-            &mut config.theme,
-            &mut config.background,
-            &mut config.idle_background,
-            &mut config.controller_socket,
+            &mut self.theme,
+            &mut self.background,
+            &mut self.idle_background,
+            &mut self.controller_socket,
         ]
         .into_iter()
         .flatten()
         {
             *path = resolve(base, path);
         }
-        for paths in [&mut config.background_pool, &mut config.idle_pool]
+        for paths in [&mut self.background_pool, &mut self.idle_pool]
             .into_iter()
             .flatten()
         {
@@ -73,7 +77,6 @@ impl Config {
                 *path = resolve(base, path);
             }
         }
-        Ok(config)
     }
     /// Preserve the original media folders and explicit config/theme precedence.
     pub fn prepare_media(

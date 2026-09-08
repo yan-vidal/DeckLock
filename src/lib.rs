@@ -20,3 +20,5 @@ pub mod media_viewer;
 pub mod live_preview;
 
 pub mod theme_editor;
+
+pub mod config_cli;

@@ -103,3 +103,17 @@ settings previews share a process but do not construct a session lock/PAM/contro
 GUI regressions include language, draft preservation, idle clock overrides and
 paintable retention. Recording actions are instrumented GTK operations after real
 pointer movement, not an assertion that each operation used a physical click.
+
+2026-09-07: headless configuration CLI, release packaging, focused demos, and default media pack.
+Added `decklock config` subcommand suite (`show`, `path`, `get`, `set`, `unset`, `import`)
+with atomic TOML saves and full validation matching the GTK settings window.
+Running without arguments or with `--help` prints the command synopsis with concrete examples.
+Large monolithic settings-demo.gif split into four focused 1080p clips (`settings-themes`,
+`settings-library`, `settings-rest`, `settings-editor`) mapped to README sections.
+Bundled default media pack includes author-supplied `osaka_dotombori.mp4` under `assets/media/videos`,
+accompanied by `assets/media/CREDITS.md` with explicit CC BY-SA 4.0 redistribution terms.
+Added `packaging/` directory containing desktop entry, Arch PKGBUILD template, and
+`scripts/package-release.py` staging release archives and Arch recipes for version 0.1.
+README.md and README.pt-BR.md restructured to prioritize installation and usage,
+moving build instructions to the development section. 38 core unit tests and clippy pass.
+

@@ -2,201 +2,257 @@
 
 [English](README.md) · **Português (Brasil)**
 
-### Uma tela de bloqueio personalizável para Wayland, feita com Rust e GTK4.
+Uma **tela de bloqueio para Wayland** personalizável, feita em Rust e GTK4. Temas
+externos, fundos com fotos e vídeos, teclado integrado e configuração visual nativa.
+Suporte opcional a controles, incluindo dispositivos como o Steam Deck.
 
-Temas CSS externos, fundos com imagens e vídeos, teclado integrado e uma janela
-nativa de configurações. Voltado a desktops Wayland, com suporte opcional a
-controles em dispositivos como o Steam Deck.
+![DeckLock — teclado, exibição de senha e dicas dos botões de energia](docs/assets/demo.gif)
 
-![Tela de bloqueio Wayland do DeckLock — preview em inglês](docs/assets/demo.gif)
+## Instalação
 
-*Gravação real do preview com vídeo em loop, ponteiro e cliques visíveis, teclado
-integrado, Caps Lock, revelação da senha e dicas dos botões. Senha fictícia; a sessão não está bloqueada.*
+### Arch Linux · x86_64
 
-## Configure pela interface
+Baixe o pacote **0.1** no [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.1),
+ou use:
 
 ```sh
-scripts/cargo-local run -- --settings --locale pt-BR
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1/decklock-0.1-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+sudo pacman -Syu
+sudo pacman -U ./decklock-0.1-1-x86_64.pkg.tar.zst
 ```
 
-Escolha tema e fundo, idioma, posição do relógio e das credenciais, espaçamentos,
-escala do teclado e tempo de inatividade. **Abrir preview** mostra as alterações
-atuais sem salvar. **Salvar** grava sua configuração sem modificar os arquivos do
-tema. A interface está disponível em português e inglês.
+O pacote instala o aplicativo, o atalho **Configurações do DeckLock** e as mídias
+incluídas. O pacman resolve as dependências de execução; não é necessário instalar
+Rust. O download vem do GitHub, não do AUR nem dos repositórios oficiais do Arch.
 
-![Janela nativa de configurações em Rust e GTK4](docs/assets/settings-themes.gif)
-
-*Demonstração das configurações: troca dinâmica de temas com contraste aprimorado, atualização do preview em tempo real, gerenciamento de pools com visualizador modal e editor integrado de CSS e theme.toml.*
-
-A interface conta com atualização do preview em tempo real, visualização de mídias e editor integrado para CSS e layout do tema (`theme.toml`) com validação de rascunhos. Arrastar elementos livremente e plugins ficam para etapas futuras.
-
-## Experimente
-
-Dependências de desenvolvimento: Rust 1.93+, GTK4 4.12+, bibliotecas de
-desenvolvimento do GStreamer com plugins base/good e GL, Linux-PAM, pkg-config e
-gtk4-layer-shell 1.3+. Os formatos de vídeo dependem dos codecs instalados.
+Abra **Configurações do DeckLock** no menu de aplicativos ou execute:
 
 ```sh
+decklock --settings
+```
+
+### Outras distribuições Linux
+
+O DeckLock não é exclusivo do Arch. Precisa de GTK4, GStreamer, Linux-PAM e
+`gtk4-layer-shell` 1.3+, além de um compositor Wayland com `ext-session-lock-v1`
+para bloquear a sessão. X11 não é suportado.
+
+O binário pronto da versão 0.1 usa as bibliotecas do **Arch x86_64 atual**; ele não
+é um binário universal para Linux. Ainda não fornecemos pacotes para outras
+distribuições ou arquiteturas. Para elas, veja [compilação](#desenvolvimento).
+
+## Preview e bloqueio
+
+```sh
+decklock --preview                 # Experimentar sem bloquear
+decklock --preview --keyboard      # Mostrar o teclado integrado
+decklock --lock                    # Bloquear explicitamente a sessão
+```
+
+Sem argumentos, `decklock` mostra a ajuda. Use `decklock --help` ou
+`decklock config --help` para comandos e exemplos. O preview não autentica nem
+executa ações de energia. Escape oculta o teclado e, depois, fecha a janela.
+
+**A versão 0.1 é experimental.** Preview e configurações foram testados no Hyprland.
+Testes de protocolo isolados cobrem aquisição do bloqueio, mudanças de monitores e
+encerramento sem desbloquear. PAM na sessão real e uma variedade maior de
+compositores/controles ainda precisam de validação antes de substituir seu bloqueador.
+
+## Temas e idioma
+
+Escolha Classic, Catppuccin Mocha/Latte, Dracula, Nord, Tokyo Night ou Gruvbox.
+As cores mudam nas configurações e no preview aberto imediatamente, sem reiniciar
+o vídeo quando muda apenas a paleta. O seletor de idioma alterna entre português
+e inglês sem descartar alterações não salvas.
+
+![Escolher um tema e ver o resultado ao vivo — 7 segundos](docs/assets/settings-themes.gif)
+
+O fundo da configuração tem uma trama sutil de tecido, controlada pelo CSS.
+Os controles mantêm superfícies legíveis. **Abrir preview** mostra alterações ainda
+não salvas; **Salvar** grava a configuração.
+
+## Biblioteca de fundos
+
+À esquerda fica a **biblioteca de mídias**; à direita, o **pool selecionado**.
+Use as abas Fotos/Vídeos, selecione um item e clique em **Adicionar →**. Remover do
+pool não apaga o arquivo. A dica do ⓘ explica o sorteio. O olho abre um único
+visualizador reutilizável para imagens e vídeos sem som.
+
+![Navegar pelos vídeos e visualizar uma mídia — 8 segundos](docs/assets/settings-library.gif)
+
+Cada bloqueio sorteia um item do pool. Um vídeo permanece em loop naquela sessão;
+uma foto inicia um slideshow com transições entre as fotos do pool, no intervalo
+configurado. **Importar mídias** copia arquivos para `~/.local/share/decklock/library`
+(ou `$XDG_DATA_HOME/decklock/library`) sem sobrescrever nomes existentes.
+
+## Mídias incluídas
+
+A instalação padrão inclui este vídeo original de **Yan Vidal**. Clique na miniatura
+para abrir o arquivo. Outras fotos e vídeos autorais serão adicionados nas próximas
+versões.
+
+[![Osaka Dōtonbori — vídeo incluído](docs/assets/osaka-thumbnail.jpg)](assets/media/videos/osaka_dotombori.mp4)
+
+**Osaka Dōtonbori** · vídeo · 1920×1080 · 10 segundos · reproduzido em loop e sem som no DeckLock.
+[Créditos e notas de distribuição](assets/media/CREDITS.md).
+
+O pacote fica em `/usr/share/decklock/media`, fora do executável Rust. Em uma
+instalação nova, fornece o fundo padrão. Atualizações preservam suas importações
+e pools selecionados. Fundos configurados explicitamente continuam tendo prioridade.
+Veja o [guia do pacote de mídias](assets/media/README.md) para adicionar novas obras.
+
+## Repouso
+
+Selecione a aba **Repouso** para ver essa aparência no preview aberto. Configure o
+tempo de inatividade, um pool independente e o intervalo entre fotos, ou mantenha
+o fundo normal e oculte os controles. **Desativar modo ocioso** esconde todas as
+opções dependentes e preserva seus valores. **Fundo** retorna ao preview normal.
+
+![Visualizar o repouso e desativar/reativar — 9 segundos](docs/assets/settings-rest.gif)
+
+O relógio permanece visível por padrão, inclusive ao reutilizar o fundo normal.
+O tema pode mudar isso com `[layout] idle_clock_visible = false`. Esse é o modo de
+inatividade visual do próprio DeckLock; ele não suspende o computador.
+
+## Layout e CSS personalizado
+
+Expanda **Layout e preferências** para alterar alinhamento, espaçamento, margens,
+escala do teclado e visibilidade. **Editar CSS e theme.toml** abre o editor ao vivo:
+o CSS controla a aparência e o TOML, as opções de layout suportadas.
+
+![Abrir o editor CSS e alternar para o layout — 11 segundos](docs/assets/settings-editor.gif)
+
+Edições válidas aparecem ao vivo. Rascunhos inválidos mantêm a última aparência
+válida e não podem ser salvos. Salvar cria uma cópia editável na sua pasta de
+configuração sem sobrescrever o tema original. Não exige recompilação.
+
+As opções ficam em `~/.config/decklock/config.toml`. `--config CAMINHO` seleciona
+outro arquivo. Valores de `[layout]` da interface sobrescrevem os padrões do tema.
+A configuração existente do PAM é preservada. [Exemplo](config.example.toml).
+
+- [Temas e créditos das paletas](themes/README.md)
+- [Seletores CSS e guia de layout](docs/themes.md)
+- [Guia de tradução](docs/i18n.md)
+
+## Configuração pelo terminal
+
+Todos os campos de configuração também podem ser alterados pelo binário, sem abrir
+janelas GTK, com a mesma validação e gravação atômica da interface:
+
+```sh
+decklock                          # Ajuda e exemplos
+decklock config --help
+decklock config path
+decklock config show
+decklock config get idle_seconds
+decklock config set theme_preset catppuccin-mocha
+decklock config set locale pt-BR
+decklock config set idle_seconds 120
+decklock config set idle_reuse_background true
+decklock config set layout.padding 48
+decklock config set layout.idle_clock_visible false
+decklock config set background_pool '["/caminho/foto.jpg", "/caminho/video.mp4"]'
+decklock config unset layout       # Voltar ao layout do tema
+decklock config import ./minha-config.toml
+```
+
+`set` aceita números, booleanos, listas/tabelas TOML e texto simples. Campos
+desconhecidos ou valores inválidos são rejeitados sem alterar o arquivo. `unset`
+restaura o padrão do campo; em campos opcionais, restaura a herança.
+Use `--config CAMINHO` para trabalhar em outro arquivo:
+
+```sh
+decklock --config ./demo.toml config set idle_enabled false
+```
+
+Temas personalizados continuam sendo arquivos `style.css` e `theme.toml`: edite-os
+no seu editor de terminal e escolha a pasta com `decklock config set theme /caminho/do/tema`. `decklock config unset theme` volta às paletas incluídas.
+Os comandos alteram o arquivo salvo; reabra um bloqueio/preview existente para
+carregá-lo. O preview ao vivo da interface acompanha os controles não salvos dela.
+
+## Teclado e energia
+
+Mouse, teclado físico e controle opcional usam o mesmo campo de senha. Toque duas
+vezes em Shift para ativar Caps Lock; toque novamente para liberar. Alt oferece
+símbolos extras quando o layout do sistema não tem AltGr. O teclado usa o primeiro
+grupo do mapa de teclas GDK na inicialização.
+
+O daemon externo sc-controller é opcional:
+
+```sh
+decklock --preview --controller
+# Em outro terminal ou atalho:
+decklock --toggle-keyboard
+```
+
+O preview das configurações nunca captura um controle. No preview normal, a
+integração exige `--controller` ou `--controller-socket` explícito. Atalhos antigos
+`deck-osk --toggle` continuam compatíveis. Fechar o teclado libera a captura.
+
+Os botões de energia chamam `systemctl suspend`, `hibernate`, `reboot` e `poweroff`.
+As permissões e o funcionamento da suspensão/hibernação dependem do sistema.
+No preview, os botões só mostram dicas. Fundos procedurais e plugins ainda não
+estão implementados; a reprodução depende dos codecs GStreamer instalados.
+
+## Desenvolvimento
+
+Requer Rust 1.93+, arquivos de desenvolvimento do GTK4 4.12+, bibliotecas GStreamer
+base/good/GL e codecs, Linux-PAM, pkg-config e gtk4-layer-shell 1.3+. No Arch:
+
+```sh
+sudo pacman -S --needed base-devel rust gtk4 gtk4-layer-shell gstreamer gst-plugins-base gst-plugins-good gst-libav pam
 git clone https://github.com/yan-vidal/DeckLock.git
 cd DeckLock
-cargo run -- --preview --locale pt-BR --preview-fullscreen
+cargo build --release --locked
+cargo run -- --settings
 ```
 
-Se a distribuição não oferecer gtk4-layer-shell 1.3+, compile localmente
-(requer Meson, Ninja, compilador C, Wayland e wayland-protocols):
+Se a distribuição não fornece gtk4-layer-shell 1.3+, o bootstrap local precisa de
+Meson, Ninja, compilador C, Wayland e wayland-protocols:
 
 ```sh
 scripts/bootstrap-native
-scripts/cargo-local run -- --preview --locale pt-BR --preview-fullscreen
+scripts/cargo-local build --release --locked
+scripts/cargo-local run -- --preview
 ```
 
-O bootstrap verifica o SHA-256 do download e instala apenas em `.deps/`.
-Use `cargo` diretamente com bibliotecas do sistema, ou `scripts/cargo-local` com
-a compilação local. Sem argumentos, o DeckLock também abre um preview.
+O bootstrap verifica o arquivo fixado por hash e instala somente em `.deps/`.
 
-**O preview nunca autentica, bloqueia a sessão nem executa ações de energia.**
-Pressione Esc para esconder o teclado e novamente para fechar a janela.
-
-## Teclado integrado
-
-```sh
-scripts/cargo-local run -- --preview --keyboard --locale pt-BR
-```
-
-![Teclado integrado em preview para mouse](docs/assets/keyboard.png)
-
-Mouse, teclado físico e controle opcional usam o mesmo campo de senha. Dois toques
-no Shift travam o modificador; outro toque destrava. O teclado consulta o primeiro
-grupo do mapa GDK ao abrir e oferece símbolos suplementares no Alt quando o mapa
-do sistema não tem uma camada AltGr.
-
-Para testar o daemon externo opcional sc-controller:
-
-```sh
-scripts/cargo-local run -- --preview --controller --locale pt-BR
-# Em outro terminal ou em um atalho do desktop:
-scripts/cargo-local run -- --toggle-keyboard
-```
-
-No modo controle, as teclas aparecem próximas dos dedos. Fechar o teclado libera
-a captura. O preview só habilita essa integração com `--controller` ou
-`--controller-socket` explícito; o preview da janela de configurações nunca
-captura o controle. Atalhos antigos `deck-osk --toggle` já instalados continuam
-compatíveis.
-
-## Temas e configuração
-
-O seletor de idioma fica no topo e troca inglês/português imediatamente, preservando alterações não salvas. A aba **Repouso** mostra esse estado no preview aberto; **Fundo** retorna à tela normal. O relógio permanece no repouso por padrão, inclusive ao reutilizar o fundo. Para ocultá-lo, use `idle_clock_visible = false` em `[layout]` no editor de tema.
-
-[Demonstração completa](docs/assets/settings-demo.gif) (80 segundos, 36 MiB). GIFs em **1920×1080**: [temas](docs/assets/settings-themes.gif) · [repouso](docs/assets/settings-rest.gif) · [CSS e layout](docs/assets/settings-editor.gif). O roteiro instrumentado espera o ponteiro chegar antes de cada ação, sem salvar a configuração nem bloquear a sessão.
-
-Selecione Classic, Catppuccin Mocha/Latte, Dracula, Nord, Tokyo Night ou Gruvbox
-no seletor de temas. As cores mudam imediatamente na janela de configurações e
-também são aplicadas ao preview do bloqueio. Pastas de temas externos continuam aceitas.
-
-**Fundo** e **Repouso** ficam em abas separadas. O ⓘ do pool explica o sorteio,
-o slideshow de fotos e o loop do vídeo ao passar o mouse. **Layout e preferências**
-expande os controles gerais abaixo da área de mídias.
-
-Veja a [configuração de temas e os créditos das paletas](themes/README.md).
-
-![Tema claro das configurações — Catppuccin Latte](docs/assets/settings-light.png)
-
-Clique em **Editar CSS e theme.toml** nas opções de layout para abrir o editor ao vivo. As alterações ficam isoladas em rascunhos temporários e são refletidas no preview assim que validadas. Salvar as configurações grava uma cópia editável em `~/.config/decklock/themes`.
-
-![Editor integrado de CSS e theme.toml](docs/assets/theme-editor.png)
-
-Abra `--settings` ou copie [config.example.toml](config.example.toml) para
-`~/.config/decklock/config.toml`. Use `--config CAMINHO` para outro arquivo.
-As escolhas visuais da interface ficam em `[layout]`, com prioridade sobre o tema.
-Remova essa seção para voltar aos padrões do tema. Configurações existentes de
-PAM são preservadas ao salvar pela interface.
-
-Temas contêm `theme.toml` e `style.css`; não é preciso recompilar.
-
-```sh
-scripts/cargo-local run -- --preview --theme themes/contrast
-scripts/cargo-local run -- --preview --background docs/assets/wallpaper.svg
-scripts/cargo-local run -- --check-config --config config.example.toml
-```
-
-- [Guia de temas](docs/themes.md) — seletores CSS e opções de layout.
-- [Guia de tradução](docs/i18n.md) — catálogos Fluent e idiomas alternativos.
-- [Estado da implementação](docs/rust-migration.md) — verificações e pendências.
-
-`scripts/import-python-theme` pode converter cores e mídias locais da versão
-antiga em um tema externo. Python é usado nesse importador pontual e em scripts
-de teste; o aplicativo e seu comando de atalho executam em Rust.
-
-## Estado e compatibilidade
-
-**Experimental.** O bloqueio real exige `--lock` explícito e um compositor com
-`ext-session-lock-v1`. Wayland, por si só, não garante esse suporte; X11 está fora
-do escopo do projeto.
-
-Preview e configurações foram testados no Hyprland. Um compositor isolado verifica
-aquisição do bloqueio, entrada/saída de monitores, SIGTERM sem desbloquear e recusa
-de um segundo bloqueador após a saída do primeiro. PAM na sessão real, outros
-compositores, recuperação do controle e vibração ainda precisam de validação.
-Teste no seu ambiente antes de substituir um bloqueador já configurado.
-
-Rust é a implementação da `main`. O aplicativo Python anterior permanece no
-[histórico do Git](https://github.com/yan-vidal/DeckLock/tree/7459bb1).
-
-## Verificações de desenvolvimento
+### Verificações
 
 ```sh
 scripts/cargo-local test --locked
 scripts/cargo-local fmt --all -- --check
 scripts/cargo-local clippy --locked --all-targets -- -D warnings
-scripts/cargo-local build --locked
-scripts/cargo-local run --locked --example media_check
 scripts/cargo-local run --locked --example settings_check
+scripts/cargo-local run --locked --example settings_live_check
 scripts/cargo-local run --locked --example preview_check
+scripts/cargo-local run --locked --example media_check
 python3 scripts/test-controller-shortcut.py
 scripts/bootstrap-native --tests
 python3 scripts/test-lock-isolated.py
 ```
 
-Os testes de interface usam configuração temporária e janelas de preview. Os
-testes de protocolo usam outro socket Wayland e nunca bloqueiam a sessão em uso.
+Os testes gráficos usam configurações temporárias. Os de protocolo usam outro
+socket Wayland e nunca bloqueiam a sessão ativa. Os GIFs mostram a interface GTK
+real; a instrumentação move o ponteiro antes de aplicar cada ação.
 
-## Pastas de mídia e modo ocioso
+### Gerar pacotes de release
 
-Ao iniciar, o DeckLock cria `~/.config/midias/bloqueio/{fotos,videos}` e
-`~/.config/midias/ocioso/{fotos,videos}` (respeitando `XDG_CONFIG_HOME`).
-Sem um fundo definido, seleciona uma imagem ou vídeo dessas pastas. A configuração
-explícita tem prioridade sobre o tema e as pastas padrão. Se a pasta ociosa estiver
-vazia, usa o fundo normal.
+```sh
+python3 scripts/package-release.py
+cd dist
+makepkg --nodeps
+sha256sum decklock-*.pkg.tar.zst >> SHA256SUMS
+```
 
-O editor possui cards independentes para bloqueio e idle, divididos entre biblioteca
-e pool. Use as abas Imagens/Vídeos, selecione uma mídia e clique em **Adicionar →**.
-**Remover do pool** não apaga o arquivo. **Importar mídias** copia os arquivos para
-`$XDG_DATA_HOME/decklock/library/{images,videos}`, sem sobrescrever nomes existentes.
+Isso empacota o binário otimizado junto de `assets/media`, sem instalar nem ativar
+um bloqueador na máquina de compilação. A receita Arch registra os requisitos de
+execução do build. [Detalhes do empacotamento](packaging/README.md).
 
-Cada bloqueio sorteia uma mídia do pool: vídeo permanece em loop nessa sessão;
-foto inicia um slideshow com transição suave entre apenas as fotos daquele pool,
-no intervalo configurado. Bloqueio e idle possuem intervalos independentes.
-Pool ocioso vazio mantém o fundo normal; pool normal explicitamente vazio fica sem
-mídia. Configurações antigas com arquivo/pasta continuam aceitas até definir um pool.
-
-**Manter o fundo e apenas ocultar a interface** oculta o card de mídias ociosas e
-preserva a reprodução. **Desativar modo ocioso** oculta todas as opções dependentes, inclusive reutilização e tempo, guardando as preferências para quando reativar o idle.
-
-![Configurações independentes de mídia ociosa](docs/assets/settings-idle.png)
-
-Clique no ícone de olho ao lado de qualquer item da biblioteca ou do pool para abrir o visualizador único reutilizável, reproduzindo fotos ou vídeos sem som sem interromper a navegação da biblioteca.
-
-![Visualizador de mídia reutilizável](docs/assets/media-viewer.png)
-
-As mídias padrão acompanham o programa como arquivos, fora do binário Rust.
-Veja a [estrutura do pacote e os créditos](assets/media/README.md). O pacote está
-preparado e vazio, aguardando os arquivos autorais e seus termos de redistribuição.
-As importações do usuário ficam separadas das mídias do pacote.
-
-O tempo ocioso controla o modo visual do próprio DeckLock, não a suspensão do sistema.
-Os botões chamam `systemctl suspend`, `hibernate`, `reboot` e `poweroff`; permissões
-e configuração funcional de suspensão/hibernação ficam por conta do sistema.
-No preview, os botões só mostram dicas e nunca executam esses comandos.
-Fundos procedurais ainda não estão implementados: os fundos são imagens ou vídeos
-em loop, sem áudio, conforme os codecs GStreamer instalados.
+O aplicativo roda em Rust; Python é usado apenas por ferramentas de desenvolvimento
+e pelo importador opcional de temas antigos. A versão anterior permanece no
+[histórico Git](https://github.com/yan-vidal/DeckLock/tree/7459bb1).
+[Estado da implementação](docs/rust-migration.md).

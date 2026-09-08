@@ -2,200 +2,257 @@
 
 **English** · [Português (Brasil)](README.pt-BR.md)
 
-### A customizable Wayland lock screen, built with Rust and GTK4.
+A customizable **Wayland lock screen**, built with Rust and GTK4. External themes,
+photo and video backgrounds, an embedded keyboard and native visual settings.
+Optional controller support includes devices such as the Steam Deck.
 
-External CSS themes, image and video backgrounds, an embedded keyboard, and a
-native settings window. Designed for Wayland desktops, with optional controller
-support for devices such as the Steam Deck.
+![DeckLock — keyboard, password visibility and power tooltips](docs/assets/demo.gif)
 
-![DeckLock Wayland lock screen — English preview](docs/assets/demo.gif)
+## Install
 
-*Actual preview recording with a looping video, visible pointer clicks, embedded keyboard,
-Caps Lock indicator, password visibility and power tooltips. Fictitious password; the session is not locked.*
+### Arch Linux · x86_64
 
-## Configure visually
+Download the **0.1** package from [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.1),
+or use:
 
 ```sh
-scripts/cargo-local run -- --settings
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1/decklock-0.1-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+sudo pacman -Syu
+sudo pacman -U ./decklock-0.1-1-x86_64.pkg.tar.zst
 ```
 
-Choose a theme and background pool, set the language, move the clock and credentials,
-change spacing and keyboard scale, and adjust idle time. **Open preview** displays
-your current edits without saving. **Save** writes your user configuration without
-changing the theme files. The editor supports English and Brazilian Portuguese.
+The package installs the application, a **DeckLock Settings** launcher and the
+included media pack. Pacman resolves the runtime dependencies; no Rust toolchain
+is needed. This is a GitHub download, not an AUR or official Arch package.
 
-![Native Rust and GTK4 settings window](docs/assets/settings-themes.gif)
-
-*1920×1080 recording of the real GTK interface. The instrumented demo waits for the visible pointer before each action; it never saves settings or locks the session.*
-
-[Full walkthrough](docs/assets/settings-demo.gif) (80 seconds, 36 MiB). Short Full HD demos: [themes](docs/assets/settings-themes.gif) · [rest mode](docs/assets/settings-rest.gif) · [CSS and layout](docs/assets/settings-editor.gif).
-
-The editor includes live preview updates, media previews, and an integrated editor for theme CSS and layout (`theme.toml`) with draft validation. Freeform dragging and plugins are future work.
-
-## Try it
-
-Development dependencies: Rust 1.93+, GTK4 4.12+, GStreamer development libraries
-with base/good and GL plugins, Linux-PAM, pkg-config and gtk4-layer-shell 1.3+.
-Video formats depend on the installed codecs.
+Open **DeckLock Settings** from your app launcher, or run:
 
 ```sh
+decklock --settings
+```
+
+### Other Linux distributions
+
+DeckLock is not tied to Arch. It needs GTK4, GStreamer, Linux-PAM and
+`gtk4-layer-shell` 1.3+, plus a Wayland compositor supporting `ext-session-lock-v1`
+for real locking. X11 is not supported.
+
+The 0.1 prebuilt archive targets the current **Arch x86_64** library stack; it is
+not a universal Linux binary. Packages for other distributions and architectures
+are not yet provided. See [build from source](#development) for another distribution.
+
+## Preview and lock
+
+```sh
+decklock --preview                 # Try without locking
+decklock --preview --keyboard      # Show the embedded keyboard
+decklock --lock                    # Explicitly lock the session
+```
+
+With no arguments, `decklock` prints help. Use `decklock --help` or
+`decklock config --help` for commands and examples. Preview never authenticates or runs
+power actions. Escape hides the keyboard, then closes the preview.
+
+**0.1 is experimental.** Preview/settings have been tested on Hyprland. Isolated
+protocol tests cover lock acquisition, monitor changes and termination without
+unlocking. Real-session PAM and broader compositor/controller coverage still
+need validation before replacing an existing locker.
+
+## Themes and language
+
+Select Classic, Catppuccin Mocha/Latte, Dracula, Nord, Tokyo Night or Gruvbox.
+Colors update settings and the open preview immediately, without restarting the
+video for palette-only changes. The language selector switches between English
+and Brazilian Portuguese without discarding unsaved edits.
+
+![Choose a theme and see the result live — 7 seconds](docs/assets/settings-themes.gif)
+
+The settings background has a subtle woven texture, controlled by CSS. Cards and
+controls retain readable surfaces. **Open preview** shows unsaved changes;
+**Save** persists your configuration.
+
+## Background library
+
+The left side is your **media library**; the right side is the **selected pool**.
+Use the Images/Videos tabs, select an item and click **Add →**. Removing an item
+from the pool does not delete its file. The ⓘ tooltip explains selection behavior.
+The eye opens one reusable viewer for images and muted videos.
+
+![Browse videos and inspect a media item — 8 seconds](docs/assets/settings-library.gif)
+
+Each lock randomly selects a pool item. A video loops for that session; a photo
+starts a crossfading slideshow of the pool's photos, using the configured interval.
+**Import media** copies your files to `~/.local/share/decklock/library` (or
+`$XDG_DATA_HOME/decklock/library`) without overwriting existing names.
+
+## Included media
+
+The default installation includes this original video by **Yan Vidal**. Click the
+thumbnail to open the file. Additional original photos/videos will be added in
+future releases.
+
+[![Osaka Dōtonbori — included video](docs/assets/osaka-thumbnail.jpg)](assets/media/videos/osaka_dotombori.mp4)
+
+**Osaka Dōtonbori** · video · 1920×1080 · 10 seconds · loops without sound in DeckLock.
+[Credits and distribution notes](assets/media/CREDITS.md).
+
+The pack is installed at `/usr/share/decklock/media`, outside the Rust executable.
+On a fresh setup it supplies the default background. Updates preserve imported
+files and your selected pools. Existing explicit backgrounds retain priority.
+See the [media pack guide](assets/media/README.md) to add future artwork.
+
+## Rest mode
+
+Choose the **Rest** tab to see the idle appearance in the open preview. Set its
+inactivity time, independent media pool and photo interval, or keep the normal
+background and hide the controls. **Disable idle mode** hides all dependent options
+while preserving their values. The **Background** tab returns to the normal preview.
+
+![Preview rest mode and toggle it off/on — 9 seconds](docs/assets/settings-rest.gif)
+
+The clock stays visible by default, including when reusing the normal background.
+Themes can change this with `[layout] idle_clock_visible = false`. Rest mode is
+DeckLock's own visual inactivity mode; it does not suspend the computer.
+
+## Layout and custom CSS
+
+Expand **Layout & preferences** to change alignment, spacing, padding, keyboard
+scale and visibility. **Edit CSS & theme.toml** opens the live theme editor:
+CSS controls appearance, while TOML controls supported layout options.
+
+![Open the CSS editor and switch to layout — 11 seconds](docs/assets/settings-editor.gif)
+
+Valid edits appear live. Invalid drafts retain the last valid appearance and
+cannot be saved. Saving creates an editable theme copy under your configuration
+directory without overwriting the original theme. No recompilation is needed.
+
+Settings are stored at `~/.config/decklock/config.toml`. `--config PATH` selects
+another file. GUI `[layout]` values override theme defaults. Existing PAM settings
+are preserved when saving. [Example configuration](config.example.toml).
+
+- [Themes and palette credits](themes/README.md)
+- [CSS selectors and layout guide](docs/themes.md) (Portuguese)
+- [Translation guide](docs/i18n.md) (Portuguese)
+
+## Configure from the terminal
+
+Every configuration field is also available through the binary, without opening
+GTK windows. These commands use the same validated, atomic save as the interface:
+
+```sh
+decklock                          # Usage and examples
+decklock config --help
+decklock config path
+decklock config show
+decklock config get idle_seconds
+decklock config set theme_preset catppuccin-mocha
+decklock config set locale en-US
+decklock config set idle_seconds 120
+decklock config set idle_reuse_background true
+decklock config set layout.padding 48
+decklock config set layout.idle_clock_visible false
+decklock config set background_pool '["/path/photo.jpg", "/path/video.mp4"]'
+decklock config unset layout       # Inherit the theme layout again
+decklock config import ./my-config.toml
+```
+
+`set` accepts numbers, booleans, TOML arrays/tables and plain strings. Unknown
+fields and invalid values fail without modifying the file. `unset` resets a key
+to its schema default; unsetting an optional field restores inheritance.
+`--config PATH` selects another configuration file for any command. For example:
+
+```sh
+decklock --config ./demo.toml config set idle_enabled false
+```
+
+Custom themes still use ordinary `style.css` and `theme.toml` files: edit them with
+your terminal editor, then select the directory with `decklock config set theme /path/to/theme`. Use `decklock config unset theme` to return to bundled presets.
+CLI commands change the saved file; reopen an existing lock/preview to load it.
+The visual editor's live preview follows that editor's unsaved controls.
+
+## Keyboard and power controls
+
+Mouse, physical keyboard and optional controller input use the same password
+field. Double-tap Shift to latch Caps Lock; tap again to release. Alt provides
+supplementary symbols when the system layout has no AltGr layer. Keyboard layout
+uses the first GDK keymap group at startup.
+
+The external sc-controller daemon is optional:
+
+```sh
+decklock --preview --controller
+# From another terminal or shortcut:
+decklock --toggle-keyboard
+```
+
+The settings preview never captures a controller. Normal controller preview needs
+explicit `--controller` or `--controller-socket`. Existing `deck-osk --toggle`
+shortcuts remain compatible. Capture is released when the keyboard closes.
+
+Power buttons call `systemctl suspend`, `hibernate`, `reboot` and `poweroff`.
+Permissions and working sleep/hibernate behavior belong to the host system.
+Preview buttons only show tooltips. Procedural backgrounds and plugins are not
+implemented; media playback uses installed GStreamer codecs.
+
+## Development
+
+Requires Rust 1.93+, GTK4 4.12+ development files, GStreamer base/good/GL libraries
+and codecs, Linux-PAM, pkg-config and gtk4-layer-shell 1.3+. On Arch:
+
+```sh
+sudo pacman -S --needed base-devel rust gtk4 gtk4-layer-shell gstreamer gst-plugins-base gst-plugins-good gst-libav pam
 git clone https://github.com/yan-vidal/DeckLock.git
 cd DeckLock
-cargo run -- --preview --locale en-US --preview-fullscreen
+cargo build --release --locked
+cargo run -- --settings
 ```
 
-If your distribution does not provide gtk4-layer-shell 1.3+, build it locally
-(requires Meson, Ninja, a C compiler, Wayland and wayland-protocols):
+If the distribution does not provide gtk4-layer-shell 1.3+, the local bootstrap
+requires Meson, Ninja, a C compiler, Wayland and wayland-protocols:
 
 ```sh
 scripts/bootstrap-native
-scripts/cargo-local run -- --preview --locale en-US --preview-fullscreen
+scripts/cargo-local build --release --locked
+scripts/cargo-local run -- --preview
 ```
 
-The bootstrap verifies the download's SHA-256 and installs only into `.deps/`.
-Use `cargo` directly with system libraries, or `scripts/cargo-local` with the local
-build. With no arguments, DeckLock opens a preview.
+The bootstrap verifies a pinned archive and installs only into `.deps/`.
 
-**Preview never authenticates, locks the session or executes power actions.**
-Press Escape to hide the keyboard, then Escape again to close the window.
-
-## Embedded keyboard
-
-```sh
-scripts/cargo-local run -- --preview --keyboard --locale en-US
-```
-
-![Embedded keyboard in mouse preview mode](docs/assets/keyboard.png)
-
-Mouse, physical keyboard and optional controller input share the same password
-field. Double-tap Shift to latch it; tap again to release. The keyboard reads the
-first GDK keymap group at startup and offers supplementary Alt symbols when the
-system layout has no AltGr layer.
-
-To test the optional external sc-controller daemon:
-
-```sh
-scripts/cargo-local run -- --preview --controller --locale en-US
-# From another terminal or a desktop shortcut:
-scripts/cargo-local run -- --toggle-keyboard
-```
-
-Controller mode reveals keys near the fingers. Capture is released when the
-keyboard closes. Preview only enables this integration with an explicit
-`--controller` or `--controller-socket` argument; the settings editor's preview
-never captures a controller. Existing installed `deck-osk --toggle` shortcuts
-remain compatible.
-
-## Themes and configuration
-
-Select Classic, Catppuccin Mocha/Latte, Dracula, Nord, Tokyo Night or Gruvbox
-from the theme selector. Colors update the settings window immediately and apply
-to the lock preview as well. External theme folders remain supported.
-
-**Background** and **Rest** have separate tabs. The pool's ⓘ tooltip explains
-selection, photo slideshows and video looping. The language selector at the top switches English/Portuguese immediately, preserving unsaved edits. Selecting **Rest** shows that state in the open preview; **Background** returns to the normal screen.
-
-**Layout & preferences** expands
-the general controls below the media section.
-
-See [theme configuration and palette credits](themes/README.md).
-
-![Light settings theme — Catppuccin Latte](docs/assets/settings-light.png)
-
-Click **Edit CSS & theme.toml** inside layout options to open the live theme editor. Edits are isolated in temporary drafts and applied live to the preview window once validated. Saving settings persists an editable copy under `~/.config/decklock/themes`.
-
-![Built-in theme and CSS editor](docs/assets/theme-editor.png)
-
-Open `--settings` or copy [config.example.toml](config.example.toml) to
-`~/.config/decklock/config.toml`. Use `--config PATH` for another configuration.
-GUI layout choices are stored under `[layout]` and take precedence over the theme's
-layout. Remove that section to inherit theme defaults again. Existing PAM settings
-are preserved when saving through the editor.
-
-Themes contain `theme.toml` and `style.css`; no recompilation is needed.
-
-```sh
-scripts/cargo-local run -- --preview --theme themes/contrast
-scripts/cargo-local run -- --preview --background docs/assets/wallpaper.svg
-scripts/cargo-local run -- --check-config --config config.example.toml
-```
-
-- [Theme guide](docs/themes.md) — CSS selectors and layout options (Portuguese).
-- [Translation guide](docs/i18n.md) — Fluent catalogs and language fallback (Portuguese).
-- [Implementation status](docs/rust-migration.md) — verification and remaining gaps (Portuguese).
-
-`scripts/import-python-theme` optionally converts legacy local colors and media
-into an external theme. Python is used by that one-time importer and development
-test scripts; the application and native shortcut run in Rust.
-
-## Status and compatibility
-
-**Experimental.** Real locking requires an explicit `--lock` and a compositor
-that implements `ext-session-lock-v1`. Wayland alone does not guarantee support;
-X11 is outside the scope of this project.
-
-Preview and settings have been tested on Hyprland. An isolated compositor test
-covers lock acquisition, monitor hotplug, SIGTERM without unlock and rejection
-of a second locker after the first exits. Real-session PAM, broader compositor
-coverage, controller recovery and haptics still need validation. Test in your
-environment before replacing an existing system locker.
-
-Rust is the implementation on `main`. The previous Python application remains in
-[Git history](https://github.com/yan-vidal/DeckLock/tree/7459bb1).
-
-## Development checks
+### Checks
 
 ```sh
 scripts/cargo-local test --locked
 scripts/cargo-local fmt --all -- --check
 scripts/cargo-local clippy --locked --all-targets -- -D warnings
-scripts/cargo-local build --locked
-scripts/cargo-local run --locked --example media_check
 scripts/cargo-local run --locked --example settings_check
 scripts/cargo-local run --locked --example settings_live_check
 scripts/cargo-local run --locked --example preview_check
+scripts/cargo-local run --locked --example media_check
 python3 scripts/test-controller-shortcut.py
 scripts/bootstrap-native --tests
 python3 scripts/test-lock-isolated.py
 ```
 
-GUI tests use temporary configuration and preview windows. Protocol tests use a
-separate Wayland socket and never lock the desktop session in use.
+GUI tests use temporary configurations. Protocol tests use a separate Wayland
+socket and never lock the active desktop. Documentation GIFs show the real GTK
+interface; the capture harness moves the pointer before applying each action.
 
-## Media folders and idle mode
+### Build release packages
 
-On startup DeckLock creates `~/.config/midias/bloqueio/{fotos,videos}` and
-`~/.config/midias/ocioso/{fotos,videos}` (respecting `XDG_CONFIG_HOME`).
-It chooses a supported image or video from these folders when no background is
-specified. Explicit configuration takes priority over the theme and default folders.
-The editor has independent library/pool cards for normal and idle backgrounds.
-Use the Images/Videos tabs, select a file and **Add →**. **Remove from pool** does
-not delete the library file. **Import media** copies files into
-`$XDG_DATA_HOME/decklock/library/{images,videos}` without overwriting existing names.
+```sh
+python3 scripts/package-release.py
+cd dist
+makepkg --nodeps
+sha256sum decklock-*.pkg.tar.zst >> SHA256SUMS
+```
 
-Each lock selects a random item from the pool: a video loops for that session;
-a photo starts a crossfading slideshow of only that pool's photos, at the configured
-interval. Normal and idle pools have independent intervals. An empty idle pool
-keeps the normal background. An explicitly empty normal pool has no media.
-Existing single-file/folder configurations remain supported until a pool overrides them.
+This stages the optimized binary and `assets/media` together. It does not install
+or enable a locker on the build machine. The emitted Arch recipe records runtime
+requirements for the release build. [Packaging details](packaging/README.md).
 
-**Keep background and only hide the interface** hides the idle media card and
-preserves ongoing playback. **Disable idle mode** hides all dependent controls, preserving their preferences for re-enabling later. The idle clock remains visible by default, including when reusing the normal background. Set `[layout] idle_clock_visible = false` in the theme editor to hide it.
-
-![Independent idle media settings](docs/assets/settings-idle.png)
-
-Click the eye icon next to any media file in the library or pool to open the reusable media viewer, previewing photos or muted videos without interrupting library navigation.
-
-![Reusable media viewer](docs/assets/media-viewer.png)
-
-Default artwork is distributed as ordinary files alongside the application, not
-inside the Rust binary. See [media pack layout and credits](assets/media/README.md).
-The prepared pack is empty until original artwork and its redistribution terms
-are supplied. User imports and default packs are kept separate.
-
-Idle time controls DeckLock's own visual idle mode, not system suspension.
-Power buttons delegate to `systemctl suspend`, `hibernate`, `reboot`, and `poweroff`;
-the host supplies permissions and working sleep/hibernate configuration.
-Preview buttons only show tooltips and never execute these commands.
-Procedural backgrounds are not currently implemented; backgrounds are images or
-looping, muted videos supported by the installed GStreamer codecs.
+The application runs in Rust; Python is used only for development helpers and
+the optional legacy theme importer. The old Python app remains in
+[Git history](https://github.com/yan-vidal/DeckLock/tree/7459bb1).
+[Implementation status](docs/rust-migration.md).

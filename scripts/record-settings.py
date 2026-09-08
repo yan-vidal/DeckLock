@@ -122,16 +122,6 @@ lines.append(f"file '{frames / f'{len(timestamps)-1:04}.png'}'")
 video = CACHE / 'settings-demo-fullhd.mp4'
 run(['ffmpeg', '-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', str(frames/'frames.txt'),
      '-vf', 'drawbox=x=0:y=0:w=iw:h=40:color=0x111111:t=fill,drawbox=x=0:y=1045:w=iw:h=35:color=0x111111:t=fill,fps=8', '-c:v', 'libx264', '-preset', 'fast', '-crf', '18', '-pix_fmt', 'yuv420p', '-an', '-movflags', '+faststart', str(video)])
-# Full resolution master plus shorter demonstrations for focused README embeds.
-segments = [('settings-demo', 0, timestamps[-1]),
-            ('settings-themes', events[0], events[5]-events[0]),
-            ('settings-rest', events[5], events[10]-events[5]),
-            ('settings-editor', events[15], timestamps[-1]-events[15])]
-for name, start, duration in segments:
-    palette = frames / f'{name}-palette.png'
-    source = ['ffmpeg', '-v', 'error', '-y', '-ss', str(start), '-t', str(duration), '-i', str(video)]
-    run(source + ['-vf', 'fps=8,palettegen=max_colors=192', '-frames:v', '1', str(palette)])
-    output = ROOT / 'docs/assets' / f'{name}.gif'
-    run(source + ['-i', str(palette), '-lavfi', 'fps=8[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3', '-loop', '0', str(output)])
-    print(f'{output}: {output.stat().st_size / 1024**2:.2f} MiB, 1920x1080', flush=True)
+# Keep the full recording in the cache; README clips each illustrate one feature.
+subprocess.run(['python3', str(ROOT/'scripts/cut-settings-demos.py'), str(video), str(frames/'events.json')], check=True)
 print(f'Video master: {video}\nSource frames retained: {frames}', flush=True)

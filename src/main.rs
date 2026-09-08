@@ -1,6 +1,6 @@
 use decklock::{auth, config, controller, i18n, lock, session, settings, shortcut, ui};
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use gtk::{gio, glib, prelude::*};
 use std::{
     cell::{Cell, RefCell},
@@ -14,9 +14,13 @@ use zeroize::Zeroizing;
 #[derive(Parser)]
 #[command(
     version,
-    about = "Customizable Wayland screen locker. Defaults to a safe preview."
+    args_conflicts_with_subcommands = true,
+    about = "Customizable Wayland screen locker with graphical and command-line settings.",
+    after_help = "Examples:\n  decklock --settings\n  decklock --preview\n  decklock --lock\n  decklock config show\n  decklock config set theme_preset catppuccin-mocha\n  decklock config set layout.padding 48\n  decklock config --help"
 )]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Command>,
     /// Open a normal window; authentication and power actions are disabled.
     #[arg(long, conflicts_with = "lock")]
     preview: bool,
@@ -26,7 +30,7 @@ struct Args {
     /// Acquire a real Wayland session lock (requires a supported compositor).
     #[arg(long)]
     lock: bool,
-    #[arg(long)]
+    #[arg(long, global = true)]
     config: Option<PathBuf>,
     #[arg(long)]
     theme: Option<PathBuf>,
@@ -62,8 +66,26 @@ struct Args {
     preview_exit_after: Option<u64>,
 }
 
+#[derive(clap::Subcommand)]
+enum Command {
+    /// Inspect or edit configuration without opening a window.
+    #[command(
+        arg_required_else_help = true,
+        after_help = "Examples:\n  decklock config show\n  decklock config get idle_seconds\n  decklock config set idle_seconds 120\n  decklock config set background_pool '[\"/path/photo.jpg\", \"/path/video.mp4\"]'\n  decklock config unset layout\n  decklock --config /path/config.toml config show"
+    )]
+    Config {
+        #[command(subcommand)]
+        action: decklock::config_cli::Action,
+    },
+}
+
 fn main() {
     let raw: Vec<_> = std::env::args_os().collect();
+    if raw.len() == 1 {
+        let _ = Args::command().print_help();
+        println!();
+        return;
+    }
     if raw.get(1).is_some_and(|arg| arg == "--auth-helper") {
         let code = if raw.len() == 3 {
             raw[2].to_str().map(auth::helper_main).unwrap_or(1)
@@ -79,6 +101,22 @@ fn main() {
 }
 
 fn run(args: Args) -> Result<(), String> {
+    if let Some(Command::Config { action }) = args.command {
+        let path = args.config.unwrap_or(
+            shortcut::config_dir()
+                .ok_or("Cannot locate configuration")?
+                .join("decklock/config.toml"),
+        );
+        let path = if path.is_absolute() {
+            path
+        } else {
+            std::env::current_dir()
+                .map_err(|e| e.to_string())?
+                .join(path)
+        };
+        println!("{}", decklock::config_cli::execute(&path, action)?);
+        return Ok(());
+    }
     if args.toggle_keyboard {
         return shortcut::toggle();
     }

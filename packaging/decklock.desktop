@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=DeckLock Settings
+Name[pt_BR]=Configurações do DeckLock
+Comment=Customize your Wayland lock screen
+Comment[pt_BR]=Personalize sua tela de bloqueio Wayland
+Exec=decklock --settings
+Icon=system-lock-screen
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=lock;screen;wayland;themes;
+StartupNotify=true
