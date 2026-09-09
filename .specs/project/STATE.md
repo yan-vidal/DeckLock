@@ -237,3 +237,20 @@ shared textures across both libraries and a rebuilt pool, plus metrics language
 changes. The real CLI checks every default speed. No version bump or release.
 Validation: scripts/check --all passed all eight local gates for this follow-up,
 including the new CLI/GTK regressions and existing Wayland protocol contracts.
+
+2026-09-09 PAM notice review follow-up (base d55ebf6): helper output is now
+drained nonblocking with bounded memory/work and the existing auth deadline.
+Regressions reproduced inherited stdout delaying a completed denial and oversized
+output filling the pipe. Both now pass. Removed the separate faillock command and
+policy/tally inference: module overrides and failure windows made remaining-attempt
+predictions unreliable, and the command could delay delivery of an auth result.
+Only PAM-provided notices remain, with existing CSS hooks and translated recognized
+lockouts. Countdown uses a CLOCK_BOOTTIME deadline (including suspend), labels the
+time as estimated, and stops on the next authentication. A stalled GTK-loop
+regression failed before the fix and passes now; injected times cover missed ticks.
+Removed parser tests belong to the removed inference feature, not weakened gates.
+Both guide languages and testing documentation describe the new boundary.
+Validation: all eight scripts/check --all gates passed on this working tree.
+Initial sandbox run denied fake controller sockets; the permitted isolated run
+passed. Real PAM, physical suspend, device recovery and hardware remain untested.
+Keep PR #5 draft; no merge, tag or release.

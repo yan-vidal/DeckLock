@@ -113,9 +113,12 @@ impl View {
         let Some(total) = advice.locked_for.filter(|left| !left.is_zero()) else {
             return;
         };
-        // Count whole ticks instead of wall clock: PAM reports whole minutes, so
-        // a drifting second would only add false precision to an estimate.
-        let left = Cell::new(total.as_secs());
+        let Some(timer) = crate::faillock::boot_time()
+            .and_then(|now| crate::faillock::Countdown::new(now, total))
+        else {
+            self.status.set_text(&strings.text("auth-locked"));
+            return;
+        };
         let locked = crate::faillock::Advice {
             locked: true,
             ..Default::default()
@@ -123,14 +126,17 @@ impl View {
         let settings = self.settings.clone();
         let status = self.status.downgrade();
         let bindings = Rc::downgrade(&self.bindings);
-        // A precise one-second tick: the coarse seconds timer aligns to the
-        // glib clock and would let the visible clock skip or stall.
+        // The timer only redraws; BOOTTIME decides elapsed time, including suspend.
         let id = glib::timeout_add_local(Duration::from_secs(1), move || {
             let Some(status) = status.upgrade() else {
+                if let Some(bindings) = bindings.upgrade() {
+                    bindings.countdown.borrow_mut().take();
+                }
                 return glib::ControlFlow::Break;
             };
-            left.set(left.get().saturating_sub(1));
-            let remaining = Duration::from_secs(left.get());
+            let remaining = crate::faillock::boot_time()
+                .map(|now| timer.remaining(now))
+                .unwrap_or(Duration::ZERO);
             if let Some(text) =
                 crate::faillock::describe(&locked, Some(remaining), &settings.strings)
             {
@@ -148,6 +154,11 @@ impl View {
     }
 
     pub fn busy(&self, busy: bool, message: &str) {
+        if busy {
+            self.bindings.stop_countdown();
+            self.status.remove_css_class("locked");
+            self.status.remove_css_class("warning");
+        }
         self.entry.set_sensitive(!busy);
         self.submit
             .set_sensitive(!busy && !self.entry.text().is_empty());

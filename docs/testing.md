@@ -96,3 +96,13 @@ compositor behavior beyond the mock, controller recovery/haptics, accessibility,
 real-device ergonomics and visual quality need explicit UAT. Use a recoverable
 test environment for session-lock/PAM work. Never use an active desktop or actual
 power actions as an agent's automatic test target.
+
+### PAM notice regressions
+
+Fake helpers cover inherited stdout after exit, output larger than the pipe,
+bounded notice retention, timeout and child reaping. The isolated GTK contract
+covers delayed countdown callbacks and replacement by a new authentication.
+Injected clock values cover elapsed time across suspension; this is not a real
+suspend or PAM integration test. Policy/tally parser tests were removed together
+with the unreliable local remaining-attempt inference, replaced by PAM-message
+parsing and deadline regressions. No real credentials or account lockouts are used.

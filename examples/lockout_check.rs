@@ -54,9 +54,9 @@ fn main() {
     assert!(!view.status.has_css_class("locked"));
     assert!(!view.status.has_css_class("warning"));
 
-    // The preventive warning is its own hook, so themes can style it apart.
+    // A warning explicitly sent by PAM has its own theme hook; no local prediction.
     view.deny(&Advice {
-        attempts_left: Some(2),
+        raw: Some("2 attempts left before the account is locked.".into()),
         ..Default::default()
     });
     assert_eq!(
@@ -70,12 +70,11 @@ fn main() {
     view.deny(&Advice {
         locked: true,
         locked_for: Some(Duration::from_secs(120)),
-        attempts_left: Some(0),
         raw: None,
     });
     assert_eq!(
         view.status.text(),
-        "Account locked by failed attempts. Try again in 2:00."
+        "Account locked by failed attempts. Estimated wait: 2:00."
     );
     assert!(view.status.has_css_class("locked"));
     assert!(!view.status.has_css_class("warning"));
@@ -88,7 +87,7 @@ fn main() {
     pump(1100);
     assert_eq!(
         view.status.text(),
-        "Account locked by failed attempts. Try again in 1:59."
+        "Account locked by failed attempts. Estimated wait: 1:59."
     );
 
     // A later attempt replaces the notice and stops the countdown.
@@ -112,10 +111,35 @@ fn main() {
     );
     assert!(view.status.has_css_class("locked"));
 
+    view.deny(&Advice {
+        locked: true,
+        locked_for: Some(Duration::from_secs(2)),
+        ..Default::default()
+    });
+    // Let real time pass without dispatching any GTK timer callbacks.
+    std::thread::sleep(Duration::from_millis(2200));
+    pump(100);
+    assert_eq!(
+        view.status.text(),
+        "Account locked by failed attempts.",
+        "Delayed callbacks must not prolong the countdown"
+    );
+
+    view.deny(&Advice {
+        locked: true,
+        locked_for: Some(Duration::from_secs(2)),
+        ..Default::default()
+    });
+    view.busy(true, "Authenticating…");
+    pump(1100);
+    assert_eq!(view.status.text(), "Authenticating…");
+    assert!(!view.status.has_css_class("locked"));
+    view.busy(false, "");
+
     view.window.destroy();
     pump(50);
     println!(
-        "PASS: plain denial, preventive warning, live countdown, theme hooks, \
+        "PASS: plain denial, PAM warning, live countdown, theme hooks, \
          input never blocked, replacement and expiry"
     );
 }

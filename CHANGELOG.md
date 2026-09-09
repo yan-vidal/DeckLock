@@ -11,7 +11,7 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 - Preview diagnostics for generated FPS, drawing CPU, process CPU and process RSS.
 - Offline F1 help with General and Advanced chapters in English and Brazilian Portuguese, following the selected interface language.
 - Consistent close controls for ordinary windows and a GUI/CLI preference to hide title bars.
-- Lock-screen notice when PAM reports the account locked by failed attempts, with a countdown, remaining attempts where the local policy states them, and `#status.warning`/`#status.locked` theme selectors.
+- Lock-screen notice when PAM reports the account locked by failed attempts, with a countdown, additional warnings supplied by PAM, and `#status.warning`/`#status.locked` theme selectors.
 - Power-button visibility and restore controls for layout and theme drafts.
 - Embedded application artwork, desktop/package icons and bilingual README branding.
 - Deterministic regression gates, isolated GTK/Wayland tests and CI-built release candidates.
@@ -33,7 +33,7 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 - Existing 0.1 configurations retain defaults for new fields. window_decorations affects ordinary windows only; a real lock never gains a close/help action.
 - Preview CPU/RSS totals describe the settings process, not exclusive procedural or GPU consumption.
-- The lockout notice repeats PAM's own report and never enforces a policy: input stays enabled, the countdown is an estimate in whole minutes, and remaining attempts appear only when both the threshold and the tally are readable.
+- The lockout notice repeats PAM's own report and never enforces a policy: input stays enabled, the countdown is an estimate in whole minutes, and no remaining-attempt count is inferred from local policy files.
 - This remains experimental. Real PAM policy, compositor/device recovery, accessibility and battery use require manual validation.
 - The packaged binary targets Arch Linux x86_64 and its declared shared-library versions; other distributions should build from source.
 

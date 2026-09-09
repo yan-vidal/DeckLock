@@ -35,7 +35,7 @@ dessa API; a organização dos blocos é definida pelo TOML.
 | `#avatar`, `#username` | Avatar e nome do usuário |
 | `#password`, `#submit` | Campo de senha e envio |
 | `#status`, `#caps` | Mensagens e Caps Lock físico |
-| `#status.warning`, `#status.locked` | Aviso de tentativas restantes e de conta bloqueada |
+| `#status.warning`, `#status.locked` | Mensagem informativa do PAM e aviso de conta bloqueada |
 | `#keyboard`, `.key` | Teclado virtual |
 | `.key-hover`, `.modifier-active` | Posição do pad e modificadores virtuais |
 | `#power`, `#preview-banner` | Energia e indicação de preview |

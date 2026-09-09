@@ -46,7 +46,7 @@ A aba Repouso mostra uma prévia desse estado. Escolha um pool e intervalo próp
 
 Sistemas Linux costumam contar falhas de autenticação e bloquear a conta por um tempo. Isso é política do PAM, não do DeckLock, e vale igualmente para o login no terminal.
 
-Quando o PAM avisa que a conta está bloqueada, a tela mostra esse estado e, se ele informar o tempo restante, um contador em minutos e segundos. O contador é o que o PAM disse, arredondado para cima: o campo de senha continua funcionando o tempo todo e você pode tentar assim que quiser. Se a sua configuração declarar explicitamente o limite de falhas, a tela também informa quantas tentativas ainda restam.
+Quando o PAM informa um bloqueio da conta, a tela mostra o aviso e, quando disponível, um contador estimado. A estimativa vem dos minutos arredondados pelo PAM; não promete quando a autenticação será aceita. O campo de senha continua utilizável durante a contagem. Avisos de tentativas restantes aparecem apenas se o próprio PAM os fornecer; o DeckLock não calcula a política do sistema.
 
 Nada disso é imposto pelo DeckLock: ele só repete o que o sistema informou. Se faltar informação, a tela fica em silêncio em vez de estimar um número. Os avisos usam os seletores `#status.warning` e `#status.locked`, que o seu tema pode estilizar.
 

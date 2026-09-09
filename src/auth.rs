@@ -1,6 +1,7 @@
 //! Linux-PAM runs in a disposable child, never on the GTK event thread.
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::io::{Read, Write};
+use std::os::fd::AsRawFd;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
@@ -102,7 +103,30 @@ fn run_helper(
         let _ = child.wait();
         return Err("Cannot send authentication request".into());
     }
+    let mut stdout = child.stdout.take().expect("Piped helper stdout");
+    // SAFETY: stdout owns a live fd. Preserve its flags and make reads nonblocking.
+    let nonblocking = unsafe {
+        let flags = libc::fcntl(stdout.as_raw_fd(), libc::F_GETFL);
+        flags != -1
+            && libc::fcntl(stdout.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) != -1
+    };
+    if !nonblocking {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("Cannot read authentication response".into());
+    }
+    let mut raw = Vec::with_capacity(MAX_NOTICE_BYTES);
     loop {
+        if start.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Authentication timed out".into());
+        }
+        if drain_notice(&mut stdout, &mut raw).is_err() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Cannot read authentication response".into());
+        }
         match child.try_wait() {
             Ok(Some(status)) => {
                 let accepted = match status.code() {
@@ -110,23 +134,16 @@ fn run_helper(
                     Some(1) => false,
                     _ => return Err("Authentication helper failed".into()),
                 };
-                // The helper never writes more than MAX_NOTICE_BYTES, so it
-                // cannot block on this pipe while we wait for it to exit.
-                let mut raw = Vec::new();
-                if let Some(stdout) = child.stdout.take() {
-                    let _ = stdout.take(MAX_NOTICE_BYTES as u64).read_to_end(&mut raw);
-                }
+                // The helper has exited: collect available bytes, never wait for
+                // EOF from descendants that might have inherited this pipe.
+                drain_notice(&mut stdout, &mut raw)
+                    .map_err(|_| "Cannot read authentication response")?;
                 return Ok(Outcome {
                     accepted,
                     notice: sanitize_notice(&raw),
                 });
             }
-            Ok(None) if start.elapsed() < timeout => std::thread::sleep(Duration::from_millis(10)),
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err("Authentication timed out".into());
-            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(5)),
             Err(_) => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -134,6 +151,25 @@ fn run_helper(
             }
         }
     }
+}
+
+// Bound work per poll as well as retained memory: noisy output must neither
+// fill the pipe nor keep us draining forever without checking the deadline.
+fn drain_notice(stdout: &mut impl Read, raw: &mut Vec<u8>) -> std::io::Result<()> {
+    let mut buffer = [0; 4096];
+    for _ in 0..4 {
+        match stdout.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => {
+                let keep = n.min(MAX_NOTICE_BYTES.saturating_sub(raw.len()));
+                raw.extend_from_slice(&buffer[..keep]);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
 }
 
 /// Resolve the actual process uid through NSS, never a caller-controlled USER.
@@ -248,8 +284,17 @@ unsafe extern "C" fn conversation(
                             if !data.notices.is_empty() {
                                 data.notices.push(' ');
                             }
-                            data.notices
-                                .push_str(&CStr::from_ptr((*message).text).to_string_lossy());
+                            let bytes = CStr::from_ptr((*message).text).to_bytes();
+                            let keep = bytes.len().min(MAX_NOTICE_BYTES - data.notices.len());
+                            if let Some(text) = sanitize_notice(&bytes[..keep]) {
+                                // Sanitization may replace invalid UTF-8; cap the final bytes too.
+                                for ch in text.chars() {
+                                    if data.notices.len() + ch.len_utf8() > MAX_NOTICE_BYTES {
+                                        break;
+                                    }
+                                    data.notices.push(ch);
+                                }
+                            }
                         }
                         continue;
                     }
@@ -457,6 +502,43 @@ mod tests {
         );
         assert_eq!(result, Err("Authentication timed out".into()));
         assert!(start.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn inherited_stdout_does_not_extend_the_helper_deadline() {
+        let started = Instant::now();
+        let result = run_helper(
+            Command::new("/bin/sh")
+                .args(["-c", "cat >/dev/null; sleep 2 & printf 'denied'; exit 1"]),
+            b"test-fixture",
+            Duration::from_millis(100),
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "Inherited pipe outlived the helper deadline"
+        );
+        assert_eq!(
+            result.unwrap(),
+            Outcome {
+                accepted: false,
+                notice: Some("denied".into())
+            }
+        );
+    }
+
+    #[test]
+    fn noisy_helper_does_not_block_on_a_full_stdout_pipe() {
+        let result = run_helper(
+            Command::new("/bin/sh").args([
+                "-c",
+                "cat >/dev/null; head -c 100000 /dev/zero | tr '\\0' x; exit 1",
+            ]),
+            b"test-fixture",
+            Duration::from_secs(2),
+        );
+        let outcome = result.expect("Drain output while waiting for exit");
+        assert!(!outcome.accepted);
+        assert_eq!(outcome.notice.unwrap().len(), MAX_NOTICE_BYTES);
     }
 
     #[test]

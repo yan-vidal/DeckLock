@@ -278,15 +278,10 @@ fn run(args: Args) -> Result<(), String> {
             let service = settings.config.pam_service.clone();
             std::thread::spawn(move || {
                 let result = auth::authenticate(password, &service);
-                // Reading the local policy stays on this worker: it costs a
-                // short-lived process and must never delay the lock screen.
+                // Only PAM's own messages are evidence. No extra command or
+                // policy inference may delay delivery of this authentication result.
                 let advice = match &result {
-                    Ok(outcome) if !outcome.accepted => auth::current_username()
-                        .map(|user| {
-                            let (policy, failures) = faillock::local(&user);
-                            faillock::assess(outcome.notice.as_deref(), &policy, failures.as_ref())
-                        })
-                        .unwrap_or_default(),
+                    Ok(outcome) if !outcome.accepted => faillock::assess(outcome.notice.as_deref()),
                     _ => faillock::Advice::default(),
                 };
                 let _ = tx.send((attempt, result.map(|outcome| outcome.accepted), advice));
