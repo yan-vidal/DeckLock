@@ -15,6 +15,8 @@ pub enum Effect {
     Matrix,
     DoomFire,
     Aurora,
+    FlowField,
+    Ridgeline,
 }
 impl Effect {
     pub fn id(self) -> &'static str {
@@ -26,6 +28,8 @@ impl Effect {
             Self::Matrix => "matrix",
             Self::DoomFire => "doom-fire",
             Self::Aurora => "aurora",
+            Self::FlowField => "flow-field",
+            Self::Ridgeline => "ridgeline",
         }
     }
 }
@@ -154,6 +158,16 @@ pub fn render(
             }
         }
         Effect::Aurora => aurora(&cr, config, t, w, h, (r, g, b))?,
+        Effect::FlowField => flow_field(&cr, config, t, w, h, (r, g, b))?,
+        Effect::Ridgeline => ridgeline(
+            &cr,
+            config,
+            t,
+            w,
+            h,
+            (r, g, b),
+            parse_color(&config.background)?,
+        )?,
         Effect::Matrix => matrix(&cr, config, t, w, h, (r, g, b))?,
         Effect::DoomFire => fire(&cr, config, t, w, h, (r, g, b))?,
         Effect::Lissajous => {
@@ -177,6 +191,110 @@ pub fn render(
     }
     drop(cr);
     Ok(surface)
+}
+
+// Value noise on an integer lattice, smoothed and seeded like everything else, so
+// a frame still depends only on the seed and the injected time.
+fn noise(seed: u32, x: f64, y: f64) -> f64 {
+    let (xi, yi) = (x.floor(), y.floor());
+    let smooth = |t: f64| t * t * (3. - 2. * t);
+    let (u, v) = (smooth(x - xi), smooth(y - yi));
+    let corner = |dx: f64, dy: f64| {
+        let ix = (xi + dx) as i64 as u32;
+        let iy = (yi + dy) as i64 as u32;
+        random(seed, ix.wrapping_mul(73856093) ^ iy.wrapping_mul(19349663))
+    };
+    let top = corner(0., 0.) * (1. - u) + corner(1., 0.) * u;
+    let bottom = corner(0., 1.) * (1. - u) + corner(1., 1.) * u;
+    top * (1. - v) + bottom * v
+}
+
+// Streamlines integrated through a noise-derived angle field, the shape behind
+// Tyler Hobbs' Fidenza. Cost is in the polylines, never per pixel.
+fn flow_field(
+    cr: &cairo::Context,
+    config: &Animation,
+    t: f64,
+    w: f64,
+    h: f64,
+    color: (f64, f64, f64),
+) -> Result<(), String> {
+    let lines = config.density.clamp(1, 300);
+    let steps = 90;
+    let stride = (w.min(h) / 90.).max(0.6);
+    for line in 0..lines {
+        let seed = line * 4;
+        let mut x = w * (random(config.seed, seed) * 1.3 - 0.15);
+        let mut y = h * (random(config.seed, seed + 1) * 1.3 - 0.15);
+        let width = 0.6 + random(config.seed, seed + 2) * 2.4;
+        let tone = random(config.seed, seed + 3);
+        // Lighter strands read as highlights over the darker mass beneath them.
+        cr.set_source_rgba(
+            color.0 + (1. - color.0) * tone * 0.6,
+            color.1 + (1. - color.1) * tone * 0.6,
+            color.2 + (1. - color.2) * tone * 0.6,
+            0.10 + tone * 0.35,
+        );
+        cr.set_line_width(width);
+        cr.set_line_cap(cairo::LineCap::Round);
+        cr.move_to(x, y);
+        for _ in 0..steps {
+            let angle = noise(config.seed, x / w * 3.2, y / h * 3.2 + t * 0.05) * TAU * 1.6;
+            x += angle.cos() * stride;
+            y += angle.sin() * stride;
+            if x < -w * 0.2 || x > w * 1.2 || y < -h * 0.2 || y > h * 1.2 {
+                break;
+            }
+            cr.line_to(x, y);
+        }
+        cr.stroke().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+// Stacked ridges, each filled with the background so it hides the ones behind it.
+// That occlusion is what gives the plot its depth.
+fn ridgeline(
+    cr: &cairo::Context,
+    config: &Animation,
+    t: f64,
+    w: f64,
+    h: f64,
+    color: (f64, f64, f64),
+    background: (f64, f64, f64),
+) -> Result<(), String> {
+    let rows = (config.density / 8).clamp(6, 36);
+    let steps = 140;
+    for row in 0..rows {
+        let depth = row as f64 / (rows.max(2) - 1) as f64;
+        let base = h * (0.16 + 0.74 * depth);
+        let amplitude = h * (0.06 + 0.10 * depth);
+        let profile = |x: f64| {
+            let p = x / w;
+            // A raised-cosine envelope keeps the ridges flat at both margins.
+            let envelope = (1. - (p * 2. - 1.).abs().powi(2)).max(0.);
+            let n = noise(
+                config.seed,
+                p * 4.5 + row as f64 * 1.7,
+                t * 0.25 + row as f64 * 0.3,
+            );
+            base - amplitude * envelope * (n * 2. - 1.).abs().powf(0.7) * 2.
+        };
+        cr.move_to(0., profile(0.));
+        for step in 1..=steps {
+            let x = step as f64 / steps as f64 * w;
+            cr.line_to(x, profile(x));
+        }
+        cr.line_to(w, h + 2.);
+        cr.line_to(0., h + 2.);
+        cr.close_path();
+        cr.set_source_rgb(background.0, background.1, background.2);
+        cr.fill_preserve().map_err(|e| e.to_string())?;
+        cr.set_source_rgba(color.0, color.1, color.2, 0.35 + depth * 0.5);
+        cr.set_line_width(1.1);
+        cr.stroke().map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 // Translucent bands swept by summed sines: a handful of filled paths per frame,
@@ -501,6 +619,8 @@ mod tests {
             Effect::Matrix,
             Effect::DoomFire,
             Effect::Aurora,
+            Effect::FlowField,
+            Effect::Ridgeline,
         ] {
             assert_eq!(frame(effect, 2.), frame(effect, 2.));
             assert_ne!(frame(effect, 2.), frame(effect, 3.));

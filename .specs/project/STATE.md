@@ -207,3 +207,19 @@ bounded by a deadline and falling back to the icon. Item names are built as
 animation-<id>, so matrix and doom-fire were rendering their raw ids; a test now
 asserts every ITEMS entry is named in both locales, routed to an effect and
 stored apart. All eight local gates passed. Still a draft PR.
+
+
+2026-09-08 power visibility, restore buttons and two more procedurals. The
+upper-right group is suspend/hibernate/restart/shutdown, so power_visible joins
+clock_visible, idle_clock_visible and avatar_visible in [layout], defaulting to
+visible. The theme editor keeps its existing save path: the settings Save is
+still what writes to disk, closing still leaves the draft pending, and a note
+beside the new Restore button says so, because a window that previews as you
+type does not make that obvious. Restore reloads the built-in theme into both
+buffers; the layout group has its own Restore that resets only spacing, padding,
+alignment, keyboard scale and the visibility switches. Neither writes on its
+own. Flow field integrates streamlines through seeded value noise (the shape
+behind Fidenza) and ridgeline stacks occluding ridges from the same noise; both
+are polylines, so cost stays with the outline, and both stay stateless, which is
+what the repeatability tests require and what rules out flocking. All eight
+local gates passed. Still a draft PR.

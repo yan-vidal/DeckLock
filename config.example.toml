@@ -40,7 +40,8 @@ system_keyboard = true
 color = "#b4befe"
 background = "#141725"
 # Density means: particle count; matrix columns; doom-fire flame height (120 keeps
-# the top of the frame dark, 300 fills it); aurora band count.
+# the top of the frame dark, 300 fills it); aurora bands; flow-field streamlines;
+# ridgeline rows.
 density = 120 # 1..300
 speed = 1.0 # 0.01..2.0
 fps = 30 # 1..30
@@ -66,3 +67,15 @@ color = "#7ef0c0"
 background = "#080f1c"
 density = 168
 speed = 0.6
+
+[procedurals."flow-field"]
+color = "#f2a0c0"
+background = "#0d0a14"
+density = 260
+speed = 0.8
+
+[procedurals.ridgeline]
+color = "#cdd6f4"
+background = "#080a12"
+density = 200
+speed = 0.7

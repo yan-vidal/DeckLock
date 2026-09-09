@@ -458,6 +458,10 @@ pub fn build(
     avatar.set_active(layout.avatar_visible);
     avatar.set_widget_name("settings-avatar");
     appearance.append(&avatar);
+    let power = gtk::CheckButton::with_label(&strings.text("settings-power"));
+    power.set_active(layout.power_visible);
+    power.set_widget_name("settings-power");
+    appearance.append(&power);
     let system_keyboard = gtk::CheckButton::with_label(&strings.text("settings-system-keyboard"));
     system_keyboard.set_active(original.system_keyboard);
     appearance.append(&system_keyboard);
@@ -538,12 +542,48 @@ pub fn build(
     let edit_theme = gtk::Button::with_label(&strings.text("theme-editor-title"));
     edit_theme.set_widget_name("settings-edit-theme");
     appearance.append(&edit_theme);
+    let restore_layout = gtk::Button::with_label(&strings.text("restore-defaults"));
+    restore_layout.set_widget_name("settings-restore-layout");
+    restore_layout.set_tooltip_text(Some(&strings.text("restore-layout-help")));
+    appearance.append(&restore_layout);
+    {
+        // Only the layout group returns to its defaults; media, pools and the rest
+        // of the form are untouched, and nothing is written until Save.
+        let defaults = crate::config::Layout::default();
+        let (widgets, checks) = (
+            (
+                spacing.clone(),
+                padding.clone(),
+                scale.clone(),
+                alignment.widget.clone(),
+                arrangement.widget.clone(),
+            ),
+            (clock.clone(), avatar.clone(), power.clone()),
+        );
+        restore_layout.connect_clicked(move |_| {
+            widgets.0.set_value(defaults.spacing as f64);
+            widgets.1.set_value(defaults.padding as f64);
+            widgets.2.set_value(defaults.keyboard_scale);
+            widgets.3.set_selected(match defaults.alignment {
+                Alignment::Start => 0,
+                Alignment::Center => 1,
+                Alignment::End => 2,
+            });
+            widgets
+                .4
+                .set_selected(u32::from(defaults.arrangement == Arrangement::Horizontal));
+            checks.0.set_active(defaults.clock_visible);
+            checks.1.set_active(defaults.avatar_visible);
+            checks.2.set_active(defaults.power_visible);
+        });
+    }
     let (
         weak_spacing,
         weak_padding,
         weak_scale,
         weak_clock,
         weak_avatar,
+        weak_power,
         weak_alignment,
         weak_arrangement,
     ) = (
@@ -552,6 +592,7 @@ pub fn build(
         scale.downgrade(),
         clock.downgrade(),
         avatar.downgrade(),
+        power.downgrade(),
         alignment.widget.downgrade(),
         arrangement.widget.downgrade(),
     );
@@ -587,6 +628,9 @@ pub fn build(
         }
         if let Some(w) = weak_avatar.upgrade() {
             w.set_active(theme.layout.avatar_visible);
+        }
+        if let Some(w) = weak_power.upgrade() {
+            w.set_active(theme.layout.power_visible);
         }
         if let Some(w) = weak_alignment.upgrade() {
             w.set_selected(match theme.layout.alignment {
@@ -675,6 +719,7 @@ pub fn build(
             clock_visible: clock.is_active(),
             idle_clock_visible: read_idle_clock.get(),
             avatar_visible: avatar.is_active(),
+            power_visible: power.is_active(),
             keyboard_scale: scale.value(),
         });
         validate_theme(&config)?;

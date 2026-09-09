@@ -3,13 +3,15 @@ use crate::animation::{Animation, Effect};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const ITEMS: [&str; 6] = [
+pub const ITEMS: [&str; 8] = [
     "starfield",
     "particles",
     "lissajous",
     "matrix",
     "doom-fire",
     "aurora",
+    "flow-field",
+    "ridgeline",
 ];
 pub fn id(path: &Path) -> Option<&str> {
     let id = path.to_str()?.strip_prefix("procedural:")?;
@@ -26,6 +28,8 @@ pub fn effect(id: &str) -> Effect {
         "matrix" => Effect::Matrix,
         "doom-fire" => Effect::DoomFire,
         "aurora" => Effect::Aurora,
+        "flow-field" => Effect::FlowField,
+        "ridgeline" => Effect::Ridgeline,
         _ => Effect::None,
     }
 }
@@ -77,6 +81,9 @@ pub struct Presets {
     #[serde(rename = "doom-fire")]
     pub doom_fire: Parameters,
     pub aurora: Parameters,
+    #[serde(rename = "flow-field")]
+    pub flow_field: Parameters,
+    pub ridgeline: Parameters,
 }
 impl Default for Presets {
     fn default() -> Self {
@@ -102,6 +109,20 @@ impl Default for Presets {
                 speed: 0.6,
                 ..Default::default()
             },
+            flow_field: Parameters {
+                color: "#f2a0c0".into(),
+                background: "#0d0a14".into(),
+                density: 260,
+                speed: 0.8,
+                ..Default::default()
+            },
+            ridgeline: Parameters {
+                color: "#cdd6f4".into(),
+                background: "#080a12".into(),
+                density: 200,
+                speed: 0.7,
+                ..Default::default()
+            },
         }
     }
 }
@@ -113,6 +134,8 @@ impl Presets {
             "matrix" => &self.matrix,
             "doom-fire" => &self.doom_fire,
             "aurora" => &self.aurora,
+            "flow-field" => &self.flow_field,
+            "ridgeline" => &self.ridgeline,
             _ => &self.starfield,
         }
     }
@@ -124,6 +147,8 @@ impl Presets {
             "matrix" => self.matrix = value,
             "doom-fire" => self.doom_fire = value,
             "aurora" => self.aurora = value,
+            "flow-field" => self.flow_field = value,
+            "ridgeline" => self.ridgeline = value,
             _ => {}
         }
     }

@@ -762,6 +762,7 @@ fn build_in(
         }
         power.append(&button);
     }
+    power.set_visible(settings.theme.layout.power_visible);
     overlay.add_overlay(&power);
     let layout = &settings.theme.layout;
     let content = gtk::Box::new(

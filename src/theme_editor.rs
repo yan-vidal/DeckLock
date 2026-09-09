@@ -143,6 +143,27 @@ impl Drafts {
         status.set_wrap(true);
         status.set_xalign(0.0);
         root.append(&status);
+        // Where the disk write happens is not obvious from a window that previews
+        // live, so say it next to the buttons rather than only in the hint above.
+        let note = gtk::Label::new(Some(&strings.text("theme-editor-save-note")));
+        note.set_widget_name("theme-editor-save-note");
+        note.set_wrap(true);
+        note.set_xalign(0.0);
+        note.add_css_class("dim-label");
+        root.append(&note);
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        actions.set_halign(gtk::Align::End);
+        let restore = gtk::Button::with_label(&strings.text("restore-defaults"));
+        restore.set_widget_name("theme-editor-restore");
+        actions.append(&restore);
+        root.append(&actions);
+        let (restore_css, restore_metadata) = (css.clone(), metadata.clone());
+        restore.connect_clicked(move |_| {
+            // Editing the buffers is enough: the validation pass already republishes
+            // the draft and refreshes the preview from whatever they now hold.
+            restore_css.set_text(include_str!("../themes/default/style.css"));
+            restore_metadata.set_text(include_str!("../themes/default/theme.toml"));
+        });
         let dirty = Rc::new(Cell::new(None::<Instant>));
         for buffer in [&css, &metadata] {
             let changed = dirty.clone();
