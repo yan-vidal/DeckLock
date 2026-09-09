@@ -223,3 +223,17 @@ behind Fidenza) and ridgeline stacks occluding ridges from the same noise; both
 are polylines, so cost stays with the outline, and both stay stateless, which is
 what the repeatability tests require and what rules out flocking. All eight
 local gates passed. Still a draft PR.
+
+2026-09-09 review follow-up: video thumbnails now decode serially off the GTK
+thread. Catalogs share pending requests and a cache of 128 completed results
+(including failures), keyed by path, size and modification time. Only owned
+pixels cross back to GTK; queued requests and weak widget references do not keep
+closed settings windows alive. The viewer uses the settings' shared I18n catalog,
+including subsequent language changes and per-item live refreshes. Every built-in
+procedural now defaults to speed 1.0; explicit saved speeds remain unchanged.
+Regressions first reproduced the synchronous thumbnail, Portuguese metrics shown
+in English and Aurora's 0.6 default. The GTK contract now checks deferred delivery,
+shared textures across both libraries and a rebuilt pool, plus metrics language
+changes. The real CLI checks every default speed. No version bump or release.
+Validation: scripts/check --all passed all eight local gates for this follow-up,
+including the new CLI/GTK regressions and existing Wayland protocol contracts.

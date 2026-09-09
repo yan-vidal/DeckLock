@@ -205,3 +205,16 @@ fn procedural_media_options_roundtrip_and_reject_invalid_writes() {
         "1.0"
     );
 }
+
+#[test]
+fn every_procedural_starts_at_unit_speed() {
+    let cli = Cli::new();
+    for id in decklock::procedural::ITEMS {
+        let key = format!("procedurals.{id}.speed");
+        assert_eq!(
+            String::from_utf8_lossy(&cli.config(&["get", &key], true).stdout).trim(),
+            "1.0",
+            "{id}"
+        );
+    }
+}

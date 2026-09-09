@@ -66,16 +66,16 @@ background = "#080304"
 color = "#7ef0c0"
 background = "#080f1c"
 density = 168
-speed = 0.6
+speed = 1.0
 
 [procedurals."flow-field"]
 color = "#f2a0c0"
 background = "#0d0a14"
 density = 260
-speed = 0.8
+speed = 1.0
 
 [procedurals.ridgeline]
 color = "#cdd6f4"
 background = "#080a12"
 density = 200
-speed = 0.7
+speed = 1.0

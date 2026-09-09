@@ -106,21 +106,18 @@ impl Default for Presets {
                 color: "#7ef0c0".into(),
                 background: "#080f1c".into(),
                 density: 168,
-                speed: 0.6,
                 ..Default::default()
             },
             flow_field: Parameters {
                 color: "#f2a0c0".into(),
                 background: "#0d0a14".into(),
                 density: 260,
-                speed: 0.8,
                 ..Default::default()
             },
             ridgeline: Parameters {
                 color: "#cdd6f4".into(),
                 background: "#080a12".into(),
                 density: 200,
-                speed: 0.7,
                 ..Default::default()
             },
         }

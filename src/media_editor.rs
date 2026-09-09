@@ -17,6 +17,7 @@ pub struct Catalog {
     paths: Rc<RefCell<Vec<PathBuf>>>,
     pub procedurals: Rc<RefCell<crate::procedural::Presets>>,
     thumbnails: Thumbnails,
+    video_thumbnails: crate::video_thumbnails::Cache,
     strings: Rc<RefCell<Option<Rc<I18n>>>>,
     editor: Rc<RefCell<Option<gtk::Window>>>,
     views: LibraryViews,
@@ -29,6 +30,7 @@ impl Catalog {
             paths: Rc::new(RefCell::new(paths)),
             procedurals: Default::default(),
             thumbnails: Default::default(),
+            video_thumbnails: Default::default(),
             strings: Default::default(),
             editor: Default::default(),
             views: Rc::new(RefCell::new(Vec::new())),
@@ -145,15 +147,8 @@ fn media_row(path: &Path, catalog: &Catalog) -> gtk::Box {
         picture.set_content_fit(gtk::ContentFit::Cover);
         picture.set_size_request(88, 58);
         row.append(&picture);
-    } else if library::kind(path) == Some(Kind::Video)
-        && let Ok(texture) = crate::media::frame(path, 176, std::time::Duration::from_millis(400))
-    {
-        let picture = gtk::Picture::for_paintable(&texture);
-        picture.set_widget_name("video-thumbnail");
-        picture.set_can_shrink(true);
-        picture.set_content_fit(gtk::ContentFit::Cover);
-        picture.set_size_request(88, 58);
-        row.append(&picture);
+    } else if library::kind(path) == Some(Kind::Video) {
+        row.append(&catalog.video_thumbnails.widget(path));
     } else {
         // A file that cannot be decoded in time keeps its generic icon.
         let image = gtk::Image::from_icon_name(if library::kind(path) == Some(Kind::Procedural) {
@@ -198,7 +193,7 @@ fn media_row(path: &Path, catalog: &Catalog) -> gtk::Box {
         if let Some(parent) = parent.borrow().upgrade() {
             let animation =
                 crate::procedural::id(&target).map(|id| presets.borrow().get(id).animation(id));
-            viewer.show_configured(&parent, &target, animation);
+            viewer.show_configured(&parent, &target, animation, strings.borrow().clone());
             if let Some(id) = crate::procedural::id(&target)
                 && let Some(strings) = strings.borrow().as_ref()
             {

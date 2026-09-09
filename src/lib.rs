@@ -32,3 +32,5 @@ pub mod procedural;
 pub mod procedural_editor;
 
 pub mod preview_stats;
+
+mod video_thumbnails;

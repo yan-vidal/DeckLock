@@ -20,6 +20,7 @@ struct Content {
     gear: gtk::Button,
     metrics: gtk::Label,
     configure: Configure,
+    strings: Rc<crate::i18n::I18n>,
     playback: Rc<RefCell<Option<crate::media::Playback>>>,
 }
 impl Viewer {
@@ -47,7 +48,7 @@ impl Viewer {
         }
     }
     pub fn show(&self, parent: &gtk::ApplicationWindow, path: &Path) {
-        self.show_configured(parent, path, None);
+        self.show_configured(parent, path, None, None);
     }
     pub fn refresh_procedural(
         &self,
@@ -62,7 +63,7 @@ impl Viewer {
             .is_some_and(|c| c.window.is_visible() && c.path == path);
         if refresh {
             let title = self.0.borrow().as_ref().unwrap().title.text();
-            self.show_configured(parent, path, Some(animation));
+            self.show_configured(parent, path, Some(animation), None);
             self.set_title(&title);
         }
     }
@@ -71,6 +72,7 @@ impl Viewer {
         parent: &gtk::ApplicationWindow,
         path: &Path,
         animation: Option<crate::animation::Animation>,
+        strings: Option<Rc<crate::i18n::I18n>>,
     ) {
         let animation = animation.or_else(|| {
             crate::procedural::id(path)
@@ -132,9 +134,15 @@ impl Viewer {
                 gear,
                 metrics,
                 configure,
+                strings: Rc::new(
+                    crate::i18n::I18n::new(Some("en-US"), None).expect("Built-in locale"),
+                ),
                 playback,
             }
         });
+        if let Some(strings) = strings {
+            content.strings = strings;
+        }
         content.playback.borrow_mut().take();
         content.path = path.to_path_buf();
         content.body.remove(&content.picture);
@@ -144,12 +152,11 @@ impl Viewer {
             content.configure.borrow_mut().take();
         }
         content.picture = if let Some(animation) = animation {
-            let strings = crate::i18n::I18n::new(None, None).expect("Built-in locale");
             crate::animation::widget_with_stats(
                 animation,
                 Some(crate::preview_stats::Metrics::new(
                     &content.metrics,
-                    &strings,
+                    content.strings.clone(),
                 )),
             )
         } else {

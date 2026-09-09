@@ -113,6 +113,14 @@ fn main() {
         std::env::current_exe().unwrap(),
     )
     .unwrap();
+    // Building settings must enqueue video work, not decode on the GTK thread.
+    let pending = find(window.upcast_ref(), "video-thumbnail")
+        .downcast::<gtk::Picture>()
+        .unwrap();
+    assert!(
+        pending.paintable().is_none(),
+        "Video decoding must be asynchronous"
+    );
     window.present();
     pump(100);
     let get = |name| find(window.upcast_ref(), name);
@@ -152,6 +160,18 @@ fn main() {
         .unwrap()
         .select_row(Some(&rest));
     click(get("settings-idle-background-add"));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while pending.paintable().is_none() && Instant::now() < deadline {
+        pump(50);
+    }
+    let idle_video = find(&get("settings-idle-background-videos"), "video-thumbnail")
+        .downcast::<gtk::Picture>()
+        .unwrap();
+    assert_eq!(
+        pending.paintable(),
+        idle_video.paintable(),
+        "Both libraries must share the decoded texture"
+    );
     // Bundled videos show a decoded frame rather than a generic file icon.
     let videos = get("settings-background-videos")
         .downcast::<gtk::ListBox>()
@@ -167,6 +187,31 @@ fn main() {
             .is_some(),
         "Video rows must show a decoded frame"
     );
+    // Rebuilding a pool must reuse the completed cache, without another decode.
+    get("settings-background-tabs")
+        .downcast::<gtk::Notebook>()
+        .unwrap()
+        .set_current_page(Some(1));
+    videos.select_row(Some(&video_row));
+    click(get("settings-background-add"));
+    let pool = get("settings-background-pool")
+        .downcast::<gtk::ListBox>()
+        .unwrap();
+    let pooled_video = pool.row_at_index(1).unwrap();
+    let thumbnail = find(pooled_video.upcast_ref(), "video-thumbnail")
+        .downcast::<gtk::Picture>()
+        .unwrap();
+    assert_eq!(
+        thumbnail.paintable(),
+        pending.paintable(),
+        "Pool must reuse the completed library cache immediately"
+    );
+    pool.select_row(Some(&pooled_video));
+    click(get("settings-background-remove"));
+    get("settings-background-tabs")
+        .downcast::<gtk::Notebook>()
+        .unwrap()
+        .set_current_page(Some(2));
     // The library row carries a rendered still, not an empty placeholder.
     assert!(
         find(stars.upcast_ref(), "procedural-thumbnail")
@@ -176,6 +221,10 @@ fn main() {
             .is_some(),
         "Procedural rows must show a thumbnail"
     );
+    get("settings-language")
+        .downcast::<gtk::DropDown>()
+        .unwrap()
+        .set_selected(1);
     click(find(stars.upcast_ref(), "media-eye"));
     pump(200);
     let viewer = top("media-viewer");
@@ -200,6 +249,23 @@ fn main() {
     assert!(
         reported.contains("FPS") && reported.contains("MiB") && reported.contains('%'),
         "Stats must report FPS, memory and CPU: {reported}"
+    );
+    assert!(
+        reported.contains("CPU de desenho"),
+        "Stats must use selected Portuguese: {reported}"
+    );
+    get("settings-language")
+        .downcast::<gtk::DropDown>()
+        .unwrap()
+        .set_selected(2);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !stats.text().contains("Drawing CPU") && Instant::now() < deadline {
+        pump(100);
+    }
+    assert!(
+        stats.text().contains("Drawing CPU"),
+        "Open stats must follow language changes: {}",
+        stats.text()
     );
     // The viewer's gear reaches the same editor as the library row's.
     click(find(viewer.upcast_ref(), "media-viewer-configure"));

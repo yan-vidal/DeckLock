@@ -22,6 +22,34 @@ pub fn frame(
     width: i32,
     deadline: std::time::Duration,
 ) -> Result<gdk::Texture, String> {
+    decode_frame(path, width, deadline).map(|frame| frame.texture())
+}
+
+// Only owned pixel data crosses from the decoder to GTK's main thread.
+pub(crate) struct Frame {
+    width: i32,
+    height: i32,
+    stride: usize,
+    bytes: Vec<u8>,
+}
+impl Frame {
+    pub(crate) fn texture(self) -> gdk::Texture {
+        gdk::MemoryTexture::new(
+            self.width,
+            self.height,
+            gdk::MemoryFormat::R8g8b8,
+            &glib::Bytes::from_owned(self.bytes),
+            self.stride,
+        )
+        .upcast()
+    }
+}
+
+pub(crate) fn decode_frame(
+    path: &Path,
+    width: i32,
+    deadline: std::time::Duration,
+) -> Result<Frame, String> {
     start()?;
     let sink = gst::ElementFactory::make("fakesink")
         .property("sync", false)
@@ -47,7 +75,7 @@ fn prerolled_frame(
     pipeline: &gst::Element,
     width: i32,
     deadline: std::time::Duration,
-) -> Result<gdk::Texture, String> {
+) -> Result<Frame, String> {
     let timeout = gst::ClockTime::from_nseconds(deadline.as_nanos().min(u64::MAX as u128) as u64);
     pipeline
         .set_state(gst::State::Paused)
@@ -89,14 +117,12 @@ fn prerolled_frame(
     let buffer = sample.buffer().ok_or("Converted frame has no buffer")?;
     let map = buffer.map_readable().map_err(|e| e.to_string())?;
     let stride = map.len() / height.max(1) as usize;
-    Ok(gdk::MemoryTexture::new(
+    Ok(Frame {
         width,
         height,
-        gdk::MemoryFormat::R8g8b8,
-        &glib::Bytes::from(map.as_slice()),
         stride,
-    )
-    .upcast())
+        bytes: map.as_slice().to_vec(),
+    })
 }
 
 pub struct Playback {

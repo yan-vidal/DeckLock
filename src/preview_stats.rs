@@ -36,10 +36,10 @@ pub struct Metrics {
     cpu: Option<f64>,
     frames: u64,
     render_cpu: f64,
-    names: [String; 4],
+    strings: std::rc::Rc<crate::i18n::I18n>,
 }
 impl Metrics {
-    pub fn new(label: &gtk::Label, strings: &crate::i18n::I18n) -> Self {
+    pub fn new(label: &gtk::Label, strings: std::rc::Rc<crate::i18n::I18n>) -> Self {
         label.set_text(&strings.text("procedural-stats-wait"));
         label.set_tooltip_text(Some(&strings.text("procedural-stats-help")));
         Self {
@@ -48,12 +48,7 @@ impl Metrics {
             cpu: cpu_seconds(false),
             frames: 0,
             render_cpu: 0.,
-            names: [
-                strings.text("procedural-fps"),
-                strings.text("procedural-render-cpu"),
-                strings.text("procedural-process-cpu"),
-                strings.text("procedural-process-rss"),
-            ],
+            strings,
         }
     }
     pub fn record(&mut self, render_cpu: f64, bytes: usize) {
@@ -75,15 +70,16 @@ impl Metrics {
             .map(|k| format!("{:.1} MiB", k as f64 / 1024.))
             .unwrap_or_else(|| "—".into());
         if let Some(label) = self.label.upgrade() {
+            label.set_tooltip_text(Some(&self.strings.text("procedural-stats-help")));
             label.set_text(&format!(
                 "{} {:.1} · {} {:.1}% · {} {}\n{} {} · {:.0} KiB/texture",
-                self.names[0],
+                self.strings.text("procedural-fps"),
                 self.frames as f64 / elapsed,
-                self.names[1],
+                self.strings.text("procedural-render-cpu"),
                 percent(self.render_cpu, elapsed),
-                self.names[2],
+                self.strings.text("procedural-process-cpu"),
                 cpu,
-                self.names[3],
+                self.strings.text("procedural-process-rss"),
                 memory,
                 bytes as f64 / 1024.
             ));
