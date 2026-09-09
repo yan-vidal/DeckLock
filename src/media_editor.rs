@@ -65,7 +65,7 @@ impl Catalog {
                 &parent,
                 &id,
                 presets.clone(),
-                &strings,
+                strings.clone(),
                 move |value| {
                     if let Some(parent) = weak_parent.upgrade()
                         && let Some(viewer) = viewer.upgrade()

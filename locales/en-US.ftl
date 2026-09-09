@@ -127,3 +127,10 @@ procedural-process-cpu = Process CPU
 procedural-process-rss = Process memory
 procedural-stats-wait = Measuring...
 procedural-stats-help = Drawing CPU is the time spent rendering this effect. Process CPU and memory cover the whole settings process, including GTK, so they are not attributable to the effect alone.
+
+help-language = en-US
+help-title = DeckLock Help
+help-general = General
+help-advanced = Advanced
+help-tooltip = Help (F1)
+settings-window-decorations = Show window title bars and close buttons

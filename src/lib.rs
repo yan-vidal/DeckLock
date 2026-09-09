@@ -34,3 +34,6 @@ pub mod procedural_editor;
 pub mod preview_stats;
 
 mod video_thumbnails;
+
+pub mod help;
+pub mod window_chrome;

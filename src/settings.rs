@@ -205,6 +205,8 @@ pub fn build(
         .default_height(820)
         .build();
     window.add_css_class("settings");
+    crate::window_chrome::install(&window);
+    window.set_decorated(original.window_decorations);
     let root = gtk::Box::new(gtk::Orientation::Vertical, 16);
     for set in [
         gtk::prelude::WidgetExt::set_margin_top,
@@ -218,7 +220,13 @@ pub fn build(
     let title = gtk::Label::new(Some(&strings.text("settings-title")));
     title.add_css_class("title-1");
     title.set_halign(gtk::Align::Start);
-    root.append(&title);
+    let heading = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    title.set_hexpand(true);
+    heading.append(&title);
+    let (help, key) = crate::help::controls(&window, strings.clone());
+    heading.append(&help);
+    window.add_controller(key);
+    root.append(&heading);
     let hint = gtk::Label::new(Some(&strings.text("settings-hint")));
     hint.add_css_class("subtitle");
     hint.set_wrap(true);
@@ -462,6 +470,16 @@ pub fn build(
     power.set_active(layout.power_visible);
     power.set_widget_name("settings-power");
     appearance.append(&power);
+    let decorations = gtk::CheckButton::with_label(&strings.text("settings-window-decorations"));
+    decorations.set_widget_name("settings-window-decorations");
+    decorations.set_active(original.window_decorations);
+    appearance.append(&decorations);
+    let decorated_window = window.downgrade();
+    decorations.connect_toggled(move |check| {
+        if let Some(window) = decorated_window.upgrade() {
+            window.set_decorated(check.is_active());
+        }
+    });
     let system_keyboard = gtk::CheckButton::with_label(&strings.text("settings-system-keyboard"));
     system_keyboard.set_active(original.system_keyboard);
     appearance.append(&system_keyboard);
@@ -696,6 +714,7 @@ pub fn build(
             .map(|id| id.to_string());
         config.idle_seconds = idle.value_as_int() as u32;
         config.system_keyboard = system_keyboard.is_active();
+        config.window_decorations = decorations.is_active();
         config.controller_socket = if controller.is_active() {
             config
                 .controller_socket
@@ -754,6 +773,7 @@ pub fn build(
             }
         }
         let _ = language_strings.set_locale(locale);
+        crate::help::refresh_all(&language_strings);
         translating.set(false);
     });
     let edit_read = read.clone();

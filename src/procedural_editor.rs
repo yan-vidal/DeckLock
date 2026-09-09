@@ -10,7 +10,7 @@ pub fn open(
     parent: &gtk::ApplicationWindow,
     id: &str,
     presets: Rc<RefCell<Presets>>,
-    strings: &I18n,
+    strings: Rc<I18n>,
     changed: impl Fn(Parameters) + 'static,
 ) -> gtk::Window {
     let window = gtk::Window::builder()
@@ -22,6 +22,9 @@ pub fn open(
         .build();
     window.set_widget_name("procedural-editor");
     window.add_css_class("settings");
+    crate::window_chrome::install(&window);
+    let (_, help_key) = crate::help::controls(&window, strings.clone());
+    window.add_controller(help_key);
     let body = gtk::Box::new(gtk::Orientation::Vertical, 12);
     for setter in [
         gtk::prelude::WidgetExt::set_margin_top,

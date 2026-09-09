@@ -24,6 +24,7 @@ pub struct Config {
     pub idle_background: Option<PathBuf>,
     pub controller_socket: Option<PathBuf>,
     pub system_keyboard: bool,
+    pub window_decorations: bool,
     pub layout: Option<Layout>,
 }
 
@@ -48,6 +49,7 @@ impl Default for Config {
             idle_background: None,
             controller_socket: None,
             system_keyboard: true,
+            window_decorations: true,
             layout: None,
         }
     }

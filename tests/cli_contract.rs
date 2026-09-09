@@ -218,3 +218,25 @@ fn every_procedural_starts_at_unit_speed() {
         );
     }
 }
+
+#[test]
+fn window_decorations_roundtrip_and_reject_non_booleans() {
+    let cli = Cli::new();
+    assert_eq!(
+        String::from_utf8_lossy(&cli.config(&["get", "window_decorations"], true).stdout).trim(),
+        "true"
+    );
+    cli.config(&["set", "window_decorations", "false"], true);
+    assert_eq!(
+        String::from_utf8_lossy(&cli.config(&["get", "window_decorations"], true).stdout).trim(),
+        "false"
+    );
+    let before = std::fs::read(&cli.file).unwrap();
+    cli.config(&["set", "window_decorations", "invalid"], false);
+    assert_eq!(std::fs::read(&cli.file).unwrap(), before);
+    cli.config(&["unset", "window_decorations"], true);
+    assert_eq!(
+        String::from_utf8_lossy(&cli.config(&["get", "window_decorations"], true).stdout).trim(),
+        "true"
+    );
+}

@@ -58,6 +58,10 @@ fn main() {
         .unwrap()
         .join("decklock");
     let window = settings::build(&app, path.clone(), Some("en-US"), executable).unwrap();
+    assert!(
+        window.titlebar().is_some(),
+        "Settings must provide its own close control"
+    );
     window.present();
     while glib::MainContext::default().iteration(false) {}
     let get =

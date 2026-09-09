@@ -98,6 +98,9 @@ impl Drafts {
             .default_height(640)
             .build();
         window.add_css_class("settings");
+        crate::window_chrome::install(&window);
+        let (_, help_key) = crate::help::controls(&window, strings.clone());
+        window.add_controller(help_key);
         window.set_widget_name("theme-editor");
         let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
         for set in [

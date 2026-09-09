@@ -87,17 +87,23 @@ impl Viewer {
                 .default_height(500)
                 .build();
             window.add_css_class("settings");
+            let help_strings = strings.clone().unwrap_or_else(|| {
+                Rc::new(crate::i18n::I18n::new(Some("en-US"), None).expect("Built-in locale"))
+            });
+            let (_, help_key) = crate::help::controls(&window, help_strings);
+            window.add_controller(help_key);
             window.set_widget_name("media-viewer");
             let root = gtk::Box::new(gtk::Orientation::Vertical, 8);
             window.set_child(Some(&root));
             let title = gtk::Label::new(None);
             title.set_margin_top(12);
             title.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-            let header = gtk::HeaderBar::new();
-            header.set_title_widget(Some(&title));
+            let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            title.set_hexpand(true);
+            header.append(&title);
             let gear = gtk::Button::from_icon_name("emblem-system-symbolic");
             gear.set_widget_name("media-viewer-configure");
-            header.pack_end(&gear);
+            header.append(&gear);
             let configure: Configure = Default::default();
             let action = configure.clone();
             gear.connect_clicked(move |_| {
@@ -106,7 +112,8 @@ impl Viewer {
                     callback();
                 }
             });
-            window.set_titlebar(Some(&header));
+            root.prepend(&header);
+            crate::window_chrome::install(&window);
             let picture = gtk::Picture::new();
             picture.set_content_fit(gtk::ContentFit::Contain);
             picture.set_can_shrink(true);

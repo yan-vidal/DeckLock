@@ -127,3 +127,10 @@ procedural-process-cpu = CPU do processo
 procedural-process-rss = Memória do processo
 procedural-stats-wait = Medindo...
 procedural-stats-help = CPU de desenho é o tempo gasto renderizando este efeito. CPU e memória do processo são do processo de configurações inteiro, incluindo o GTK, e não podem ser atribuídos só ao efeito.
+
+help-language = pt-BR
+help-title = Ajuda do DeckLock
+help-general = Geral
+help-advanced = Avançada
+help-tooltip = Ajuda (F1)
+settings-window-decorations = Mostrar barras de título e botões de fechar

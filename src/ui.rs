@@ -661,6 +661,10 @@ fn build_in(
         window.set_application(Some(app));
     }
     window.add_css_class("decklock");
+    if settings.preview {
+        crate::window_chrome::install(&window);
+        window.set_decorated(settings.config.window_decorations);
+    }
     if !settings.preview {
         window.set_title(Some("DeckLock"));
         window.set_decorated(false);
@@ -718,6 +722,15 @@ fn build_in(
         banner.set_valign(gtk::Align::Start);
         banner.set_can_target(false);
         overlay.add_overlay(&banner);
+        let strings =
+            Rc::new(I18n::new(settings.config.locale.as_deref(), None).expect("Validated locale"));
+        let (help, key) = crate::help::controls(&window, strings);
+        help.set_halign(gtk::Align::Start);
+        help.set_valign(gtk::Align::Start);
+        help.set_margin_top(36);
+        overlay.add_overlay(&help);
+        window.add_controller(key.clone());
+        bindings.controllers.borrow_mut().push(key.upcast());
     }
     let power = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     power.set_widget_name("power");

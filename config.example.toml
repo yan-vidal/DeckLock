@@ -1,3 +1,4 @@
+window_decorations = true # Ordinary windows only; never the real lock surface.
 # Copy to ~/.config/decklock/config.toml. Paths resolve beside this file.
 locale = "pt-BR"
 pam_service = "login"
