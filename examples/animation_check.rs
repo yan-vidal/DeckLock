@@ -152,6 +152,21 @@ fn main() {
         .unwrap()
         .select_row(Some(&rest));
     click(get("settings-idle-background-add"));
+    // Bundled videos show a decoded frame rather than a generic file icon.
+    let videos = get("settings-background-videos")
+        .downcast::<gtk::ListBox>()
+        .unwrap();
+    let video_row = videos
+        .row_at_index(0)
+        .expect("Bundled video in the library");
+    assert!(
+        find(video_row.upcast_ref(), "video-thumbnail")
+            .downcast::<gtk::Picture>()
+            .unwrap()
+            .paintable()
+            .is_some(),
+        "Video rows must show a decoded frame"
+    );
     // The library row carries a rendered still, not an empty placeholder.
     assert!(
         find(stars.upcast_ref(), "procedural-thumbnail")

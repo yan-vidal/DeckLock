@@ -145,7 +145,17 @@ fn media_row(path: &Path, catalog: &Catalog) -> gtk::Box {
         picture.set_content_fit(gtk::ContentFit::Cover);
         picture.set_size_request(88, 58);
         row.append(&picture);
+    } else if library::kind(path) == Some(Kind::Video)
+        && let Ok(texture) = crate::media::frame(path, 176, std::time::Duration::from_millis(400))
+    {
+        let picture = gtk::Picture::for_paintable(&texture);
+        picture.set_widget_name("video-thumbnail");
+        picture.set_can_shrink(true);
+        picture.set_content_fit(gtk::ContentFit::Cover);
+        picture.set_size_request(88, 58);
+        row.append(&picture);
     } else {
+        // A file that cannot be decoded in time keeps its generic icon.
         let image = gtk::Image::from_icon_name(if library::kind(path) == Some(Kind::Procedural) {
             "applications-graphics-symbolic"
         } else {

@@ -39,7 +39,9 @@ system_keyboard = true
 [procedurals.starfield]
 color = "#b4befe"
 background = "#141725"
-density = 120 # 1..300 (particle effects)
+# Density means: particle count; matrix columns; doom-fire flame height (120 keeps
+# the top of the frame dark, 300 fills it); aurora band count.
+density = 120 # 1..300
 speed = 1.0 # 0.01..2.0
 fps = 30 # 1..30
 seed = 1
@@ -53,7 +55,14 @@ color = "#b4befe"
 [procedurals.matrix]
 color = "#38f277"
 background = "#020806"
+density = 220
 
 [procedurals."doom-fire"]
 color = "#ffcc66"
 background = "#080304"
+
+[procedurals.aurora]
+color = "#7ef0c0"
+background = "#080f1c"
+density = 168
+speed = 0.6

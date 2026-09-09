@@ -72,7 +72,12 @@ decklock --preview
 ```
 
 The IDs are `procedural:starfield`, `procedural:particles`,
-`procedural:lissajous`, `procedural:matrix` and `procedural:doom-fire`.
+`procedural:lissajous`, `procedural:matrix`, `procedural:doom-fire` and
+`procedural:aurora`.
+
+Density means particle count, matrix columns, doom-fire flame height (120 keeps
+the top dark, 300 fills the frame) or aurora band count, depending on the item.
+
 Per-item TOML tables live under `[procedurals.starfield]` (and the other IDs).
 `config unset procedurals` restores default parameters. No third-party code runs.
 Rendering uses an opaque raster texture capped at 640 pixels on the longest side,

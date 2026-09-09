@@ -188,3 +188,22 @@ Six new catalogue keys added to both locales. animation_check now asserts the
 library thumbnail, the viewer gear and that the stats panel reports FPS, memory
 and CPU, so isolated-gtk covers them. All eight local gates passed. Still a
 draft PR: no merge, no tag, no release.
+
+
+2026-09-08 frame limiter, denser rain, contained fire, aurora and video stills.
+The limiter compared elapsed time against the exact period, so a 60 Hz clock
+missing it by a microsecond rendered every third tick: 20 FPS for a 30 FPS
+limit. It now renders on the tick nearest a deadline that advances by whole
+periods, which also holds rates the clock cannot divide evenly (24 on 60 Hz);
+due() is pure and tested across five clock rates and four targets. The film's
+typeface is custom and unreleased and fan recreations are personal-use only, so
+the glyph set grew to 32 original 5x7 bitmaps with mirrored kana-like strokes;
+no font discovery, so frames stay repeatable. Density now means columns for
+matrix, flame height for doom-fire (cooling raised to average 2 per row, so 120
+keeps the top dark), bands for aurora and particle count elsewhere; it is
+documented per effect. Aurora fills with summed-sine bands, outline cost only.
+Video library rows show a decoded frame via playbin preroll and convert-sample,
+bounded by a deadline and falling back to the icon. Item names are built as
+animation-<id>, so matrix and doom-fire were rendering their raw ids; a test now
+asserts every ITEMS entry is named in both locales, routed to an effect and
+stored apart. All eight local gates passed. Still a draft PR.

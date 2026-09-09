@@ -73,7 +73,12 @@ decklock --preview
 ```
 
 IDs: `procedural:starfield`, `procedural:particles`, `procedural:lissajous`,
-`procedural:matrix` e `procedural:doom-fire`.
+`procedural:matrix`, `procedural:doom-fire` e `procedural:aurora`.
+
+A densidade significa quantidade de partículas, colunas do matrix, altura da chama
+do doom-fire (120 mantém o topo escuro, 300 preenche) ou número de faixas da aurora,
+conforme o item.
+
 As tabelas TOML individuais ficam em `[procedurals.starfield]` (e nos outros IDs).
 `config unset procedurals` restaura os parâmetros. Nenhum código de terceiros é
 executado. A textura opaca tem até 640 pixels no maior lado e é ampliada para a

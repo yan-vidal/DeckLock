@@ -14,6 +14,7 @@ pub enum Effect {
     Lissajous,
     Matrix,
     DoomFire,
+    Aurora,
 }
 impl Effect {
     pub fn id(self) -> &'static str {
@@ -24,6 +25,7 @@ impl Effect {
             Self::Lissajous => "lissajous",
             Self::Matrix => "matrix",
             Self::DoomFire => "doom-fire",
+            Self::Aurora => "aurora",
         }
     }
 }
@@ -78,6 +80,23 @@ fn parse_color(color: &str) -> Result<(f64, f64, f64), String> {
         ((value >> 8) & 255) as f64 / 255.,
         (value & 255) as f64 / 255.,
     ))
+}
+/// Frame limiter: renders on the tick nearest the deadline and returns the next
+/// one. Comparing against the exact period instead makes a 60 Hz clock miss it by
+/// a microsecond and render every third tick, which is 20 FPS for a 30 FPS limit.
+/// The deadline advances by whole periods so the remainder accumulates, which is
+/// what keeps rates the clock cannot divide evenly (24 on 60 Hz) on average.
+fn due(now: i64, next: i64, tick: i64, fps: u32) -> Option<i64> {
+    let period = 1_000_000 / fps.max(1) as i64;
+    if now + tick.clamp(0, period) / 2 < next {
+        return None;
+    }
+    // Resynchronise instead of catching up in a burst if the widget stalled.
+    Some(if next + period < now {
+        now + period
+    } else {
+        next + period
+    })
 }
 // Stable hashing: the scene depends only on seed, element index and injected time.
 fn random(seed: u32, index: u32) -> f64 {
@@ -134,6 +153,7 @@ pub fn render(
                 cr.fill().map_err(|e| e.to_string())?;
             }
         }
+        Effect::Aurora => aurora(&cr, config, t, w, h, (r, g, b))?,
         Effect::Matrix => matrix(&cr, config, t, w, h, (r, g, b))?,
         Effect::DoomFire => fire(&cr, config, t, w, h, (r, g, b))?,
         Effect::Lissajous => {
@@ -159,6 +179,55 @@ pub fn render(
     Ok(surface)
 }
 
+// Translucent bands swept by summed sines: a handful of filled paths per frame,
+// so the cost stays with the outline rather than with per-pixel work.
+fn aurora(
+    cr: &cairo::Context,
+    config: &Animation,
+    t: f64,
+    w: f64,
+    h: f64,
+    color: (f64, f64, f64),
+) -> Result<(), String> {
+    let bands = (config.density / 24).clamp(2, 10);
+    let steps = 96;
+    for band in 0..bands {
+        let seed = band * 5;
+        let base = 0.18 + random(config.seed, seed) * 0.62;
+        let thickness = h * (0.05 + random(config.seed, seed + 1) * 0.12);
+        let sway = h * (0.03 + random(config.seed, seed + 2) * 0.09);
+        let drift = 0.25 + random(config.seed, seed + 3) * 0.5;
+        let phase = random(config.seed, seed + 4) * TAU;
+        let curve = |x: f64| {
+            let p = x / w * TAU;
+            h * base
+                + sway
+                    * ((p * 1.5 + t * drift + phase).sin() * 0.7
+                        + (p * 0.5 - t * drift * 0.6 + phase).sin() * 0.3)
+        };
+        // A vertical gradient fades the band out at both edges, so the bands blend
+        // where they overlap instead of stacking into flat blocks.
+        let top = curve(0.).min(curve(w)) - thickness;
+        let gradient = cairo::LinearGradient::new(0., top, 0., top + thickness * 3.);
+        gradient.add_color_stop_rgba(0., color.0, color.1, color.2, 0.);
+        gradient.add_color_stop_rgba(0.5, color.0, color.1, color.2, 0.30);
+        gradient.add_color_stop_rgba(1., color.0, color.1, color.2, 0.);
+        cr.set_source(&gradient).map_err(|e| e.to_string())?;
+        cr.move_to(0., curve(0.));
+        for step in 1..=steps {
+            let x = step as f64 / steps as f64 * w;
+            cr.line_to(x, curve(x));
+        }
+        for step in (0..=steps).rev() {
+            let x = step as f64 / steps as f64 * w;
+            cr.line_to(x, curve(x) + thickness);
+        }
+        cr.close_path();
+        cr.fill().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 // Tiny original bitmap glyphs avoid font discovery and keep previews repeatable.
 fn matrix(
     cr: &cairo::Context,
@@ -168,7 +237,10 @@ fn matrix(
     h: f64,
     color: (f64, f64, f64),
 ) -> Result<(), String> {
-    const GLYPHS: [[u8; 7]; 16] = [
+    // Original 5x7 bitmaps: half-width kana-like strokes mirrored, as the film's
+    // custom face is, plus digits. Drawing our own avoids font discovery entirely,
+    // which keeps frames repeatable, and avoids the licence on fan recreations.
+    const GLYPHS: [[u8; 7]; 32] = [
         [14, 17, 19, 21, 25, 17, 14],
         [4, 12, 4, 4, 4, 4, 14],
         [14, 17, 1, 2, 4, 8, 31],
@@ -185,10 +257,27 @@ fn matrix(
         [30, 17, 17, 17, 17, 17, 30],
         [31, 16, 16, 30, 16, 16, 31],
         [31, 16, 16, 30, 16, 16, 16],
+        [0, 31, 0, 0, 0, 31, 0],
+        [31, 0, 0, 31, 0, 0, 31],
+        [31, 17, 17, 17, 17, 17, 31],
+        [31, 16, 16, 16, 16, 16, 31],
+        [4, 4, 12, 20, 4, 4, 4],
+        [4, 31, 4, 4, 4, 4, 4],
+        [31, 1, 31, 1, 1, 31, 0],
+        [18, 18, 18, 18, 18, 4, 8],
+        [10, 10, 17, 17, 17, 0, 0],
+        [28, 0, 30, 0, 28, 0, 0],
+        [17, 17, 4, 2, 1, 2, 12],
+        [31, 1, 31, 5, 9, 17, 1],
+        [4, 31, 20, 20, 20, 12, 4],
+        [10, 10, 31, 10, 10, 2, 2],
+        [4, 31, 4, 14, 21, 4, 8],
+        [0, 4, 4, 31, 4, 4, 0],
     ];
-    let columns = ((w / 10.) * (config.density as f64 / 120.)).clamp(4., 80.) as u32;
+    // Beyond ~110 columns the 5x7 glyphs stop resolving in a 640 pixel texture.
+    let columns = ((w / 10.) * (config.density as f64 / 120.)).clamp(4., 110.) as u32;
     let cell = (w / columns as f64).max(1.);
-    let step = cell * 1.5;
+    let step = cell * 1.25;
     let rows = (h / step).ceil() as u32;
     let tick = (t * 8.) as u32;
     for column in 0..columns {
@@ -209,13 +298,14 @@ fn matrix(
                 color.2 + (1. - color.2) * lead,
                 alpha,
             );
-            let index = (random(
+            let index = ((random(
                 config.seed,
                 column
                     .wrapping_mul(997)
                     .wrapping_add(row * 31)
                     .wrapping_add(tick),
-            ) * 15.) as usize;
+            ) * GLYPHS.len() as f64) as usize)
+                .min(GLYPHS.len() - 1);
             for (y, bits) in GLYPHS[index].iter().enumerate() {
                 for x in 0..5 {
                     if bits & (1 << (4 - x)) != 0 {
@@ -244,13 +334,16 @@ fn fire(
 ) -> Result<(), String> {
     const W: usize = 96;
     const H: usize = 48;
+    // Cooling averages 2 per row, so the flame dies out around source/2 rows up.
+    // Density therefore sets how much of the frame burns: 120 keeps the top dark.
+    let source = ((config.density as f64 / 300.).clamp(0.05, 1.) * H as f64 * 2.).round() as u8;
     let mut heat = vec![0u8; W * H];
     let mut next = heat.clone();
     let tick = (t * 18.) as u32;
     for step in 0..H as u32 {
         for x in 0..W {
-            heat[(H - 1) * W + x] = 36;
-            next[(H - 1) * W + x] = 36;
+            heat[(H - 1) * W + x] = source;
+            next[(H - 1) * W + x] = source;
         }
         for y in 0..H - 1 {
             for x in 0..W {
@@ -262,14 +355,14 @@ fn fire(
                 );
                 let shift = (noise * 5.) as usize;
                 let from = (x + W + shift - 2) % W;
-                next[y * W + x] = heat[(y + 1) * W + from].saturating_sub((noise * 3.) as u8);
+                next[y * W + x] = heat[(y + 1) * W + from].saturating_sub((noise * 3.) as u8 + 1);
             }
         }
         std::mem::swap(&mut heat, &mut next);
     }
     for y in 0..H {
         for x in 0..W {
-            let v = heat[y * W + x] as f64 / 36.;
+            let v = heat[y * W + x] as f64 / source.max(1) as f64;
             if v == 0. {
                 continue;
             }
@@ -335,15 +428,17 @@ pub fn widget_with_stats(
         return picture;
     }
     let origin = Cell::new(None);
-    let last = Cell::new(0i64);
+    let deadline = Cell::new(0i64);
+    let previous_tick = Cell::new(0i64);
     // The tick callback is Fn, so the accumulator needs interior mutability too.
     let metrics = RefCell::new(metrics);
     picture.add_tick_callback(move |picture, clock| {
         let now = clock.frame_time();
-        if now - last.get() < 1_000_000 / config.fps.max(1) as i64 {
+        let tick = now - previous_tick.replace(now);
+        let Some(next) = due(now, deadline.get(), tick, config.fps) else {
             return glib::ControlFlow::Continue;
-        }
-        last.set(now);
+        };
+        deadline.set(next);
         let start = origin.get().unwrap_or_else(|| {
             origin.set(Some(now));
             now
@@ -405,12 +500,36 @@ mod tests {
             Effect::Lissajous,
             Effect::Matrix,
             Effect::DoomFire,
+            Effect::Aurora,
         ] {
             assert_eq!(frame(effect, 2.), frame(effect, 2.));
             assert_ne!(frame(effect, 2.), frame(effect, 3.));
             assert!(frame(effect, 2.).chunks_exact(4).all(|p| p[3] == 255));
         }
         assert!(frame(Effect::None, 0.).chunks_exact(4).all(|p| p[3] == 255));
+    }
+    #[test]
+    fn frame_limit_tracks_the_clock_instead_of_aliasing_against_it() {
+        // A 60 Hz clock whose ticks are a microsecond short must still yield 30 FPS.
+        for tick in [16_666i64, 16_667, 16_683, 16_660, 6_944] {
+            for fps in [30u32, 24, 15, 1] {
+                let (mut now, mut next, mut rendered) = (1_700_000_000i64, 0i64, 0u32);
+                let ticks = (4 * 1_000_000 / tick) as u32;
+                for _ in 0..ticks {
+                    now += tick;
+                    if let Some(advanced) = due(now, next, tick, fps) {
+                        next = advanced;
+                        rendered += 1;
+                    }
+                }
+                let measured = rendered as f64 / (ticks as f64 * tick as f64 / 1e6);
+                let best = (1e6 / tick as f64).min(fps as f64);
+                assert!(
+                    (measured - best).abs() <= best * 0.06,
+                    "tick {tick} fps {fps}: {measured} vs {best}"
+                );
+            }
+        }
     }
     #[test]
     fn rejects_unbounded_work_and_invalid_parameters() {
