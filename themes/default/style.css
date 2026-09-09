@@ -29,6 +29,8 @@ button { background-image: none; box-shadow: none; text-shadow: none; }
 #power button:hover { background-color: alpha(@accent, 0.65); }
 #caps { color: #ffd166; font-size: 13px; font-weight: bold; text-shadow: 0 2px 8px rgba(0,0,0,0.9); }
 #status { color: #ffd9e2; font-size: 14px; text-shadow: 0 2px 8px rgba(0,0,0,0.9); }
+#status.warning { color: #ffe3a3; }
+#status.locked { color: #ff9aa2; font-weight: 600; }
 #preview-banner { color: rgba(255,255,255,0.65); font-size: 12px; margin: 12px; }
 #keyboard { background: transparent; padding: 0; }
 #keyboard button.key { background-color: @keyboard_background; border: 1px solid @keyboard_background; color: @keyboard_text; border-radius: 0; padding: 0; margin: 0; min-width: 0; min-height: 0; font-family: "DejaVu Sans"; font-size: 29.76px; font-weight: normal; }

@@ -32,6 +32,7 @@ pub struct View {
     pub keyboard: gtk::Box,
     pub controller_event: Rc<dyn Fn(ControllerEvent)>,
     pub activity: Rc<Cell<Instant>>,
+    settings: Rc<Settings>,
     bindings: Rc<Bindings>,
     preview: bool,
     forced_idle: Rc<Cell<Option<bool>>>,
@@ -42,9 +43,16 @@ struct Bindings {
     signals: RefCell<Vec<glib::SignalHandlerId>>,
     controllers: RefCell<Vec<gtk::EventController>>,
     stream: Rc<RefCell<Option<crate::media::Playback>>>,
+    countdown: RefCell<Option<glib::SourceId>>,
 }
 impl Bindings {
+    fn stop_countdown(&self) {
+        if let Some(id) = self.countdown.borrow_mut().take() {
+            id.remove();
+        }
+    }
     fn clear(&self) {
+        self.stop_countdown();
         self.stream.borrow_mut().take();
         if let Some(window) = self.window.upgrade() {
             for id in self.signals.borrow_mut().drain(..) {
@@ -86,7 +94,71 @@ impl View {
         assert!(self.preview, "Idle override is only available in preview");
         self.forced_idle.set(Some(idle));
     }
+    /// Report a rejected attempt, adding whatever PAM told us about a lockout.
+    /// The notice is advice only: input stays enabled, because PAM decides when
+    /// an attempt is accepted and this countdown is merely repeating its word.
+    pub fn deny(&self, advice: &crate::faillock::Advice) {
+        self.bindings.stop_countdown();
+        let strings = &self.settings.strings;
+        self.busy(false, &strings.text("authentication-failed"));
+        for class in ["locked", "warning"] {
+            self.status.remove_css_class(class);
+        }
+        let Some(text) = crate::faillock::describe(advice, advice.locked_for, strings) else {
+            return;
+        };
+        self.status.set_text(&text);
+        self.status
+            .add_css_class(if advice.locked { "locked" } else { "warning" });
+        let Some(total) = advice.locked_for.filter(|left| !left.is_zero()) else {
+            return;
+        };
+        let Some(timer) = crate::faillock::boot_time()
+            .and_then(|now| crate::faillock::Countdown::new(now, total))
+        else {
+            self.status.set_text(&strings.text("auth-locked"));
+            return;
+        };
+        let locked = crate::faillock::Advice {
+            locked: true,
+            ..Default::default()
+        };
+        let settings = self.settings.clone();
+        let status = self.status.downgrade();
+        let bindings = Rc::downgrade(&self.bindings);
+        // The timer only redraws; BOOTTIME decides elapsed time, including suspend.
+        let id = glib::timeout_add_local(Duration::from_secs(1), move || {
+            let Some(status) = status.upgrade() else {
+                if let Some(bindings) = bindings.upgrade() {
+                    bindings.countdown.borrow_mut().take();
+                }
+                return glib::ControlFlow::Break;
+            };
+            let remaining = crate::faillock::boot_time()
+                .map(|now| timer.remaining(now))
+                .unwrap_or(Duration::ZERO);
+            if let Some(text) =
+                crate::faillock::describe(&locked, Some(remaining), &settings.strings)
+            {
+                status.set_text(&text);
+            }
+            if remaining.is_zero() {
+                if let Some(bindings) = bindings.upgrade() {
+                    bindings.countdown.borrow_mut().take();
+                }
+                return glib::ControlFlow::Break;
+            }
+            glib::ControlFlow::Continue
+        });
+        *self.bindings.countdown.borrow_mut() = Some(id);
+    }
+
     pub fn busy(&self, busy: bool, message: &str) {
+        if busy {
+            self.bindings.stop_countdown();
+            self.status.remove_css_class("locked");
+            self.status.remove_css_class("warning");
+        }
         self.entry.set_sensitive(!busy);
         self.submit
             .set_sensitive(!busy && !self.entry.text().is_empty());
@@ -126,6 +198,7 @@ fn set_background(
     container: &gtk::Box,
     path: Option<&Path>,
     stream: &RefCell<Option<crate::media::Playback>>,
+    procedurals: &crate::procedural::Presets,
 ) {
     stream.borrow_mut().take();
     let stack = container
@@ -154,6 +227,12 @@ fn set_background(
         }
         return;
     };
+    if let Some(id) = crate::procedural::id(&path) {
+        let picture = crate::animation::widget(procedurals.get(id).animation(id));
+        stack.add_child(&picture);
+        stack.set_visible_child(&picture);
+        return;
+    }
     let picture = gtk::Picture::new();
     picture.set_can_shrink(true);
     picture.set_content_fit(gtk::ContentFit::Fill);
@@ -654,6 +733,10 @@ fn build_in(
         window.set_application(Some(app));
     }
     window.add_css_class("decklock");
+    if settings.preview {
+        crate::window_chrome::install(&window);
+        window.set_decorated(settings.config.window_decorations);
+    }
     if !settings.preview {
         window.set_title(Some("DeckLock"));
         window.set_decorated(false);
@@ -669,6 +752,7 @@ fn build_in(
         signals: RefCell::new(Vec::new()),
         controllers: RefCell::new(Vec::new()),
         stream: stream.clone(),
+        countdown: RefCell::new(None),
     });
     let mut normal_selection = crate::library::Selection::new(
         crate::library::pool(&settings.config, &settings.theme, false),
@@ -678,7 +762,13 @@ fn build_in(
         crate::library::pool(&settings.config, &settings.theme, true),
         crate::library::seed(),
     );
-    set_background(&background, normal_selection.current(), &stream);
+    set_background(
+        &background,
+        normal_selection.current(),
+        &stream,
+        &settings.config.procedurals,
+    );
+
     let close_stream = stream.clone();
     bindings
         .signals
@@ -705,6 +795,15 @@ fn build_in(
         banner.set_valign(gtk::Align::Start);
         banner.set_can_target(false);
         overlay.add_overlay(&banner);
+        let strings =
+            Rc::new(I18n::new(settings.config.locale.as_deref(), None).expect("Validated locale"));
+        let (help, key) = crate::help::controls(&window, strings);
+        help.set_halign(gtk::Align::Start);
+        help.set_valign(gtk::Align::Start);
+        help.set_margin_top(36);
+        overlay.add_overlay(&help);
+        window.add_controller(key.clone());
+        bindings.controllers.borrow_mut().push(key.upcast());
     }
     let power = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     power.set_widget_name("power");
@@ -749,6 +848,7 @@ fn build_in(
         }
         power.append(&button);
     }
+    power.set_visible(settings.theme.layout.power_visible);
     overlay.add_overlay(&power);
     let layout = &settings.theme.layout;
     let content = gtk::Box::new(
@@ -1143,7 +1243,12 @@ fn build_in(
                 } else {
                     &normal_selection
                 };
-                set_background(&background, selected.current(), &stream);
+                set_background(
+                    &background,
+                    selected.current(),
+                    &stream,
+                    &settings_idle.config.procedurals,
+                );
                 changed_at = Instant::now();
             }
         }
@@ -1162,7 +1267,12 @@ fn build_in(
         };
         if changed_at.elapsed().as_secs() >= interval as u64 {
             if selection.advance() {
-                set_background(&background, selection.current(), &stream);
+                set_background(
+                    &background,
+                    selection.current(),
+                    &stream,
+                    &settings_idle.config.procedurals,
+                );
             }
             changed_at = Instant::now();
         }
@@ -1191,6 +1301,7 @@ fn build_in(
         keyboard,
         controller_event,
         activity,
+        settings: settings.clone(),
         bindings,
         preview: settings.preview,
         forced_idle,

@@ -14,15 +14,15 @@ Optional controller support includes devices such as the Steam Deck.
 
 ### Arch Linux · x86_64
 
-Download the **0.1** package from [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.1-r2),
+Download the **0.2.0** package from [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.2.0),
 or use:
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1-r2/decklock-0.1-2-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1-r2/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.2.0/decklock-0.2.0-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.2.0/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.1-2-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.2.0-1-x86_64.pkg.tar.zst
 ```
 
 The package installs the application, a **DeckLock Settings** launcher and the
@@ -41,9 +41,48 @@ DeckLock is not tied to Arch. It needs GTK4, GStreamer, Linux-PAM and
 `gtk4-layer-shell` 1.3+, plus a Wayland compositor supporting `ext-session-lock-v1`
 for real locking. X11 is not supported.
 
-The 0.1 prebuilt archive targets the current **Arch x86_64** library stack; it is
+The 0.2.0 prebuilt archive targets the current **Arch x86_64** library stack; it is
 not a universal Linux binary. Packages for other distributions and architectures
 are not yet provided. See [build from source](#development) for another distribution.
+
+
+## Procedural media
+
+Open **Background → Library → Procedurals**. Select **Starfield**, **Particles**,
+**Lissajous curves**, **Matrix rain**, **Doom fire**, **Aurora**, **Flow field** or
+**Ridgeline** and add it to the pool, just like a photo or video. A procedural replaces the background; it is not an overlay. If selected
+for a lock, it keeps playing throughout that session. Photo selections still cycle
+only among photos. Rest has its own pool; **Reuse background** keeps the normal media.
+
+Use the **eye** to view an item in the reusable media viewer, and the **gear** to
+adjust that item's colors, speed, particle count, seed and FPS (1–30). **Apply**
+updates the draft and open previews; **Save** in settings writes the configuration.
+Closing the item editor without applying discards its edits. Settings belong to the
+item and are shared by every pool using it; removing it from a pool keeps its settings.
+
+```sh
+decklock config set background_pool '["procedural:starfield"]'
+decklock config set procedurals.starfield.color '#b4befe'
+decklock config set procedurals.starfield.speed 1.0
+decklock config set idle_pool '["procedural:lissajous"]'
+decklock config set idle_reuse_background false
+decklock --preview
+```
+
+The IDs are `procedural:starfield`, `procedural:particles`,
+`procedural:lissajous`, `procedural:matrix`, `procedural:doom-fire`,
+`procedural:aurora`, `procedural:flow-field` and `procedural:ridgeline`.
+
+Density means particle count, matrix columns, doom-fire flame height (120 keeps
+the top dark, 300 fills the frame), aurora bands, flow-field streamlines or
+ridgeline rows, depending on the item.
+
+Per-item TOML tables live under `[procedurals.starfield]` (and the other IDs).
+`config unset procedurals` restores default parameters. No third-party code runs.
+Rendering uses an opaque raster texture capped at 640 pixels on the longest side,
+scaled to the window. Hidden widgets stop requesting frames. Battery savings are
+not yet measured. See [example configuration](config.example.toml).
+
 
 ## Preview and lock
 
@@ -57,10 +96,12 @@ With no arguments, `decklock` prints help. Use `decklock --help` or
 `decklock config --help` for commands and examples. Preview never authenticates or runs
 power actions. Escape hides the keyboard, then closes the preview.
 
-**0.1 is experimental.** Preview/settings have been tested on Hyprland. Isolated
+**0.2.0 is experimental.** Preview/settings have been tested on Hyprland. Isolated
 protocol tests cover lock acquisition, monitor changes and termination without
-unlocking. Real-session PAM and broader compositor/controller coverage still
-need validation before replacing an existing locker.
+unlocking, and a disposable virtual machine exercises the packaged locker against
+real Sway and real Linux-PAM, including denial, unlock and account lockout. GPU
+paths, physical controllers and power actions, other compositors and other PAM
+policies still need validation before replacing an existing locker.
 
 ## Themes and language
 
@@ -195,8 +236,16 @@ shortcuts remain compatible. Capture is released when the keyboard closes.
 
 Power buttons call `systemctl suspend`, `hibernate`, `reboot` and `poweroff`.
 Permissions and working sleep/hibernate behavior belong to the host system.
-Preview buttons only show tooltips. Procedural backgrounds and plugins are not
-implemented; media playback uses installed GStreamer codecs.
+Preview buttons only show tooltips. Plugins are not implemented; media playback
+uses installed GStreamer codecs.
+
+## Help and roadmap
+
+F1 or the help icon opens an offline guide that follows the settings language.
+Read [General](docs/guide/en-US/general.md) and [Advanced](docs/guide/en-US/advanced.md).
+Ordinary windows have close controls; the title-bar preference is also available through `decklock config set window_decorations false`.
+
+See the [roadmap](docs/ROADMAP.md), [changelog](CHANGELOG.md) and [release procedure](docs/releases.md).
 
 ## Automated checks
 

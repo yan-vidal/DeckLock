@@ -135,3 +135,158 @@ GitHub workflows add Ubuntu/Rust-1.93 native/GTK/mock checks, an unprivileged Ar
 candidate build, and tag-only publishing after checks plus metadata/main ancestry
 verification. AGENTS.md and docs/testing.md define invariants and honest UAT limits.
 Remote CI and required branch protection still pending validation at this checkpoint.
+
+
+2026-09-08 verified guardrails handoff: c46d51a passed Checks on main (run
+34236755257), including the Arch package. Active mainProtect ruleset requires
+PRs and both Actions checks with no bypass; tagProtect prevents version tag
+updates/deletion. Earlier pending status above is superseded.
+
+0.2 implementation in progress: user authorized the procedural effects now.
+Animation settings are external config.toml tables animation/idle_animation,
+not executable theme plugins. Starfield, particles and Lissajous use bounded
+transparent raster textures scaled over existing media. Default off; separate
+rest settings follow idle reuse. CLI and translated GUI share validation.
+See src/animation.rs and examples/animation_check.rs for pure rendering and
+mapped/unmapped lifecycle contracts. All eight local gates passed, including animated GTK lifecycle/settings and
+Wayland protocol. Preview captures inspected in target/check-logs. Remote CI
+and release publication remain pending.
+
+
+User correction: do not open a release PR or finalize 0.2 yet; more features are
+still to be specified. PR #3 was opened prematurely and was closed without
+merge. Restore Cargo 0.1.0/package revision 2 and current release installation
+links; procedural code stays on feat/procedural-backgrounds-0.2. No new tag or
+release was created. Await the remaining scope before reopening a PR for 0.2.
+
+
+Latest user scope: procedural effects are media library items, not overlays.
+They must be added to either pool, have eye/gear actions per item, and replace
+images/videos. A selected procedural stays for the session like a video. Shared
+parameters live in procedurals.<id>; reserved procedural:<id> media IDs remain
+unresolved by filesystem path expansion. Unreleased overlay drafts migrate on
+load/save. Draft apply does not write settings until main Save.
+Design PR #4 (including Opus's archive-root variable fix/test) was merged alone
+as 239928a after both checks passed. No release/tag/version bump. This branch is
+for a draft PR only; wait for the rest of 0.2 before merging/releasing.
+All eight local gates passed for the media-item implementation, including
+reserved-ID rejection, overlay-draft migration, opaque/repeatable frames, stable
+pool selection, eye/gear drafts, persistence and previous-media unmapping after
+transition. Captures of library, item editor and rest inspected. Main design
+post-merge run 34282111819 also passed. Procedural draft CI still to be run.
+
+
+2026-09-08 preview diagnostics and two new effects: the tick callback is Fn, so
+the metrics accumulator is a RefCell like the origin/last cells beside it; the
+earlier `mut` capture did not compile. Matrix rain and Doom fire ship as library
+items with their own colour presets and bitmap glyphs, no fonts or new
+dependencies. Default speed is 1.0 in code, example config and both READMEs.
+preview_stats reports drawing CPU (CLOCK_THREAD_CPUTIME_ID around the render)
+apart from whole-process CPU and VmRSS, which include GTK and belong to the
+settings process, not to the locker; the panel says so and must keep saying so.
+Six new catalogue keys added to both locales. animation_check now asserts the
+library thumbnail, the viewer gear and that the stats panel reports FPS, memory
+and CPU, so isolated-gtk covers them. All eight local gates passed. Still a
+draft PR: no merge, no tag, no release.
+
+
+2026-09-08 frame limiter, denser rain, contained fire, aurora and video stills.
+The limiter compared elapsed time against the exact period, so a 60 Hz clock
+missing it by a microsecond rendered every third tick: 20 FPS for a 30 FPS
+limit. It now renders on the tick nearest a deadline that advances by whole
+periods, which also holds rates the clock cannot divide evenly (24 on 60 Hz);
+due() is pure and tested across five clock rates and four targets. The film's
+typeface is custom and unreleased and fan recreations are personal-use only, so
+the glyph set grew to 32 original 5x7 bitmaps with mirrored kana-like strokes;
+no font discovery, so frames stay repeatable. Density now means columns for
+matrix, flame height for doom-fire (cooling raised to average 2 per row, so 120
+keeps the top dark), bands for aurora and particle count elsewhere; it is
+documented per effect. Aurora fills with summed-sine bands, outline cost only.
+Video library rows show a decoded frame via playbin preroll and convert-sample,
+bounded by a deadline and falling back to the icon. Item names are built as
+animation-<id>, so matrix and doom-fire were rendering their raw ids; a test now
+asserts every ITEMS entry is named in both locales, routed to an effect and
+stored apart. All eight local gates passed. Still a draft PR.
+
+
+2026-09-08 power visibility, restore buttons and two more procedurals. The
+upper-right group is suspend/hibernate/restart/shutdown, so power_visible joins
+clock_visible, idle_clock_visible and avatar_visible in [layout], defaulting to
+visible. The theme editor keeps its existing save path: the settings Save is
+still what writes to disk, closing still leaves the draft pending, and a note
+beside the new Restore button says so, because a window that previews as you
+type does not make that obvious. Restore reloads the built-in theme into both
+buffers; the layout group has its own Restore that resets only spacing, padding,
+alignment, keyboard scale and the visibility switches. Neither writes on its
+own. Flow field integrates streamlines through seeded value noise (the shape
+behind Fidenza) and ridgeline stacks occluding ridges from the same noise; both
+are polylines, so cost stays with the outline, and both stay stateless, which is
+what the repeatability tests require and what rules out flocking. All eight
+local gates passed. Still a draft PR.
+
+2026-09-09 review follow-up: video thumbnails now decode serially off the GTK
+thread. Catalogs share pending requests and a cache of 128 completed results
+(including failures), keyed by path, size and modification time. Only owned
+pixels cross back to GTK; queued requests and weak widget references do not keep
+closed settings windows alive. The viewer uses the settings' shared I18n catalog,
+including subsequent language changes and per-item live refreshes. Every built-in
+procedural now defaults to speed 1.0; explicit saved speeds remain unchanged.
+Regressions first reproduced the synchronous thumbnail, Portuguese metrics shown
+in English and Aurora's 0.6 default. The GTK contract now checks deferred delivery,
+shared textures across both libraries and a rebuilt pool, plus metrics language
+changes. The real CLI checks every default speed. No version bump or release.
+Validation: scripts/check --all passed all eight local gates for this follow-up,
+including the new CLI/GTK regressions and existing Wayland protocol contracts.
+
+2026-09-09 PAM notice review follow-up (base d55ebf6): helper output is now
+drained nonblocking with bounded memory/work and the existing auth deadline.
+Regressions reproduced inherited stdout delaying a completed denial and oversized
+output filling the pipe. Both now pass. Removed the separate faillock command and
+policy/tally inference: module overrides and failure windows made remaining-attempt
+predictions unreliable, and the command could delay delivery of an auth result.
+Only PAM-provided notices remain, with existing CSS hooks and translated recognized
+lockouts. Countdown uses a CLOCK_BOOTTIME deadline (including suspend), labels the
+time as estimated, and stops on the next authentication. A stalled GTK-loop
+regression failed before the fix and passes now; injected times cover missed ticks.
+Removed parser tests belong to the removed inference feature, not weakened gates.
+Both guide languages and testing documentation describe the new boundary.
+Validation: all eight scripts/check --all gates passed on this working tree.
+Initial sandbox run denied fake controller sockets; the permitted isolated run
+passed. Real PAM, physical suspend, device recovery and hardware remain untested.
+Keep PR #5 draft; no merge, tag or release.
+
+2026-09-09 scope clarification: the user deferred a dedicated PAM service file.
+Keep the existing system PAM integration and configurable pam_service, default
+login; do not install /etc/pam.d/decklock or change system policies for 0.2.0.
+This supersedes the conversational proposal to switch that default. Future
+widgets start with built-in Rust implementations, with new types supplied by
+plugins; Lua remains the proposed extension language pending isolation design.
+Widgets/plugins, remote media and a greetd greeter remain outside 0.2.0.
+See docs/ROADMAP.md. Documentation only; validated with git diff --check.
+
+2026-09-09 real PAM/Wayland VM gate: scripts/test-vm.py boots a pinned Arch cloud
+image with KVM, 2 CPUs and 2048 MiB. It installs the CI candidate, runs real Sway
+headless and unprivileged DeckLock, types through wtype, reads status through
+AT-SPI, and checks independent underlying-client input and protocol traces.
+Local final run passed nine assertions: input before lock, real PAM denial,
+successful unlock once, input restored, real faillock lockout/visible estimate,
+countdown updates, PAM expiry before the estimated UI deadline, account-policy
+denial and SIGTERM remaining locked (some assertions combine related checks).
+Candidate reinstall/config preservation also passed. Candidate came from run
+34408286449 for head 80c6dd8; packaged BUILD-INFO source is GitHub's PR merge
+a65f3b96f504c629a2f6dd37727ce1794ee8cbe9. SHA256:
+c16b385a69738f1770e1bcb144b7b96abf6b053a4aede5c25ad079cf6a311fdb.
+Evidence: target/vm-logs/final and target/check-logs (all eight existing gates
+passed). No Rust product changes or authentication shortcuts were required.
+The new CI job runs after packaging, and the release workflow inherits it.
+Provisioning gotchas: wtype needs time to initialize its virtual keyboard; exact
+probe key assertions caught a dropped first event. runuser skips initial login,
+so the fixture initializes a user-owned tally with root faillock --reset. A
+guest-only short lockout policy and account-deny service are test fixtures, not
+new application PAM configuration. The host PAM, desktop, controller and Android
+emulator are untouched. VM cleanup removes its disk/key on success and failure.
+Final run minimum host available RAM: 1728 MiB; swap 6450 -> 7501 MiB while other
+work and local checks also ran; peak full-memory PSI avg10 2.52%. The VM was
+stopped after the test. Future runs abort on sustained low available memory or
+memory pressure. GPU/controllers/physical power actions and other PAM stacks
+remain separate validation boundaries. No merge, tag or release in this task.

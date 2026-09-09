@@ -205,6 +205,8 @@ pub fn build(
         .default_height(820)
         .build();
     window.add_css_class("settings");
+    crate::window_chrome::install(&window);
+    window.set_decorated(original.window_decorations);
     let root = gtk::Box::new(gtk::Orientation::Vertical, 16);
     for set in [
         gtk::prelude::WidgetExt::set_margin_top,
@@ -218,7 +220,13 @@ pub fn build(
     let title = gtk::Label::new(Some(&strings.text("settings-title")));
     title.add_css_class("title-1");
     title.set_halign(gtk::Align::Start);
-    root.append(&title);
+    let heading = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    title.set_hexpand(true);
+    heading.append(&title);
+    let (help, key) = crate::help::controls(&window, strings.clone());
+    heading.append(&help);
+    window.add_controller(key);
+    root.append(&heading);
     let hint = gtk::Label::new(Some(&strings.text("settings-hint")));
     hint.add_css_class("subtitle");
     hint.set_wrap(true);
@@ -376,6 +384,8 @@ pub fn build(
     );
     media_tabs.add_titled(&idle_page, Some("rest"), &strings.text("settings-rest"));
     let catalog = crate::media_editor::Catalog::new(crate::library::catalog(&original, &theme));
+    let procedurals = catalog.procedurals.clone();
+    procedurals.replace(original.procedurals.clone());
     let background = crate::media_editor::build(
         &window,
         catalog.clone(),
@@ -456,6 +466,20 @@ pub fn build(
     avatar.set_active(layout.avatar_visible);
     avatar.set_widget_name("settings-avatar");
     appearance.append(&avatar);
+    let power = gtk::CheckButton::with_label(&strings.text("settings-power"));
+    power.set_active(layout.power_visible);
+    power.set_widget_name("settings-power");
+    appearance.append(&power);
+    let decorations = gtk::CheckButton::with_label(&strings.text("settings-window-decorations"));
+    decorations.set_widget_name("settings-window-decorations");
+    decorations.set_active(original.window_decorations);
+    appearance.append(&decorations);
+    let decorated_window = window.downgrade();
+    decorations.connect_toggled(move |check| {
+        if let Some(window) = decorated_window.upgrade() {
+            window.set_decorated(check.is_active());
+        }
+    });
     let system_keyboard = gtk::CheckButton::with_label(&strings.text("settings-system-keyboard"));
     system_keyboard.set_active(original.system_keyboard);
     appearance.append(&system_keyboard);
@@ -536,12 +560,48 @@ pub fn build(
     let edit_theme = gtk::Button::with_label(&strings.text("theme-editor-title"));
     edit_theme.set_widget_name("settings-edit-theme");
     appearance.append(&edit_theme);
+    let restore_layout = gtk::Button::with_label(&strings.text("restore-defaults"));
+    restore_layout.set_widget_name("settings-restore-layout");
+    restore_layout.set_tooltip_text(Some(&strings.text("restore-layout-help")));
+    appearance.append(&restore_layout);
+    {
+        // Only the layout group returns to its defaults; media, pools and the rest
+        // of the form are untouched, and nothing is written until Save.
+        let defaults = crate::config::Layout::default();
+        let (widgets, checks) = (
+            (
+                spacing.clone(),
+                padding.clone(),
+                scale.clone(),
+                alignment.widget.clone(),
+                arrangement.widget.clone(),
+            ),
+            (clock.clone(), avatar.clone(), power.clone()),
+        );
+        restore_layout.connect_clicked(move |_| {
+            widgets.0.set_value(defaults.spacing as f64);
+            widgets.1.set_value(defaults.padding as f64);
+            widgets.2.set_value(defaults.keyboard_scale);
+            widgets.3.set_selected(match defaults.alignment {
+                Alignment::Start => 0,
+                Alignment::Center => 1,
+                Alignment::End => 2,
+            });
+            widgets
+                .4
+                .set_selected(u32::from(defaults.arrangement == Arrangement::Horizontal));
+            checks.0.set_active(defaults.clock_visible);
+            checks.1.set_active(defaults.avatar_visible);
+            checks.2.set_active(defaults.power_visible);
+        });
+    }
     let (
         weak_spacing,
         weak_padding,
         weak_scale,
         weak_clock,
         weak_avatar,
+        weak_power,
         weak_alignment,
         weak_arrangement,
     ) = (
@@ -550,6 +610,7 @@ pub fn build(
         scale.downgrade(),
         clock.downgrade(),
         avatar.downgrade(),
+        power.downgrade(),
         alignment.widget.downgrade(),
         arrangement.widget.downgrade(),
     );
@@ -585,6 +646,9 @@ pub fn build(
         }
         if let Some(w) = weak_avatar.upgrade() {
             w.set_active(theme.layout.avatar_visible);
+        }
+        if let Some(w) = weak_power.upgrade() {
+            w.set_active(theme.layout.power_visible);
         }
         if let Some(w) = weak_alignment.upgrade() {
             w.set_selected(match theme.layout.alignment {
@@ -625,6 +689,7 @@ pub fn build(
     let read: Rc<dyn Fn() -> Result<Config, String>> = Rc::new(move || {
         read_drafts.validate()?;
         let mut config = original.clone();
+        config.procedurals = procedurals.borrow().clone();
         let selected_theme = theme_choice.active_id().unwrap_or_else(|| "classic".into());
         config.theme = if selected_theme == "external" {
             Some(selected_path(&theme_path, &base).ok_or_else(|| missing_theme.clone())?)
@@ -649,6 +714,7 @@ pub fn build(
             .map(|id| id.to_string());
         config.idle_seconds = idle.value_as_int() as u32;
         config.system_keyboard = system_keyboard.is_active();
+        config.window_decorations = decorations.is_active();
         config.controller_socket = if controller.is_active() {
             config
                 .controller_socket
@@ -672,6 +738,7 @@ pub fn build(
             clock_visible: clock.is_active(),
             idle_clock_visible: read_idle_clock.get(),
             avatar_visible: avatar.is_active(),
+            power_visible: power.is_active(),
             keyboard_scale: scale.value(),
         });
         validate_theme(&config)?;
@@ -706,6 +773,7 @@ pub fn build(
             }
         }
         let _ = language_strings.set_locale(locale);
+        crate::help::refresh_all(&language_strings);
         translating.set(false);
     });
     let edit_read = read.clone();

@@ -58,6 +58,10 @@ fn main() {
         .unwrap()
         .join("decklock");
     let window = settings::build(&app, path.clone(), Some("en-US"), executable).unwrap();
+    assert!(
+        window.titlebar().is_some(),
+        "Settings must provide its own close control"
+    );
     window.present();
     while glib::MainContext::default().iteration(false) {}
     let get =
@@ -78,16 +82,80 @@ fn main() {
         .downcast::<gtk::CheckButton>()
         .unwrap()
         .set_active(false);
+    // Power options ship visible; hiding them is a layout preference like the rest.
+    let power = get("settings-power")
+        .downcast::<gtk::CheckButton>()
+        .unwrap();
+    assert!(power.is_active(), "Power options must default to visible");
+    power.set_active(false);
     get("settings-save")
         .downcast::<gtk::Button>()
         .unwrap()
         .emit_clicked();
     let config = Config::load(Some(&path)).unwrap();
     assert_eq!(config.pam_service, "preserve-me");
-    let layout = config.layout.unwrap();
+    let layout = config.layout.clone().unwrap();
     assert_eq!(layout.padding, 48);
     assert_eq!(layout.alignment, Alignment::End);
     assert!(!layout.clock_visible);
+    assert!(!layout.power_visible);
+    // Restore returns the layout group to its defaults and leaves the rest alone,
+    // and writes nothing until the form is saved again.
+    get("settings-restore-layout")
+        .downcast::<gtk::Button>()
+        .unwrap()
+        .emit_clicked();
+    while glib::MainContext::default().iteration(false) {}
+    assert!(
+        power.is_active()
+            && get("settings-clock")
+                .downcast::<gtk::CheckButton>()
+                .unwrap()
+                .is_active()
+    );
+    assert_eq!(
+        get("settings-padding")
+            .downcast::<gtk::SpinButton>()
+            .unwrap()
+            .value_as_int(),
+        decklock::config::Layout::default().padding
+    );
+    assert_eq!(
+        Config::load(Some(&path)).unwrap().layout.unwrap().padding,
+        48,
+        "Restore must not write to disk on its own"
+    );
+    assert_eq!(
+        Config::load(Some(&path)).unwrap().pam_service,
+        "preserve-me"
+    );
+    get("settings-save")
+        .downcast::<gtk::Button>()
+        .unwrap()
+        .emit_clicked();
+    let restored = Config::load(Some(&path)).unwrap().layout.unwrap();
+    assert_eq!(
+        restored.padding,
+        decklock::config::Layout::default().padding
+    );
+    assert!(restored.power_visible && restored.clock_visible);
+    // Put the edited layout back so the checks below see what they expect.
+    get("settings-padding")
+        .downcast::<gtk::SpinButton>()
+        .unwrap()
+        .set_value(48.0);
+    get("settings-alignment")
+        .downcast::<gtk::DropDown>()
+        .unwrap()
+        .set_selected(2);
+    get("settings-clock")
+        .downcast::<gtk::CheckButton>()
+        .unwrap()
+        .set_active(false);
+    get("settings-save")
+        .downcast::<gtk::Button>()
+        .unwrap()
+        .emit_clicked();
     get("settings-media-tabs")
         .downcast::<gtk::Stack>()
         .unwrap()

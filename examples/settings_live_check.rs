@@ -185,8 +185,60 @@ fn main() {
     pump(800);
     assert!(find(preview.upcast_ref(), "credentials").is_visible());
     assert_eq!(std::fs::read(&path).unwrap(), saved);
+    // Hiding power options must reach the live preview like the other switches.
+    let power_switch = get("settings-power")
+        .downcast::<gtk::CheckButton>()
+        .unwrap();
+    assert!(power_switch.is_active(), "Power options default to visible");
+    assert!(find(preview.upcast_ref(), "power").is_visible());
+    power_switch.set_active(false);
+    pump(800);
+    assert!(!find(preview.upcast_ref(), "power").is_visible());
+    power_switch.set_active(true);
+    pump(800);
+    assert!(find(preview.upcast_ref(), "power").is_visible());
     click(get("settings-edit-theme"));
     let editor = top("theme-editor");
+    // Saving is not obvious in a window that previews as you type, so the editor
+    // says where it happens; restoring reloads the built-in theme into both tabs.
+    assert!(
+        !find(editor.upcast_ref(), "theme-editor-save-note")
+            .downcast::<gtk::Label>()
+            .unwrap()
+            .text()
+            .is_empty()
+    );
+    let document = find(editor.upcast_ref(), "theme.toml")
+        .downcast::<gtk::TextView>()
+        .unwrap()
+        .buffer();
+    let read_document = || {
+        document
+            .text(&document.start_iter(), &document.end_iter(), true)
+            .to_string()
+    };
+    let mut edited: toml::Value = toml::from_str(&read_document()).unwrap();
+    edited["layout"]["padding"] = toml::Value::Integer(96);
+    document.set_text(&toml::to_string_pretty(&edited).unwrap());
+    pump(850);
+    assert_eq!(find(preview.upcast_ref(), "content").margin_top(), 96);
+    click(find(editor.upcast_ref(), "theme-editor-restore"));
+    pump(900);
+    let default_padding =
+        toml::from_str::<toml::Value>(&read_document()).unwrap()["layout"]["padding"]
+            .as_integer()
+            .unwrap() as i32;
+    assert_ne!(default_padding, 96, "Restore did not reload the defaults");
+    assert_eq!(
+        find(preview.upcast_ref(), "content").margin_top(),
+        default_padding,
+        "Restore must reach the preview like any other edit"
+    );
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        saved,
+        "Restore must not write to disk on its own"
+    );
     let css = find(editor.upcast_ref(), "style.css")
         .downcast::<gtk::TextView>()
         .unwrap()
@@ -267,6 +319,6 @@ fn main() {
     assert!(theme.join("style.css").is_file());
     assert!(decklock::config::Theme::load(Some(&theme)).is_ok());
     println!(
-        "PASS: viewer reuse, live preview identity, palette retention, language switching, rest clock overrides, input cleanup, draft isolation and persistent theme copy"
+        "PASS: power visibility, theme restore, viewer reuse, live preview identity, palette retention, language switching, rest clock overrides, input cleanup, draft isolation and persistent theme copy"
     );
 }

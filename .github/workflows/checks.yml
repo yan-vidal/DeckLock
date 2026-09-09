@@ -44,3 +44,35 @@ jobs:
     needs: check
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group'
     uses: ./.github/workflows/build-package.yml
+
+  vm:
+    name: Real Wayland and PAM
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: VM dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 qemu-utils genisoimage openssh-client acl
+          test -c /dev/kvm
+          sudo setfacl -m u:$(id -un):rw /dev/kvm
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: arch-package
+          path: dist
+      - name: Verify candidate and run disposable VM
+        run: |
+          (cd dist && sha256sum --check SHA256SUMS)
+          python3 scripts/test-vm.py --package dist/*.pkg.tar.zst
+      - name: VM evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vm-evidence
+          path: target/vm-logs/
+          if-no-files-found: warn
+          retention-days: 14

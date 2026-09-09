@@ -23,4 +23,18 @@ pub mod theme_editor;
 
 pub mod config_cli;
 
+pub mod animation;
+
 pub mod branding;
+
+pub mod procedural;
+
+pub mod procedural_editor;
+
+pub mod preview_stats;
+
+mod video_thumbnails;
+
+pub mod faillock;
+pub mod help;
+pub mod window_chrome;

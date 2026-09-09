@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary', type=Path, default=root/'target/release/decklock')
 parser.add_argument('--output', type=Path, default=root/'dist')
 args = parser.parse_args()
-version = tomllib.loads((root/'Cargo.toml').read_text())['package']['version'].removesuffix('.0')
+version = tomllib.loads((root/'Cargo.toml').read_text())['package']['version']
 if not args.binary.is_file():
     raise SystemExit('Build the release binary first.')
 if subprocess.check_output(['uname', '-m'], text=True).strip() != 'x86_64':
@@ -47,8 +47,9 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-') as work:
         shutil.copy2(root/'assets/icons'/source, destination)
     docs = share/'doc/decklock'
     docs.mkdir(parents=True)
-    for file in ['README.md', 'README.pt-BR.md', 'config.example.toml']:
+    for file in ['README.md', 'README.pt-BR.md', 'config.example.toml', 'CHANGELOG.md']:
         shutil.copy2(root/file, docs/file)
+    shutil.copytree(root/'docs/guide', docs/'guide')
     commit = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
     (stage/'BUILD-INFO.json').write_text(json.dumps({'version':version,'source_commit':commit,
         'target':'Arch Linux x86_64', 'required_libraries': [line.split('=>')[0].strip() for line in subprocess.check_output(['ldd',str(args.binary.resolve())],text=True).splitlines() if '=>' in line]},indent=2)+'\n')

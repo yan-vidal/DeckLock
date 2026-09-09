@@ -1,3 +1,4 @@
+window_decorations = true # Ordinary windows only; never the real lock surface.
 # Copy to ~/.config/decklock/config.toml. Paths resolve beside this file.
 locale = "pt-BR"
 pam_service = "login"
@@ -30,3 +31,52 @@ system_keyboard = true
 # idle_clock_visible = true
 # avatar_visible = true
 # keyboard_scale = 1.0
+
+# Procedurals are media items: add these IDs to either pool above, alongside files.
+# background_pool = ["procedural:starfield", "/path/photo.jpg"]
+# idle_pool = ["procedural:lissajous"]
+# Put pool keys before any TOML [table]. A chosen procedural stays for this lock.
+# Per-item settings apply to every pool that uses the item.
+[procedurals.starfield]
+color = "#b4befe"
+background = "#141725"
+# Density means: particle count; matrix columns; doom-fire flame height (120 keeps
+# the top of the frame dark, 300 fills it); aurora bands; flow-field streamlines;
+# ridgeline rows.
+density = 120 # 1..300
+speed = 1.0 # 0.01..2.0
+fps = 30 # 1..30
+seed = 1
+
+[procedurals.particles]
+color = "#b4befe"
+
+[procedurals.lissajous]
+color = "#b4befe"
+
+[procedurals.matrix]
+color = "#38f277"
+background = "#020806"
+density = 220
+
+[procedurals."doom-fire"]
+color = "#ffcc66"
+background = "#080304"
+
+[procedurals.aurora]
+color = "#7ef0c0"
+background = "#080f1c"
+density = 168
+speed = 1.0
+
+[procedurals."flow-field"]
+color = "#f2a0c0"
+background = "#0d0a14"
+density = 260
+speed = 1.0
+
+[procedurals.ridgeline]
+color = "#cdd6f4"
+background = "#080a12"
+density = 200
+speed = 1.0

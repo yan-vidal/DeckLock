@@ -15,6 +15,11 @@ scripts/check         # format, clippy, Rust tests, real CLI, archive contract
 scripts/check --all   # additionally isolated GTK and real Wayland lock protocol
 ```
 
+The separate real Sway/PAM VM gate installs the candidate Arch package and tests
+actual password rejection, acceptance, account lockout and fail-closed termination.
+See [VM testing](vm-testing.md) for the command, isolation and evidence. It runs
+after packaging in CI; `scripts/check --all` remains the eight lightweight gates.
+
 Run `cargo fetch --locked` (or `scripts/cargo-local fetch --locked`) and
 `scripts/bootstrap-native --tests` first. Full GTK checks require `xvfb-run`, Xvfb,
 xauth and `dbus-run-session`, in addition to the normal build dependencies/codecs.
@@ -69,6 +74,7 @@ on Arch and include their linked-library provenance.
 
 - PR targeting main: required **DeckLock checks** and **Arch package contract**.
   Download the `arch-package` candidate from the workflow's artifacts if needed.
+- After packaging: **Real Wayland and PAM**, using that exact package in QEMU/KVM.
 - Main: the same checks after merge. No public release just because a PR exists.
 - Version/revision tag: `Release` invokes the checks and Arch package build, then
   verifies the tag matches Cargo/package metadata and the commit belongs to main.
@@ -81,14 +87,28 @@ on Arch and include their linked-library provenance.
 protection enforce the merge policy. A repository administrator can still change
 these policies; changes to safeguards must be reviewed as such.
 
-For the current Cargo `0.1.0` and package revision `2`, metadata describes
-`v0.1-r2`, which already exists. Bump the version or package revision in a reviewed
-PR before creating another tag. Do not reuse the existing tag to trigger CI.
+Cargo `0.2.0` / package revision `1` describe the `v0.2.0` release.
+See `docs/releases.md` before preparing another one.
+
+Procedural media add deterministic frame/validation tests, actual CLI
+round trips and a private GTK contract for texture updates, bounded dimensions,
+unmap/drop cleanup, library/pool selection, per-item eye/gear drafts, settings saves and rest preview. Rendering performance and
+battery use on physical GPUs still require measurement.
 
 ## Manual validation still required
 
-Real-session PAM (including account policies), suspend/hibernate integration,
-compositor behavior beyond the mock, controller recovery/haptics, accessibility,
+The VM exercises real PAM and Sway with controlled guest policies. Other PAM
+stacks, suspend/hibernate integration, other compositors, controller recovery/haptics, accessibility,
 real-device ergonomics and visual quality need explicit UAT. Use a recoverable
 test environment for session-lock/PAM work. Never use an active desktop or actual
 power actions as an agent's automatic test target.
+
+### PAM notice regressions
+
+Fake helpers cover inherited stdout after exit, output larger than the pipe,
+bounded notice retention, timeout and child reaping. The isolated GTK contract
+covers delayed countdown callbacks and replacement by a new authentication.
+Injected clock values cover elapsed time across suspension; this is not a real
+suspend or PAM integration test. Policy/tally parser tests were removed together
+with the unreliable local remaining-attempt inference, replaced by PAM-message
+parsing and deadline regressions. No real credentials or account lockouts are used.

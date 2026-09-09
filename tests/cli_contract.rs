@@ -170,3 +170,73 @@ fn importing_relative_media_resolves_against_source_and_preserves_them() {
     );
     assert_eq!(config.pam_service, "keep-me");
 }
+
+#[test]
+fn procedural_media_options_roundtrip_and_reject_invalid_writes() {
+    let cli = Cli::new();
+    for (key, value) in [
+        ("background_pool", "['procedural:starfield']"),
+        ("procedurals.starfield.color", "#abcdef"),
+        ("procedurals.starfield.speed", "0.5"),
+        ("procedurals.starfield.seed", "4294967295"),
+        ("idle_pool", "['procedural:lissajous']"),
+    ] {
+        cli.config(&["set", key, value], true);
+    }
+    let output = cli.config(&["get", "background_pool"], true);
+    assert!(String::from_utf8_lossy(&output.stdout).contains("procedural:starfield"));
+    let saved = std::fs::read(&cli.file).unwrap();
+    for (key, value) in [
+        ("procedurals.starfield.fps", "60"),
+        ("procedurals.starfield.speed", "nan"),
+        ("procedurals.starfield.color", "bad"),
+        ("background_pool", "['procedural:unknown']"),
+    ] {
+        cli.config(&["set", key, value], false);
+        assert_eq!(std::fs::read(&cli.file).unwrap(), saved);
+    }
+    cli.config(&["unset", "procedurals"], true);
+    assert_eq!(
+        String::from_utf8_lossy(
+            &cli.config(&["get", "procedurals.starfield.speed"], true)
+                .stdout
+        )
+        .trim(),
+        "1.0"
+    );
+}
+
+#[test]
+fn every_procedural_starts_at_unit_speed() {
+    let cli = Cli::new();
+    for id in decklock::procedural::ITEMS {
+        let key = format!("procedurals.{id}.speed");
+        assert_eq!(
+            String::from_utf8_lossy(&cli.config(&["get", &key], true).stdout).trim(),
+            "1.0",
+            "{id}"
+        );
+    }
+}
+
+#[test]
+fn window_decorations_roundtrip_and_reject_non_booleans() {
+    let cli = Cli::new();
+    assert_eq!(
+        String::from_utf8_lossy(&cli.config(&["get", "window_decorations"], true).stdout).trim(),
+        "true"
+    );
+    cli.config(&["set", "window_decorations", "false"], true);
+    assert_eq!(
+        String::from_utf8_lossy(&cli.config(&["get", "window_decorations"], true).stdout).trim(),
+        "false"
+    );
+    let before = std::fs::read(&cli.file).unwrap();
+    cli.config(&["set", "window_decorations", "invalid"], false);
+    assert_eq!(std::fs::read(&cli.file).unwrap(), before);
+    cli.config(&["unset", "window_decorations"], true);
+    assert_eq!(
+        String::from_utf8_lossy(&cli.config(&["get", "window_decorations"], true).stdout).trim(),
+        "true"
+    );
+}
