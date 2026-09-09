@@ -14,6 +14,12 @@ The session state machine authorizes unlock only after compositor lock ownership
 
 The UI is not the authority for session ownership. A successful preview test does not demonstrate real PAM policy or compositor recovery. SIGTERM is not an unlock shortcut.
 
+The helper process returns acceptance, refusal or error through its exit code, and now also the text modules ask to display: only `PAM_ERROR_MSG` and `PAM_TEXT_INFO`, never the prompt we answer and never the password. That text is flattened to one line, bounded in bytes and rendered as a plain label, with no markup interpretation. The helper runs under `LC_ALL=C` so module wording can be recognized and re-rendered in the interface language instead of being matched against translations.
+
+The failed-attempt lockout notice comes from there. `pam_faillock` reports "The account is locked due to N failed logins." and, where applicable, "(N minutes left to unlock)"; the on-screen countdown is that estimate in minutes, decremented one whole tick at a time. As an optional refinement, `/etc/security/faillock.conf` and the output of `faillock(8)` are read on a best-effort basis to report remaining attempts — only when both the threshold and the count are known. A missing file, an unexpected shape or an unavailable tool yields silence rather than an estimated number: the tally file's format is the module's private detail.
+
+This path is presentation only. It authorizes nothing, refuses nothing and delays nothing; the password field stays enabled during the countdown, because the policy belongs to PAM and only PAM decides when an attempt is accepted.
+
 ## Media pipeline
 
 GStreamer decodes video into a GTK paintable. Images and procedural textures occupy the same background stack; photos transition using its crossfade. Selection is separated from rendering, so a video or procedural stays selected for a lock while photos use a photo-only slideshow.

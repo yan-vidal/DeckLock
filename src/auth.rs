@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
 pub const MAX_PASSWORD_BYTES: usize = 511;
+/// Upper bound for PAM text forwarded to the screen. Modules send short lines.
+const MAX_NOTICE_BYTES: usize = 512;
 const AUTH_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn valid_service(service: &str) -> bool {
@@ -16,31 +18,74 @@ fn valid_service(service: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
 }
 
+/// A finished authentication attempt, plus any text PAM wanted the user to see.
+#[derive(Debug, PartialEq)]
+pub struct Outcome {
+    pub accepted: bool,
+    pub notice: Option<String>,
+}
+
+/// Flatten module text into one displayable line: control characters become
+/// spaces, runs of whitespace collapse, and the result is bounded. Callers
+/// render it as plain text, never as markup.
+fn sanitize_notice(raw: &[u8]) -> Option<String> {
+    let mut text = String::new();
+    let mut pending = false;
+    for character in String::from_utf8_lossy(raw).chars() {
+        if character.is_control() || character.is_whitespace() {
+            pending = !text.is_empty();
+            continue;
+        }
+        let needed = character.len_utf8() + usize::from(pending);
+        if text.len() + needed > MAX_NOTICE_BYTES {
+            break;
+        }
+        if std::mem::take(&mut pending) {
+            text.push(' ');
+        }
+        text.push(character);
+    }
+    (!text.is_empty()).then_some(text)
+}
+
 fn valid_password(password: &[u8]) -> bool {
     !password.is_empty() && password.len() <= MAX_PASSWORD_BYTES && !password.contains(&0)
 }
 
 /// Call from a worker thread. Passwords travel only through the child's stdin.
-pub fn authenticate(password: Zeroizing<String>, service: &str) -> Result<bool, String> {
+pub fn authenticate(password: Zeroizing<String>, service: &str) -> Result<Outcome, String> {
     if !valid_service(service) {
         return Err("Invalid PAM service name".into());
     }
     if !valid_password(password.as_bytes()) {
-        return Ok(false);
+        return Ok(Outcome {
+            accepted: false,
+            notice: None,
+        });
     }
     let executable = std::env::current_exe().map_err(|_| "Cannot locate authentication helper")?;
     let mut command = Command::new(executable);
     command.args(["--auth-helper", service]);
+    // Pin the module locale so its wording can be recognized and re-rendered in
+    // the interface language instead of being matched against translations.
+    command.env("LC_ALL", "C");
     run_helper(&mut command, password.as_bytes(), AUTH_TIMEOUT)
 }
 
-fn run_helper(command: &mut Command, password: &[u8], timeout: Duration) -> Result<bool, String> {
+fn run_helper(
+    command: &mut Command,
+    password: &[u8],
+    timeout: Duration,
+) -> Result<Outcome, String> {
     if !valid_password(password) {
-        return Ok(false);
+        return Ok(Outcome {
+            accepted: false,
+            notice: None,
+        });
     }
     let mut child = command
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .map_err(|_| "Cannot start authentication helper")?;
@@ -60,11 +105,21 @@ fn run_helper(command: &mut Command, password: &[u8], timeout: Duration) -> Resu
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                return match status.code() {
-                    Some(0) => Ok(true),
-                    Some(1) => Ok(false),
-                    _ => Err("Authentication helper failed".into()),
+                let accepted = match status.code() {
+                    Some(0) => true,
+                    Some(1) => false,
+                    _ => return Err("Authentication helper failed".into()),
                 };
+                // The helper never writes more than MAX_NOTICE_BYTES, so it
+                // cannot block on this pipe while we wait for it to exit.
+                let mut raw = Vec::new();
+                if let Some(stdout) = child.stdout.take() {
+                    let _ = stdout.take(MAX_NOTICE_BYTES as u64).read_to_end(&mut raw);
+                }
+                return Ok(Outcome {
+                    accepted,
+                    notice: sanitize_notice(&raw),
+                });
             }
             Ok(None) if start.elapsed() < timeout => std::thread::sleep(Duration::from_millis(10)),
             Ok(None) => {
@@ -153,6 +208,7 @@ unsafe extern "C" {
     fn pam_end(handle: *mut c_void, status: c_int) -> c_int;
 }
 struct ConversationData {
+    notices: String,
     password: Zeroizing<Vec<u8>>,
     username: CString,
 }
@@ -171,7 +227,7 @@ unsafe extern "C" fn conversation(
     // helper_main. calloc/free match PAM's ownership contract for responses.
     unsafe {
         *output = std::ptr::null_mut();
-        let data = &*data.cast::<ConversationData>();
+        let data = &mut *data.cast::<ConversationData>();
         let responses =
             libc::calloc(count as usize, std::mem::size_of::<PamResponse>()).cast::<PamResponse>();
         if responses.is_null() {
@@ -185,7 +241,18 @@ unsafe extern "C" fn conversation(
                 match (*message).style {
                     1 => Some(data.password.as_slice()),
                     2 => Some(data.username.as_bytes()),
-                    3 | 4 => continue,
+                    // Informational text only: PAM_ERROR_MSG and PAM_TEXT_INFO
+                    // are shown to the user, and expect an empty response.
+                    3 | 4 => {
+                        if !(*message).text.is_null() && data.notices.len() < MAX_NOTICE_BYTES {
+                            if !data.notices.is_empty() {
+                                data.notices.push(' ');
+                            }
+                            data.notices
+                                .push_str(&CStr::from_ptr((*message).text).to_string_lossy());
+                        }
+                        continue;
+                    }
                     _ => None,
                 }
             };
@@ -215,7 +282,9 @@ unsafe extern "C" fn conversation(
 }
 
 /// Internal process entry, handled before parsing normal options or starting GTK.
-/// 0 = accepted, 1 = denied, 2 = helper error. Never prints password or PAM prompts.
+/// 0 = accepted, 1 = denied, 2 = helper error. Standard output carries only
+/// PAM_ERROR_MSG/PAM_TEXT_INFO text, flattened and bounded: never the password,
+/// never a prompt we answered.
 pub fn helper_main(service: &str) -> i32 {
     if !valid_service(service) {
         return 2;
@@ -252,7 +321,11 @@ pub fn helper_main(service: &str) -> i32 {
     let Ok(service) = CString::new(service) else {
         return 2;
     };
-    let mut data = ConversationData { password, username };
+    let mut data = ConversationData {
+        notices: String::new(),
+        password,
+        username,
+    };
     let conv = PamConversation {
         callback: conversation,
         data: (&mut data as *mut ConversationData).cast(),
@@ -270,6 +343,11 @@ pub fn helper_main(service: &str) -> i32 {
             result = pam_acct_mgmt(handle, 0);
         }
         let end = pam_end(handle, result);
+        // Only module text collected above leaves this process; never a prompt,
+        // the password, or PAM's own status codes.
+        if let Some(notice) = sanitize_notice(data.notices.as_bytes()) {
+            let _ = std::io::stdout().write_all(notice.as_bytes());
+        }
         if result == 0 && end == 0 { 0 } else { 1 }
     }
 }
@@ -290,9 +368,67 @@ mod tests {
                     &password,
                     AUTH_TIMEOUT
                 ),
-                Ok(false)
+                Ok(Outcome {
+                    accepted: false,
+                    notice: None
+                })
             );
         }
+    }
+
+    #[test]
+    fn pam_text_reaches_the_caller_with_the_denial() {
+        let result = run_helper(
+            Command::new("/bin/sh").args([
+                "-c",
+                "cat >/dev/null; printf 'The account is locked due to 3 failed logins.'; exit 1",
+            ]),
+            b"test-fixture",
+            Duration::from_secs(2),
+        );
+        assert_eq!(
+            result,
+            Ok(Outcome {
+                accepted: false,
+                notice: Some("The account is locked due to 3 failed logins.".into()),
+            })
+        );
+    }
+
+    #[test]
+    fn helper_text_is_flattened_and_bounded_before_display() {
+        let result = run_helper(
+            Command::new("/bin/sh").args([
+                "-c",
+                r"cat >/dev/null; printf 'first\nsecond\ttab\r\033[31m  spaced  '; \
+                  head -c 4000 /dev/zero | tr '\0' 'x'; exit 1",
+            ]),
+            b"test-fixture",
+            Duration::from_secs(2),
+        );
+        let notice = result.unwrap().notice.expect("sanitized text");
+        assert!(
+            notice.starts_with("first second tab [31m spaced x"),
+            "{notice:?}"
+        );
+        assert!(!notice.contains('\n') && !notice.contains('\t') && !notice.contains('\r'));
+        assert!(notice.len() <= MAX_NOTICE_BYTES, "{} bytes", notice.len());
+    }
+
+    #[test]
+    fn a_silent_helper_reports_no_text() {
+        let result = run_helper(
+            Command::new("/bin/sh").args(["-c", "cat >/dev/null; printf '   '; exit 0"]),
+            b"test-fixture",
+            Duration::from_secs(2),
+        );
+        assert_eq!(
+            result,
+            Ok(Outcome {
+                accepted: true,
+                notice: None
+            })
+        );
     }
 
     #[test]
@@ -307,7 +443,7 @@ mod tests {
                 b"test-fixture",
                 Duration::from_secs(2),
             );
-            assert_eq!(result.ok(), expected);
+            assert_eq!(result.map(|outcome| outcome.accepted).ok(), expected);
         }
     }
 
@@ -333,11 +469,13 @@ mod tests {
         let mut data = ConversationData {
             password: Zeroizing::new(b"fixture-password".to_vec()),
             username: CString::new("fixture-user").unwrap(),
+            notices: String::new(),
         };
         for style in [1, 2, 3, 4, 7] {
+            let text = CString::new(format!("message {style}")).unwrap();
             let message = PamMessage {
                 style,
-                text: std::ptr::null(),
+                text: text.as_ptr(),
             };
             let messages = [&message as *const PamMessage];
             let mut output = std::ptr::null_mut();
@@ -373,5 +511,7 @@ mod tests {
                 libc::free(output.cast());
             }
         }
+        // Only informational styles are forwarded; prompts we answer are never shown.
+        assert_eq!(data.notices, "message 3 message 4");
     }
 }

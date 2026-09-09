@@ -35,5 +35,6 @@ pub mod preview_stats;
 
 mod video_thumbnails;
 
+pub mod faillock;
 pub mod help;
 pub mod window_chrome;

@@ -42,6 +42,14 @@ Repouso é o modo de inatividade do próprio DeckLock depois de iniciado. Ele n�
 
 A aba Repouso mostra uma prévia desse estado. Escolha um pool e intervalo próprios, mantenha o fundo normal ocultando os controles ou desative o repouso. O relógio em repouso é configurável. A atividade restaura a interface normal.
 
+## Tentativas e bloqueio da conta
+
+Sistemas Linux costumam contar falhas de autenticação e bloquear a conta por um tempo. Isso é política do PAM, não do DeckLock, e vale igualmente para o login no terminal.
+
+Quando o PAM avisa que a conta está bloqueada, a tela mostra esse estado e, se ele informar o tempo restante, um contador em minutos e segundos. O contador é o que o PAM disse, arredondado para cima: o campo de senha continua funcionando o tempo todo e você pode tentar assim que quiser. Se a sua configuração declarar explicitamente o limite de falhas, a tela também informa quantas tentativas ainda restam.
+
+Nada disso é imposto pelo DeckLock: ele só repete o que o sistema informou. Se faltar informação, a tela fica em silêncio em vez de estimar um número. Os avisos usam os seletores `#status.warning` e `#status.locked`, que o seu tema pode estilizar.
+
 ## Teclado e energia
 
 Use o teclado físico ou virtual. Shift altera a caixa das letras, dois toques em Shift mantêm Caps Lock e Alt mostra caracteres alternativos. O olho ao lado da senha alterna sua visibilidade. A integração opcional com sc-controller usa seu daemon externo e o teclado embutido.

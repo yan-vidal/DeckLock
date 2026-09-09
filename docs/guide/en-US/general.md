@@ -42,6 +42,14 @@ Rest is DeckLock's own inactivity mode after the locker has started. It does not
 
 The Rest tab previews this state. Choose its own pool and slideshow interval, keep the normal background while hiding controls, or disable rest entirely. The rest clock is configurable. Activity restores the normal interface.
 
+## Attempts and account lockout
+
+Linux systems usually count authentication failures and lock the account for a while. That is PAM policy, not DeckLock's, and it applies to console logins just the same.
+
+When PAM reports that the account is locked, the screen shows that state and, if PAM said how long it lasts, a countdown in minutes and seconds. The countdown is what PAM reported, rounded up: the password field keeps working the whole time and you may try again whenever you want. If your configuration declares the failure threshold explicitly, the screen also reports how many attempts remain.
+
+None of this is enforced by DeckLock, which only repeats what the system said. When information is missing, the screen stays silent instead of estimating a number. The notices use the `#status.warning` and `#status.locked` selectors, which your theme can style.
+
 ## Keyboard and power
 
 Use the physical or virtual keyboard. Shift changes case, double Shift latches Caps Lock, and Alt exposes alternate characters. The eye beside the password toggles its visibility. Optional sc-controller integration uses its external daemon and the embedded keyboard.

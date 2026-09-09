@@ -7,6 +7,8 @@ button:hover, #submit { background-color: #ffffff; color: #000000; }
 button:focus-visible, entry:focus { outline: 3px solid #ffff00; outline-offset: 3px; }
 #preview-banner { padding: 12px; background-color: #ffffff; color: #000000; }
 #status { color: #ffff00; font-size: 18px; }
+#status.warning { color: #ffffff; }
+#status.locked { color: #ff5555; font-weight: bold; }
 #keyboard { padding: 12px; }
 #keyboard button { min-width: 36px; padding: 6px; }
 

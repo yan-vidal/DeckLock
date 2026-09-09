@@ -1,4 +1,4 @@
-use decklock::{auth, config, controller, i18n, lock, session, settings, shortcut, ui};
+use decklock::{auth, config, controller, faillock, i18n, lock, session, settings, shortcut, ui};
 
 use clap::{CommandFactory, Parser};
 use gtk::{gio, glib, prelude::*};
@@ -278,7 +278,18 @@ fn run(args: Args) -> Result<(), String> {
             let service = settings.config.pam_service.clone();
             std::thread::spawn(move || {
                 let result = auth::authenticate(password, &service);
-                let _ = tx.send((attempt, result));
+                // Reading the local policy stays on this worker: it costs a
+                // short-lived process and must never delay the lock screen.
+                let advice = match &result {
+                    Ok(outcome) if !outcome.accepted => auth::current_username()
+                        .map(|user| {
+                            let (policy, failures) = faillock::local(&user);
+                            faillock::assess(outcome.notice.as_deref(), &policy, failures.as_ref())
+                        })
+                        .unwrap_or_default(),
+                    _ => faillock::Advice::default(),
+                };
+                let _ = tx.send((attempt, result.map(|outcome| outcome.accepted), advice));
             });
         })
     };
@@ -297,14 +308,13 @@ fn run(args: Args) -> Result<(), String> {
     };
     let app_weak = app.downgrade();
     let result_views = views.clone();
-    let result_settings = settings.clone();
     let result_session = session.clone();
     let result_lock = lock.clone();
     glib::timeout_add_local(Duration::from_millis(50), move || {
         if app_weak.upgrade().is_none() {
             return glib::ControlFlow::Break;
         }
-        for (attempt, result) in rx.try_iter() {
+        for (attempt, result, advice) in rx.try_iter() {
             let ok = result.unwrap_or(false);
             if result_session.borrow_mut().complete_auth(attempt, ok) {
                 if let Some(lock) = &result_lock {
@@ -312,10 +322,7 @@ fn run(args: Args) -> Result<(), String> {
                 }
             } else if !result_session.borrow().is_authenticating() {
                 for view in result_views.borrow().iter() {
-                    view.busy(
-                        false,
-                        &result_settings.strings.text("authentication-failed"),
-                    );
+                    view.deny(&advice);
                     view.entry.grab_focus();
                 }
             }

@@ -32,6 +32,7 @@ pub struct View {
     pub keyboard: gtk::Box,
     pub controller_event: Rc<dyn Fn(ControllerEvent)>,
     pub activity: Rc<Cell<Instant>>,
+    settings: Rc<Settings>,
     bindings: Rc<Bindings>,
     preview: bool,
     forced_idle: Rc<Cell<Option<bool>>>,
@@ -42,9 +43,16 @@ struct Bindings {
     signals: RefCell<Vec<glib::SignalHandlerId>>,
     controllers: RefCell<Vec<gtk::EventController>>,
     stream: Rc<RefCell<Option<crate::media::Playback>>>,
+    countdown: RefCell<Option<glib::SourceId>>,
 }
 impl Bindings {
+    fn stop_countdown(&self) {
+        if let Some(id) = self.countdown.borrow_mut().take() {
+            id.remove();
+        }
+    }
     fn clear(&self) {
+        self.stop_countdown();
         self.stream.borrow_mut().take();
         if let Some(window) = self.window.upgrade() {
             for id in self.signals.borrow_mut().drain(..) {
@@ -86,6 +94,59 @@ impl View {
         assert!(self.preview, "Idle override is only available in preview");
         self.forced_idle.set(Some(idle));
     }
+    /// Report a rejected attempt, adding whatever PAM told us about a lockout.
+    /// The notice is advice only: input stays enabled, because PAM decides when
+    /// an attempt is accepted and this countdown is merely repeating its word.
+    pub fn deny(&self, advice: &crate::faillock::Advice) {
+        self.bindings.stop_countdown();
+        let strings = &self.settings.strings;
+        self.busy(false, &strings.text("authentication-failed"));
+        for class in ["locked", "warning"] {
+            self.status.remove_css_class(class);
+        }
+        let Some(text) = crate::faillock::describe(advice, advice.locked_for, strings) else {
+            return;
+        };
+        self.status.set_text(&text);
+        self.status
+            .add_css_class(if advice.locked { "locked" } else { "warning" });
+        let Some(total) = advice.locked_for.filter(|left| !left.is_zero()) else {
+            return;
+        };
+        // Count whole ticks instead of wall clock: PAM reports whole minutes, so
+        // a drifting second would only add false precision to an estimate.
+        let left = Cell::new(total.as_secs());
+        let locked = crate::faillock::Advice {
+            locked: true,
+            ..Default::default()
+        };
+        let settings = self.settings.clone();
+        let status = self.status.downgrade();
+        let bindings = Rc::downgrade(&self.bindings);
+        // A precise one-second tick: the coarse seconds timer aligns to the
+        // glib clock and would let the visible clock skip or stall.
+        let id = glib::timeout_add_local(Duration::from_secs(1), move || {
+            let Some(status) = status.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            left.set(left.get().saturating_sub(1));
+            let remaining = Duration::from_secs(left.get());
+            if let Some(text) =
+                crate::faillock::describe(&locked, Some(remaining), &settings.strings)
+            {
+                status.set_text(&text);
+            }
+            if remaining.is_zero() {
+                if let Some(bindings) = bindings.upgrade() {
+                    bindings.countdown.borrow_mut().take();
+                }
+                return glib::ControlFlow::Break;
+            }
+            glib::ControlFlow::Continue
+        });
+        *self.bindings.countdown.borrow_mut() = Some(id);
+    }
+
     pub fn busy(&self, busy: bool, message: &str) {
         self.entry.set_sensitive(!busy);
         self.submit
@@ -680,6 +741,7 @@ fn build_in(
         signals: RefCell::new(Vec::new()),
         controllers: RefCell::new(Vec::new()),
         stream: stream.clone(),
+        countdown: RefCell::new(None),
     });
     let mut normal_selection = crate::library::Selection::new(
         crate::library::pool(&settings.config, &settings.theme, false),
@@ -1228,6 +1290,7 @@ fn build_in(
         keyboard,
         controller_event,
         activity,
+        settings: settings.clone(),
         bindings,
         preview: settings.preview,
         forced_idle,

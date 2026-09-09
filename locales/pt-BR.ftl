@@ -134,3 +134,8 @@ help-general = Geral
 help-advanced = Avançada
 help-tooltip = Ajuda (F1)
 settings-window-decorations = Mostrar barras de título e botões de fechar
+
+auth-locked = Conta bloqueada por falhas de autenticação.
+auth-locked-in = Conta bloqueada por falhas de autenticação. Tente novamente em %s.
+auth-attempts-left = Restam %n tentativas antes do bloqueio da conta.
+auth-attempts-left-one = Resta 1 tentativa antes do bloqueio da conta.

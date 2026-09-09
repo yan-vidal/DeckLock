@@ -11,7 +11,7 @@ assert 'decklock-check-' in env.get('XDG_RUNTIME_DIR',''), 'Use scripts/check --
 assert env.get('DISPLAY') and env.get('XAUTHORITY'), 'Private Xvfb required'
 assert not env.get('WAYLAND_DISPLAY') and not env.get('WAYLAND_SOCKET')
 env.update(GDK_BACKEND='x11',GSK_RENDERER='cairo',GTK_A11Y='none')
-for name in ['help_check','animation_check','settings_check','settings_live_check','preview_check','media_check','video_live_check']:
+for name in ['help_check','lockout_check','animation_check','settings_check','settings_live_check','preview_check','media_check','video_live_check']:
     command=[str(root/'target/debug/examples'/name)]
     if name=='video_live_check':command.append(str(root/'assets/media/videos/osaka_dotombori.mp4'))
     subprocess.run(command,env=env,check=True,timeout=90)

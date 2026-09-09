@@ -134,3 +134,8 @@ help-general = General
 help-advanced = Advanced
 help-tooltip = Help (F1)
 settings-window-decorations = Show window title bars and close buttons
+
+auth-locked = Account locked by failed attempts.
+auth-locked-in = Account locked by failed attempts. Try again in %s.
+auth-attempts-left = %n attempts left before the account is locked.
+auth-attempts-left-one = 1 attempt left before the account is locked.

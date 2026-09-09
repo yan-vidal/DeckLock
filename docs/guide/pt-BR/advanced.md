@@ -14,6 +14,12 @@ A máquina de estados da sessão autoriza desbloquear somente após obter a poss
 
 A interface não é a autoridade sobre a posse da sessão. Um teste de preview aprovado não demonstra as políticas reais de PAM nem a recuperação do compositor. SIGTERM não é um atalho para desbloquear.
 
+O processo auxiliar devolve aceitação, recusa ou erro pelo código de saída, e agora também o texto que os módulos pedem para exibir: apenas `PAM_ERROR_MSG` e `PAM_TEXT_INFO`, nunca o prompt que respondemos nem a senha. Esse texto é achatado numa linha, limitado em bytes e exibido como rótulo simples, sem interpretar marcação. O auxiliar roda com `LC_ALL=C` para que a redação dos módulos possa ser reconhecida e reescrita no idioma da interface em vez de ser comparada com traduções.
+
+O aviso de bloqueio por falhas vem daí. `pam_faillock` informa "The account is locked due to N failed logins." e, quando aplicável, "(N minutes left to unlock)"; o contador da tela é essa estimativa em minutos, decrementada por tique inteiro. Como reforço opcional, `/etc/security/faillock.conf` e a saída do `faillock(8)` são lidos em melhor esforço para informar quantas tentativas restam — só quando ambos, limite e contagem, forem conhecidos. Ausência, formato inesperado ou ferramenta indisponível resultam em silêncio, nunca em um número estimado: o formato do arquivo de contagem é detalhe interno do módulo.
+
+Esse caminho é só apresentação. Ele não autoriza, não recusa e não atrasa tentativa alguma; o campo de senha permanece habilitado durante a contagem, porque a política é do PAM e só ele decide quando uma tentativa é aceita.
+
 ## Fluxo de mídias
 
 GStreamer decodifica vídeo para um paintable do GTK. Imagens e texturas procedurais ocupam a mesma pilha de fundos; fotos transitam com seu crossfade. Seleção e renderização são separadas: vídeo ou procedural permanecem escolhidos naquele bloqueio; fotos usam uma apresentação somente de imagens.
