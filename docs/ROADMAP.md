@@ -2,7 +2,7 @@
 
 Directions, not delivery promises. / Direções, sem promessa de datas.
 
-## 0.2.0 — in preparation / em preparação
+## 0.2.0 — released 2026-09-09 / publicada em 2026-09-09
 
 - Procedural media, live editors and preview diagnostics / mídias procedurais, editores ao vivo e métricas.
 - Consistent ordinary window controls and bilingual offline help / controles consistentes e ajuda offline bilíngue.

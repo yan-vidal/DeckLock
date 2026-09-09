@@ -1,6 +1,6 @@
 # Release procedure
 
-The 0.2.0 release is being prepared in a PR. This document does not authorize publication.
+This document records the procedure. Publishing any version requires the user's explicit approval.
 
 1. Define the scope and review CHANGELOG.md. Label PRs enhancement, bug, documentation, maintenance or dependencies; unmatched PRs remain included in Other changes. Review user-facing notes rather than treating commit messages as documentation.
 2. Update Cargo.toml/Cargo.lock to the full X.Y.Z version and reset Arch pkgrel to 1 for an application release. A packaging-only rebuild increments pkgrel without changing Cargo; its tag is vX.Y.Z-rN. Legacy v0.1/v0.1-r2 releases retain their existing names and assets.

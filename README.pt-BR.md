@@ -14,15 +14,15 @@ Suporte opcional a controles, incluindo dispositivos como o Steam Deck.
 
 ### Arch Linux · x86_64
 
-Baixe o pacote **0.1** no [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.1-r2),
+Baixe o pacote **0.2.0** no [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.2.0),
 ou use:
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1-r2/decklock-0.1-2-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.1-r2/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.2.0/decklock-0.2.0-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.2.0/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.1-2-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.2.0-1-x86_64.pkg.tar.zst
 ```
 
 O pacote instala o aplicativo, o atalho **Configurações do DeckLock** e as mídias
@@ -41,18 +41,16 @@ O DeckLock não é exclusivo do Arch. Precisa de GTK4, GStreamer, Linux-PAM e
 `gtk4-layer-shell` 1.3+, além de um compositor Wayland com `ext-session-lock-v1`
 para bloquear a sessão. X11 não é suportado.
 
-O binário pronto da versão 0.1 usa as bibliotecas do **Arch x86_64 atual**; ele não
+O binário pronto da versão 0.2.0 usa as bibliotecas do **Arch x86_64 atual**; ele não
 é um binário universal para Linux. Ainda não fornecemos pacotes para outras
 distribuições ou arquiteturas. Para elas, veja [compilação](#desenvolvimento).
 
 
-## Mídias procedurais (branch de desenvolvimento; previstas para 0.2)
-
-Esses recursos ainda não fazem parte da versão 0.1 publicada.
+## Mídias procedurais
 
 Abra **Fundo → Biblioteca → Procedurais**. Selecione **Campo de estrelas**,
-**Partículas flutuantes** ou **Curvas de Lissajous** e adicione ao pool como uma foto
-ou vídeo. O procedural substitui o fundo; não é uma camada sobre outra mídia.
+**Partículas**, **Curvas de Lissajous**, **Chuva Matrix**, **Fogo Doom**, **Aurora**,
+**Campo de fluxo** ou **Cordilheira** e adicione ao pool como uma foto ou vídeo. O procedural substitui o fundo; não é uma camada sobre outra mídia.
 Se for sorteado no bloqueio, permanece durante aquela sessão. Fotos continuam
 alternando apenas entre fotos. Repouso tem seu próprio pool; **Reutilizar o fundo**
 mantém a mídia normal.
@@ -99,10 +97,12 @@ Sem argumentos, `decklock` mostra a ajuda. Use `decklock --help` ou
 `decklock config --help` para comandos e exemplos. O preview não autentica nem
 executa ações de energia. Escape oculta o teclado e, depois, fecha a janela.
 
-**A versão 0.1 é experimental.** Preview e configurações foram testados no Hyprland.
+**A versão 0.2.0 é experimental.** Preview e configurações foram testados no Hyprland.
 Testes de protocolo isolados cobrem aquisição do bloqueio, mudanças de monitores e
-encerramento sem desbloquear. PAM na sessão real e uma variedade maior de
-compositores/controles ainda precisam de validação antes de substituir seu bloqueador.
+encerramento sem desbloquear, e uma máquina virtual descartável exercita o pacote
+com Sway e Linux-PAM reais, incluindo negativa, desbloqueio e bloqueio de conta.
+Caminhos de GPU, controles e ações de energia físicas, outros compositores e outras
+políticas de PAM ainda precisam de validação antes de substituir seu bloqueador.
 
 ## Temas e idioma
 
@@ -237,17 +237,16 @@ integração exige `--controller` ou `--controller-socket` explícito. Atalhos a
 
 Os botões de energia chamam `systemctl suspend`, `hibernate`, `reboot` e `poweroff`.
 As permissões e o funcionamento da suspensão/hibernação dependem do sistema.
-No preview, os botões só mostram dicas. Fundos procedurais e plugins ainda não
-estão implementados; a reprodução depende dos codecs GStreamer instalados.
+No preview, os botões só mostram dicas. Plugins ainda não estão implementados;
+a reprodução depende dos codecs GStreamer instalados.
 
 ## Ajuda e roadmap
 
-A 0.2.0 está em preparação; os downloads acima ainda apontam para a versão publicada.
 F1 ou o ícone de ajuda abre um guia offline que acompanha o idioma das configurações.
 Leia [Geral](docs/guide/pt-BR/general.md) e [Avançada](docs/guide/pt-BR/advanced.md).
 As janelas comuns têm botão de fechar; a opção de barras de título também pode ser alterada com `decklock config set window_decorations false`.
 
-O próximo marco reúne procedurais, personalização e ajuda integrada. Veja o [roadmap](docs/ROADMAP.md), o [changelog](CHANGELOG.md) e o [processo de release](docs/releases.md).
+Veja o [roadmap](docs/ROADMAP.md), o [changelog](CHANGELOG.md) e o [processo de release](docs/releases.md).
 
 ## Verificações automáticas
 
