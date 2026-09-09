@@ -15,6 +15,11 @@ scripts/check         # format, clippy, Rust tests, real CLI, archive contract
 scripts/check --all   # additionally isolated GTK and real Wayland lock protocol
 ```
 
+The separate real Sway/PAM VM gate installs the candidate Arch package and tests
+actual password rejection, acceptance, account lockout and fail-closed termination.
+See [VM testing](vm-testing.md) for the command, isolation and evidence. It runs
+after packaging in CI; `scripts/check --all` remains the eight lightweight gates.
+
 Run `cargo fetch --locked` (or `scripts/cargo-local fetch --locked`) and
 `scripts/bootstrap-native --tests` first. Full GTK checks require `xvfb-run`, Xvfb,
 xauth and `dbus-run-session`, in addition to the normal build dependencies/codecs.
@@ -69,6 +74,7 @@ on Arch and include their linked-library provenance.
 
 - PR targeting main: required **DeckLock checks** and **Arch package contract**.
   Download the `arch-package` candidate from the workflow's artifacts if needed.
+- After packaging: **Real Wayland and PAM**, using that exact package in QEMU/KVM.
 - Main: the same checks after merge. No public release just because a PR exists.
 - Version/revision tag: `Release` invokes the checks and Arch package build, then
   verifies the tag matches Cargo/package metadata and the commit belongs to main.
@@ -91,8 +97,8 @@ battery use on physical GPUs still require measurement.
 
 ## Manual validation still required
 
-Real-session PAM (including account policies), suspend/hibernate integration,
-compositor behavior beyond the mock, controller recovery/haptics, accessibility,
+The VM exercises real PAM and Sway with controlled guest policies. Other PAM
+stacks, suspend/hibernate integration, other compositors, controller recovery/haptics, accessibility,
 real-device ergonomics and visual quality need explicit UAT. Use a recoverable
 test environment for session-lock/PAM work. Never use an active desktop or actual
 power actions as an agent's automatic test target.

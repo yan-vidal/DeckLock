@@ -263,3 +263,30 @@ widgets start with built-in Rust implementations, with new types supplied by
 plugins; Lua remains the proposed extension language pending isolation design.
 Widgets/plugins, remote media and a greetd greeter remain outside 0.2.0.
 See docs/ROADMAP.md. Documentation only; validated with git diff --check.
+
+2026-09-09 real PAM/Wayland VM gate: scripts/test-vm.py boots a pinned Arch cloud
+image with KVM, 2 CPUs and 2048 MiB. It installs the CI candidate, runs real Sway
+headless and unprivileged DeckLock, types through wtype, reads status through
+AT-SPI, and checks independent underlying-client input and protocol traces.
+Local final run passed nine assertions: input before lock, real PAM denial,
+successful unlock once, input restored, real faillock lockout/visible estimate,
+countdown updates, PAM expiry before the estimated UI deadline, account-policy
+denial and SIGTERM remaining locked (some assertions combine related checks).
+Candidate reinstall/config preservation also passed. Candidate came from run
+34408286449 for head 80c6dd8; packaged BUILD-INFO source is GitHub's PR merge
+a65f3b96f504c629a2f6dd37727ce1794ee8cbe9. SHA256:
+c16b385a69738f1770e1bcb144b7b96abf6b053a4aede5c25ad079cf6a311fdb.
+Evidence: target/vm-logs/final and target/check-logs (all eight existing gates
+passed). No Rust product changes or authentication shortcuts were required.
+The new CI job runs after packaging, and the release workflow inherits it.
+Provisioning gotchas: wtype needs time to initialize its virtual keyboard; exact
+probe key assertions caught a dropped first event. runuser skips initial login,
+so the fixture initializes a user-owned tally with root faillock --reset. A
+guest-only short lockout policy and account-deny service are test fixtures, not
+new application PAM configuration. The host PAM, desktop, controller and Android
+emulator are untouched. VM cleanup removes its disk/key on success and failure.
+Final run minimum host available RAM: 1728 MiB; swap 6450 -> 7501 MiB while other
+work and local checks also ran; peak full-memory PSI avg10 2.52%. The VM was
+stopped after the test. Future runs abort on sustained low available memory or
+memory pressure. GPU/controllers/physical power actions and other PAM stacks
+remain separate validation boundaries. No merge, tag or release in this task.

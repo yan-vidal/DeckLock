@@ -6,6 +6,8 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 ### Added
 
+- Disposable Arch/QEMU integration gate using real Sway and PAM, the packaged executable, isolated keyboard input and visible lockout notices.
+
 - Eight procedural media items: Starfield, Particles, Lissajous, Matrix rain, Doom fire, Aurora, Flow field and Ridgeline.
 - Procedural thumbnails and per-item live editors in the library and media viewer.
 - Preview diagnostics for generated FPS, drawing CPU, process CPU and process RSS.
@@ -34,7 +36,7 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 - Existing 0.1 configurations retain defaults for new fields. window_decorations affects ordinary windows only; a real lock never gains a close/help action.
 - Preview CPU/RSS totals describe the settings process, not exclusive procedural or GPU consumption.
 - The lockout notice repeats PAM's own report and never enforces a policy: input stays enabled, the countdown is an estimate in whole minutes, and no remaining-attempt count is inferred from local policy files.
-- This remains experimental. Real PAM policy, compositor/device recovery, accessibility and battery use require manual validation.
+- This remains experimental. A disposable VM tests the installed package against real Sway and PAM. Other PAM policies/compositors, physical-device recovery, accessibility and battery use remain unverified.
 - The packaged binary targets Arch Linux x86_64 and its declared shared-library versions; other distributions should build from source.
 
 ## [0.1-r2] - 2026-09-08
