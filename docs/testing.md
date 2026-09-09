@@ -81,9 +81,8 @@ on Arch and include their linked-library provenance.
 protection enforce the merge policy. A repository administrator can still change
 these policies; changes to safeguards must be reviewed as such.
 
-Cargo `0.1.0` and package revision `2` still describe the existing `v0.1-r2`.
-Procedural effects are on a development branch for the planned 0.2; no release
-bump, merge or tag is authorized until the user finishes defining that scope.
+Cargo `0.2.0` / package revision `1` are in preparation on the draft PR.
+No release tag or publication is authorized yet. See `docs/releases.md`.
 
 Procedural media add deterministic frame/validation tests, actual CLI
 round trips and a private GTK contract for texture updates, bounded dimensions,

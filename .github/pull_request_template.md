@@ -7,3 +7,7 @@ Validation:
 
 If changing tests, CI, security boundaries, configuration compatibility or release
 behavior, explain the contract change and any coverage removed.
+
+For user-facing changes:
+- Changelog entry and matching English/Portuguese guide changes:
+- Release category label (enhancement, bug, documentation, maintenance or dependencies):

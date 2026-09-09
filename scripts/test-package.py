@@ -15,6 +15,7 @@ parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary',type=Path,required=True)
 args=parser.parse_args()
 binary=args.binary.resolve()
+subprocess.run(['python3', str(root/'scripts/test-release.py')], check=True)
 with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
     temp=Path(directory)
     subprocess.run(['python3',str(root/'scripts/package-release.py'),'--binary',str(binary),'--output',str(temp)],check=True)
@@ -28,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
         tar.extractall(unpack,filter='data')
     # The PKGBUILD's package() reads $srcdir/<name>/, so the archive root name is
     # part of the contract, not an implementation detail.
-    version=tomllib.loads((root/'Cargo.toml').read_text())['package']['version'].removesuffix('.0')
+    version=tomllib.loads((root/'Cargo.toml').read_text())['package']['version']
     assert [p.name for p in unpack.iterdir()]==[f'decklock-{version}-linux-x86_64'],[p.name for p in unpack.iterdir()]
     stage=unpack/f'decklock-{version}-linux-x86_64'
     executable=stage/'bin/decklock'
@@ -40,6 +41,9 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
     assert 'Icon=io.github.yan_vidal.DeckLock' in (stage/'share/applications/io.github.yan_vidal.DeckLock.desktop').read_text()
     for source, installed in [('decklock.svg', 'scalable/apps/io.github.yan_vidal.DeckLock.svg'), ('decklock-symbolic.svg', 'symbolic/apps/io.github.yan_vidal.DeckLock-symbolic.svg')]:
         assert (stage/'share/icons/hicolor'/installed).read_bytes() == (root/'assets/icons'/source).read_bytes()
+    for path in (root/'docs/guide').rglob('*.md'):
+        assert (stage/'share/doc/decklock/guide'/path.relative_to(root/'docs/guide')).read_bytes() == path.read_bytes()
+    assert (stage/'share/doc/decklock/CHANGELOG.md').read_bytes() == (root/'CHANGELOG.md').read_bytes()
     manifest=json.loads((stage/'BUILD-INFO.json').read_text())
     assert manifest['source_commit']==subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip()
     env=os.environ.copy()

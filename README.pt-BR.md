@@ -240,6 +240,15 @@ As permissões e o funcionamento da suspensão/hibernação dependem do sistema.
 No preview, os botões só mostram dicas. Fundos procedurais e plugins ainda não
 estão implementados; a reprodução depende dos codecs GStreamer instalados.
 
+## Ajuda e roadmap
+
+A 0.2.0 está em preparação; os downloads acima ainda apontam para a versão publicada.
+F1 ou o ícone de ajuda abre um guia offline que acompanha o idioma das configurações.
+Leia [Geral](docs/guide/pt-BR/general.md) e [Avançada](docs/guide/pt-BR/advanced.md).
+As janelas comuns têm botão de fechar; a opção de barras de título também pode ser alterada com `decklock config set window_decorations false`.
+
+O próximo marco reúne procedurais, personalização e ajuda integrada. Veja o [roadmap](docs/ROADMAP.md), o [changelog](CHANGELOG.md) e o [processo de release](docs/releases.md).
+
 ## Verificações automáticas
 
 Cada PR executa a suíte completa e gera um pacote Arch de teste no GitHub. A main

@@ -239,6 +239,15 @@ Permissions and working sleep/hibernate behavior belong to the host system.
 Preview buttons only show tooltips. Procedural backgrounds and plugins are not
 implemented; media playback uses installed GStreamer codecs.
 
+## Help and roadmap
+
+0.2.0 is in preparation; the downloads above still point to the published release.
+F1 or the help icon opens an offline guide that follows the settings language.
+Read [General](docs/guide/en-US/general.md) and [Advanced](docs/guide/en-US/advanced.md).
+Ordinary windows have close controls; the title-bar preference is also available through `decklock config set window_decorations false`.
+
+The next milestone combines procedural media, customization and integrated help. See the [roadmap](docs/ROADMAP.md), [changelog](CHANGELOG.md) and [release procedure](docs/releases.md).
+
 ## Automated checks
 
 Every PR runs the full regression gate and builds an Arch candidate package on

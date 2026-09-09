@@ -28,6 +28,8 @@ jobs:
         with:
           name: arch-package
           path: dist
+      - name: Reviewed release summary
+        run: python3 scripts/release-notes.py --require-date > dist/RELEASE-NOTES.md
       - name: Publish only verified artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -36,4 +38,4 @@ jobs:
         run: |
           cd dist
           sha256sum --check SHA256SUMS
-          gh release create "$RELEASE_TAG" ./*.pkg.tar.zst ./*.tar.gz PKGBUILD SHA256SUMS --verify-tag --prerelease --title "DeckLock $RELEASE_TAG" --generate-notes
+          gh release create "$RELEASE_TAG" ./*.pkg.tar.zst ./*.tar.gz PKGBUILD SHA256SUMS --verify-tag --prerelease --title "DeckLock $RELEASE_TAG" --notes-file RELEASE-NOTES.md --generate-notes
