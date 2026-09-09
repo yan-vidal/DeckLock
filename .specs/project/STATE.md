@@ -254,3 +254,12 @@ Validation: all eight scripts/check --all gates passed on this working tree.
 Initial sandbox run denied fake controller sockets; the permitted isolated run
 passed. Real PAM, physical suspend, device recovery and hardware remain untested.
 Keep PR #5 draft; no merge, tag or release.
+
+2026-09-09 scope clarification: the user deferred a dedicated PAM service file.
+Keep the existing system PAM integration and configurable pam_service, default
+login; do not install /etc/pam.d/decklock or change system policies for 0.2.0.
+This supersedes the conversational proposal to switch that default. Future
+widgets start with built-in Rust implementations, with new types supplied by
+plugins; Lua remains the proposed extension language pending isolation design.
+Widgets/plugins, remote media and a greetd greeter remain outside 0.2.0.
+See docs/ROADMAP.md. Documentation only; validated with git diff --check.
