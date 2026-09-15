@@ -4,7 +4,7 @@ use clap::{CommandFactory, Parser};
 use gtk::{gio, glib, prelude::*};
 use std::{
     cell::{Cell, RefCell},
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
     sync::mpsc,
     time::Duration,
@@ -203,6 +203,23 @@ fn run(args: Args) -> Result<(), String> {
     // SAFETY: valid pointer to a stack rlimit; no ownership transfer.
     if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &limit) } != 0 {
         return Err("Could not disable core dumps".into());
+    }
+    // A locker that cannot authenticate traps the user behind its own lock
+    // screen: PAM falls back to /etc/pam.d/other, which denies every attempt,
+    // and the compositor keeps the session locked even if this process dies.
+    // The name is validated as a bare service name, never a path, so it cannot
+    // escape this directory. Preview never authenticates and is not gated.
+    // This runs before gtk::init so a configuration error the user can fix is
+    // reported ahead of any environment failure.
+    if args.lock {
+        let service = Path::new("/etc/pam.d").join(&config.pam_service);
+        if !service.exists() {
+            return Err(format!(
+                "{} ({})",
+                strings.text("pam-service-missing"),
+                service.display()
+            ));
+        }
     }
     gtk::init().map_err(|e| e.to_string())?;
     if args.lock && !gtk4_session_lock::is_supported() {

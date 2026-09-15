@@ -1,0 +1,4 @@
+# DeckLock authenticates and checks the account; it never opens a session,
+# so password and session stacks are intentionally absent.
+auth     include  system-auth
+account  include  system-auth

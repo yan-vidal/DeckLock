@@ -40,7 +40,8 @@ Because runuser bypasses the initial login, provisioning initializes the user-ow
 tally with the real faillock utility before running the locker. No tally records
 are fabricated.
 
-The ordinary test uses the default `login` PAM service shipped by Arch. A separate
+The ordinary test uses the default `decklock` service installed by the candidate
+package, so it exercises the policy real users receive. A separate
 **guest-only** service loads real pam_unix and pam_faillock with a short known
 lockout policy to test lockout messages and expiry without waiting ten minutes.
 This fixture is not installed by the DeckLock package and does not change the

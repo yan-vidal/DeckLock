@@ -45,6 +45,10 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-') as work:
         destination = share/'icons/hicolor'/folder/installed
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root/'assets/icons'/source, destination)
+    # Carried in the payload so the PKGBUILD installs it and archive users can
+    # see exactly which service file the default pam_service expects.
+    (stage/'pam').mkdir()
+    shutil.copy2(root/'packaging/arch/pam/decklock', stage/'pam/decklock')
     docs = share/'doc/decklock'
     docs.mkdir(parents=True)
     for file in ['README.md', 'README.pt-BR.md', 'config.example.toml', 'CHANGELOG.md']:

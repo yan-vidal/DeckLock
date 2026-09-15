@@ -9,6 +9,7 @@ preview-submit = Authentication is disabled in preview
 authentication-failed = Authentication failed. Try again.
 authenticating = Authenticating…
 unsupported = This compositor does not support session locking.
+pam-service-missing = No PAM service file for the configured pam_service; install the DeckLock package or set pam_service to a service that exists
 suspend = Suspend
 restart = Restart
 shutdown = Shut down

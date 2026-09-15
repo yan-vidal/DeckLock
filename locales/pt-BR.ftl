@@ -9,6 +9,7 @@ preview-submit = A autenticação está desativada na prévia
 authentication-failed = Falha na autenticação. Tente novamente.
 authenticating = Autenticando…
 unsupported = Este compositor não oferece suporte ao bloqueio de sessão.
+pam-service-missing = Nenhum arquivo de serviço PAM para o pam_service configurado; instale o pacote do DeckLock ou aponte pam_service para um serviço existente
 suspend = Suspender
 restart = Reiniciar
 shutdown = Desligar
