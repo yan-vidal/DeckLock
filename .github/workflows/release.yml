@@ -36,6 +36,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          channel=()
+          if [ "$(python3 scripts/release-channel.py)" = prerelease ]; then channel=(--prerelease); fi
           cd dist
           sha256sum --check SHA256SUMS
-          gh release create "$RELEASE_TAG" ./*.pkg.tar.zst ./*.tar.gz PKGBUILD SHA256SUMS --verify-tag --prerelease --title "DeckLock $RELEASE_TAG" --notes-file RELEASE-NOTES.md --generate-notes
+          gh release create "$RELEASE_TAG" ./*.pkg.tar.zst ./*.tar.gz PKGBUILD SHA256SUMS --verify-tag "${channel[@]}" --title "DeckLock $RELEASE_TAG" --notes-file RELEASE-NOTES.md --generate-notes

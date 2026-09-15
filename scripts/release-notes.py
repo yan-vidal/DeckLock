@@ -19,5 +19,5 @@ if args.require_date:
         datetime.date.fromisoformat(match[1].strip())
     except ValueError:
         raise SystemExit('Approve the release and replace Unreleased with its date before tagging')
-print(f'DeckLock {version} — experimental prerelease\n')
+print(f'DeckLock {version}' + (' — experimental prerelease' if '-' in version else '') + '\n')
 print(match[2].strip())
