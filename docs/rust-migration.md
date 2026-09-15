@@ -6,6 +6,8 @@ Rust/GTK4 é agora a implementação principal para Wayland. Os quatro módulos
 Python foram retirados da árvore atual; permanecem no histórico em `7459bb1`.
 Ainda existem diferenças funcionais em relação à referência Python. X11 foi removido do escopo e a execução de plugins/Lua foi
 adiada por decisão do usuário; não há runtime de plugins disfarçado de tema.
+A decisão sobre X11 registrada acima é de 2026-09-06 e foi revista depois: ver
+[roadmap](ROADMAP.md) para a direção atual.
 
 ## Implementado
 
