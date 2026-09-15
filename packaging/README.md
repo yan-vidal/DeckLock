@@ -12,6 +12,12 @@ Outputs:
 
 - `decklock-0.1-linux-x86_64.tar.gz`: binary, desktop entry, themes and media.
 - `decklock-0.1-2-x86_64.pkg.tar.zst`: native pacman package containing that payload.
+- `pam/decklock`: the PAM service the default `pam_service` expects, installed to
+  `/etc/pam.d/decklock` and listed in `backup=` so pacman never replaces an edited
+  copy. It carries only `auth` and `account` includes: DeckLock authenticates and
+  checks the account, and never opens a session. Each distribution needs its own
+  (`packaging/<distro>/pam/decklock`); Debian and Ubuntu include `common-auth` and
+  `common-account` rather than `system-auth`.
 - `PKGBUILD`: recipe with a checksum for the archive.
 - `SHA256SUMS`: archive hash; append the package hash after makepkg.
 

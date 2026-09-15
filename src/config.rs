@@ -37,7 +37,7 @@ impl Default for Config {
             theme: None,
             theme_preset: "classic".into(),
             locale: None,
-            pam_service: "login".into(),
+            pam_service: "decklock".into(),
             idle_seconds: 600,
             idle_enabled: true,
             idle_reuse_background: false,
@@ -85,6 +85,15 @@ impl Config {
         }
     }
 
+    // The 0.2.0 default moves to the packaged service. A value the user chose is
+    // never rewritten, even though a deliberate "login" cannot be told apart from
+    // the old default.
+    fn migrate_pam_service(&mut self) {
+        if self.pam_service == "login" {
+            self.pam_service = "decklock".into();
+        }
+    }
+
     pub fn load(path: Option<&Path>) -> Result<Self, String> {
         let Some(path) = path else {
             return Ok(Self::default());
@@ -92,6 +101,7 @@ impl Config {
         let mut config: Self =
             toml::from_str(&read_text(path)?).map_err(|e| format!("{}: {e}", path.display()))?;
         config.migrate_overlays();
+        config.migrate_pam_service();
         config.validate()?;
         let base = path.parent().unwrap_or(Path::new("."));
         config.resolve_paths(base);
@@ -185,6 +195,7 @@ impl Config {
         self.validate()?;
         let mut migrated = self.clone();
         migrated.migrate_overlays();
+        migrated.migrate_pam_service();
         let text = toml::to_string_pretty(&migrated).map_err(|e| e.to_string())?;
         let parent = path
             .parent()
@@ -439,6 +450,39 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn legacy_login_service_migrates_and_custom_services_survive() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(Config::default().pam_service, "decklock");
+
+        // The 0.2.0 default is indistinguishable from a deliberate choice of the
+        // same value, so it migrates; anything else is the user's own decision.
+        let legacy = dir.path().join("legacy.toml");
+        std::fs::write(&legacy, "pam_service = \"login\"\n").unwrap();
+        assert_eq!(Config::load(Some(&legacy)).unwrap().pam_service, "decklock");
+
+        let custom = dir.path().join("custom.toml");
+        std::fs::write(&custom, "pam_service = \"corporate-login\"\n").unwrap();
+        assert_eq!(
+            Config::load(Some(&custom)).unwrap().pam_service,
+            "corporate-login"
+        );
+
+        // Saving an in-memory legacy value rewrites it as well.
+        let saved = dir.path().join("saved.toml");
+        Config {
+            pam_service: "login".into(),
+            ..Config::default()
+        }
+        .save(&saved)
+        .unwrap();
+        assert!(
+            std::fs::read_to_string(&saved)
+                .unwrap()
+                .contains("\"decklock\"")
+        );
+    }
 
     #[test]
     fn settings_round_trip_preserves_unedited_options_and_layout() {

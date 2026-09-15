@@ -44,6 +44,10 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
     for path in (root/'docs/guide').rglob('*.md'):
         assert (stage/'share/doc/decklock/guide'/path.relative_to(root/'docs/guide')).read_bytes() == path.read_bytes()
     assert (stage/'share/doc/decklock/CHANGELOG.md').read_bytes() == (root/'CHANGELOG.md').read_bytes()
+    assert (stage/'pam/decklock').read_bytes()==(root/'packaging/arch/pam/decklock').read_bytes()
+    assert 'auth     include  system-auth' in (stage/'pam/decklock').read_text()
+    assert "backup=('etc/pam.d/decklock')" in (temp/'PKGBUILD').read_text()
+    assert '"$pkgdir/etc/pam.d/decklock"' in (temp/'PKGBUILD').read_text()
     manifest=json.loads((stage/'BUILD-INFO.json').read_text())
     assert manifest['source_commit']==subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip()
     env=os.environ.copy()

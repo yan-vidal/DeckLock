@@ -45,6 +45,13 @@ The 0.2.0 prebuilt archive targets the current **Arch x86_64** library stack; it
 not a universal Linux binary. Packages for other distributions and architectures
 are not yet provided. See [build from source](#development) for another distribution.
 
+The package installs `/etc/pam.d/decklock`, which `pam_service` now defaults to.
+Installing from the archive or from source does not create it, and DeckLock refuses
+to lock rather than trap you behind a screen it cannot authenticate: create the file
+with `auth include` and `account include` lines for your distribution's stack (see
+`packaging/<distro>/pam/decklock`), or point `pam_service` at a service you already
+have.
+
 
 ## Procedural media
 

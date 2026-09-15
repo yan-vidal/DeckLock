@@ -9,8 +9,8 @@ Directions, not delivery promises. / Direções, sem promessa de datas.
 - Reviewed changelog, full version names and documented release checks / changelog revisado, versões completas e processo de release documentado.
 - PAM notice reliability: bounded helper output and elapsed-time countdowns / confiabilidade dos avisos PAM: saída limitada do auxiliar e contagem por tempo decorrido.
 
-For 0.2.0, keep the existing system PAM integration (`pam_service = "login"` by default). Do not install a dedicated `/etc/pam.d/decklock` policy or edit system authentication rules. A dedicated service may be reconsidered later if a concrete packaging or policy need arises; it is not required for the current helper architecture.
-Na 0.2.0, manter a integração atual com o PAM do sistema (`pam_service = "login"` por padrão). Não instalar política própria em `/etc/pam.d/decklock` nem editar regras de autenticação do sistema. Um serviço específico pode ser reconsiderado se surgir uma necessidade concreta de empacotamento ou política; a arquitetura atual do auxiliar não depende dele.
+That 0.2.0 position is superseded by Phase B, which is the concrete packaging need it anticipated: each package installs its own `/etc/pam.d/decklock` including that distribution's stack, and `pam_service` defaults to `decklock`. Installing a service of our own is not editing system authentication rules — nothing else reads that file and it is removed with the package. Distribution files are still never edited.
+Aquela posição da 0.2.0 fica superada pela Fase B, que é a necessidade concreta de empacotamento que ela previa: cada pacote instala o seu `/etc/pam.d/decklock` incluindo a pilha daquela distribuição, e o `pam_service` passa a ter `decklock` como padrão. Instalar um serviço próprio não é editar regras de autenticação do sistema — nada mais lê esse arquivo e ele sai junto com o pacote. Arquivos da distribuição continuam nunca sendo editados.
 
 ## Next direction — platform reach before new features / Próxima direção — alcance de plataforma antes de novas funcionalidades
 

@@ -61,9 +61,15 @@ def run():
                    LD_LIBRARY_PATH=str(ROOT / ".deps/install/lib"))
         env.pop("WAYLAND_SOCKET", None)
         env.pop("DISPLAY", None)
-        # Explicit empty config: never load the user's controller/media settings.
+        # Minimal config: never load the user's controller/media settings. The
+        # locker refuses to lock when its PAM service file is absent and a source
+        # build installs none; this test issues no PAM request, so any existing
+        # service satisfies that preflight. "other" is PAM's mandated fallback.
+        service = next((name for name in ("other", "login", "system-auth")
+                        if (Path("/etc/pam.d") / name).is_file()), None)
+        assert service, "No /etc/pam.d service available to satisfy the lock preflight"
         config = root / "config.toml"
-        config.write_text("")
+        config.write_text(f'pam_service = "{service}"\n')
         server_log = root / "server.log"
         client_log = root / "client.log"
         processes = []

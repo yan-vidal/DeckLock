@@ -240,3 +240,24 @@ fn window_decorations_roundtrip_and_reject_non_booleans() {
         "true"
     );
 }
+
+#[test]
+fn locking_refuses_and_names_the_file_when_the_configured_pam_service_is_absent() {
+    let cli = Cli::new();
+    cli.config(&["set", "pam_service", "decklock-absent-fixture"], true);
+    let output = cli.run(&["--config", cli.file.to_str().unwrap(), "--lock"], false);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // A locker that cannot authenticate would trap the user behind its own lock
+    // screen, so an absent service is refused before anything is locked.
+    assert!(
+        stderr.contains("/etc/pam.d/decklock-absent-fixture"),
+        "refusal must name the missing service file: {stderr}"
+    );
+    // The configuration error the user can fix is reported ahead of the
+    // environment, which also keeps this assertion reachable with no compositor
+    // and no display present.
+    assert!(
+        !stderr.contains("does not support session locking"),
+        "the PAM preflight must run before the compositor gate: {stderr}"
+    );
+}

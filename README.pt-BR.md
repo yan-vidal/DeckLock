@@ -45,6 +45,13 @@ O binário pronto da versão 0.2.0 usa as bibliotecas do **Arch x86_64 atual**; 
 é um binário universal para Linux. Ainda não fornecemos pacotes para outras
 distribuições ou arquiteturas. Para elas, veja [compilação](#desenvolvimento).
 
+O pacote instala o `/etc/pam.d/decklock`, que passou a ser o padrão do `pam_service`.
+Instalar pelo arquivo compactado ou pelo código-fonte não cria esse arquivo, e o
+DeckLock recusa bloquear em vez de te prender atrás de uma tela que ele não consegue
+autenticar: crie o arquivo com linhas `auth include` e `account include` da pilha da
+sua distribuição (veja `packaging/<distro>/pam/decklock`), ou aponte o `pam_service`
+para um serviço que você já tenha.
+
 
 ## Mídias procedurais
 

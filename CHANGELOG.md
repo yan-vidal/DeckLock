@@ -2,6 +2,17 @@
 
 User-facing changes are reviewed in pull requests. Dates are assigned when a release is approved. Packaging-only rebuilds use Arch pkgrel and a separate -rN tag; published assets are never replaced.
 
+## [Unreleased]
+
+### Added
+
+- Each package installs its own `/etc/pam.d/decklock` including that distribution's authentication stack, with only `auth` and `account` lines because DeckLock never opens a session.
+- `--lock` refuses, naming the expected file, when the configured `pam_service` has no service file. Without this, PAM falls back to `/etc/pam.d/other`, every attempt is denied and the compositor keeps the session locked, trapping the user.
+
+### Changed
+
+- `pam_service` defaults to `decklock` instead of `login`. Existing configurations holding the previous default migrate on load and save; any other value is left alone, including a deliberate `login`, which cannot be told apart from the old default.
+
 ## [0.2.0] - 2026-09-09
 
 ### Added
