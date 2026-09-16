@@ -10,11 +10,19 @@ on:
         description: Container image digest for that distribution's build stack
         required: true
         type: string
+      label:
+        description: >
+          Display name for this job. It forms the status check context
+          "<caller job> / <label> package contract", which the repository's
+          mainProtect ruleset requires by exact string. Renaming it removes a
+          required check and blocks every pull request, so keep Arch's spelling.
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
   build:
-    name: ${{ inputs.target }} package contract
+    name: ${{ inputs.label }} package contract
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:

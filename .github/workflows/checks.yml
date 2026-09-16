@@ -46,6 +46,8 @@ jobs:
     uses: ./.github/workflows/build-package.yml
     with:
       target: arch
+      # "Package / Arch package contract" is a required status check; do not respell.
+      label: Arch
       image: archlinux:base-devel@sha256:84cd9ef000b3cff245ec028e87965b84724f4bf1cc63fc2741ba927b88515ed6
 
   # Fedora's stack is older than Arch's, so this build records its own library
@@ -58,6 +60,7 @@ jobs:
     uses: ./.github/workflows/build-package.yml
     with:
       target: fedora
+      label: Fedora
       image: fedora:43@sha256:a651ddf48ea28a06ed4e1e6519f51c9f47e7a5a138722ade87369b8fbb7e5b42
 
   vm:
