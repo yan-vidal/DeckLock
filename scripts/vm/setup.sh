@@ -85,8 +85,19 @@ else
 fi
 printf 'decklock includes %s; default stack counts failures: %s\n' "$included" "$stack_faillock" \
     > /var/tmp/decklock-evidence/stack-policy.txt
-runtime=/run/user/$(id -u locktest)
-install -d -o locktest -g locktest -m 700 "$runtime"
+# A real user manager, as a desktop login has. Under dbus-run-session the bus
+# daemon runs as unconfined_dbusd_t and must exec the AT-SPI launcher itself,
+# a transition to gnome_atspi_t that SELinux on Fedora rejects for the
+# unconfined_r role. With linger, systemd --user starts the launcher through the
+# SystemdService= line in org.a11y.Bus.service, as it does on a desktop.
+loginctl enable-linger locktest
+uid=$(id -u locktest)
+runtime=/run/user/$uid
+for _ in $(seq 60); do
+    [[ -S $runtime/bus ]] && break
+    sleep 1
+done
+[[ -S $runtime/bus ]]
 runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
-    DECKLOCK_STACK_FAILLOCK="$stack_faillock" \
-    dbus-run-session -- python3 /var/tmp/decklock-evidence/exercise.py
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" DECKLOCK_STACK_FAILLOCK="$stack_faillock" \
+    python3 /var/tmp/decklock-evidence/exercise.py
