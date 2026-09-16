@@ -86,8 +86,13 @@ artwork. Include verification limits in release notes.
 
 Pull requests build candidate packages for every target through
 `build-package.yml`, which takes the target and its pinned container image.
-Only the Arch package is published: `release.yml` downloads `arch-package`
-alone, because no VM gate installs the RPM or the DEB yet. Publishable
+All three packages are published. `release.yml` downloads each target's
+artifact into its own directory, because every artifact carries a `SHA256SUMS`
+under the same name and downloading them together would let one overwrite the
+others. Each is verified against the checksums written when its package was built
+and tested, and the published `SHA256SUMS` is those same build-time lines. The
+Fedora and Ubuntu recipes (`decklock.spec`, `control`) are build inputs and stay in
+the repository rather than becoming release assets. Publishable
 releases are built by `release.yml` from a new version/revision tag after merge.
 The workflow runs the required checks, verifies tag metadata and main ancestry,
 then uploads the checked assets. Manual commands above are for local inspection;

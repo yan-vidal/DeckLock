@@ -30,22 +30,49 @@ desktop.
 
 ## Instalação
 
+A versão **0.3.0** é publicada para Arch, Fedora 43 e Ubuntu 26.04 no
+[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.0). Cada
+pacote instala o aplicativo, o atalho **Configurações do DeckLock**, as mídias
+incluídas e o serviço PAM que o DeckLock usa. O gerenciador de pacotes resolve as
+dependências de execução; não é necessário instalar Rust. Os downloads vêm do
+GitHub, não dos repositórios oficiais das distribuições.
+
+O bloqueio só funciona em um dos [desktops que funcionam](#quais-desktops-funcionam):
+instalar num GNOME ou KDE Plasma padrão não permite que o DeckLock bloqueie a tela.
+
 ### Arch Linux · x86_64
 
-Baixe o pacote **0.2.0** no [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.2.0),
-ou use:
-
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.2.0/decklock-0.2.0-1-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.2.0/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/decklock-0.3.0-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.3.0-1-x86_64.pkg.tar.zst
 ```
 
-O pacote instala o aplicativo, o atalho **Configurações do DeckLock** e as mídias
-incluídas. O pacman resolve as dependências de execução; não é necessário instalar
-Rust. O download vem do GitHub, não do AUR nem dos repositórios oficiais do Arch.
+### Fedora 43 · x86_64
+
+```sh
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/decklock-0.3.0-1.fc43.x86_64.rpm
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+sudo dnf install ./decklock-0.3.0-1.fc43.x86_64.rpm
+```
+
+### Ubuntu 26.04 · x86_64
+
+```sh
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/decklock_0.3.0-1_amd64.deb
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+sudo apt install ./decklock_0.3.0-1_amd64.deb
+```
+
+Cada pacote é construído com as bibliotecas da própria distribuição. Derivadas que
+compartilham esses repositórios, como o EndeavourOS ou os spins do Fedora, podem
+funcionar, mas não foram testadas. **Ubuntu 24.04 e Debian 13 não são suportados:**
+o Ubuntu 24.04 não empacota o `gtk4-layer-shell`, e o Debian 13 empacota uma versão
+anterior à 1.2 que o DeckLock precisa.
 
 Abra **Configurações do DeckLock** no menu de aplicativos ou execute:
 
@@ -58,9 +85,9 @@ decklock --settings
 O DeckLock não é exclusivo do Arch. Precisa de GTK4, GStreamer, Linux-PAM e
 `gtk4-layer-shell` 1.2+, e de um dos [desktops que funcionam](#quais-desktops-funcionam).
 
-O binário pronto da versão 0.2.0 usa as bibliotecas do **Arch x86_64 atual**; ele não
-é um binário universal para Linux. Ainda não fornecemos pacotes para outras
-distribuições ou arquiteturas. Para elas, veja [compilação](#desenvolvimento).
+Os pacotes acima não são binários universais para Linux: cada um usa as bibliotecas
+da própria distribuição, somente em x86_64. Para outra distribuição, veja
+[compilação](#desenvolvimento).
 
 O pacote instala o `/etc/pam.d/decklock`, que passou a ser o padrão do `pam_service`.
 Instalar pelo arquivo compactado ou pelo código-fonte não cria esse arquivo, e o
@@ -121,10 +148,11 @@ Sem argumentos, `decklock` mostra a ajuda. Use `decklock --help` ou
 `decklock config --help` para comandos e exemplos. O preview não autentica nem
 executa ações de energia. Escape oculta o teclado e, depois, fecha a janela.
 
-**A versão 0.2.0 é experimental.** Preview e configurações foram testados no Hyprland.
+**A versão 0.3.0 é experimental.** Preview e configurações foram testados no Hyprland.
 Testes de protocolo isolados cobrem aquisição do bloqueio, mudanças de monitores e
-encerramento sem desbloquear, e uma máquina virtual descartável exercita o pacote
-com Sway e Linux-PAM reais, incluindo negativa, desbloqueio e bloqueio de conta.
+encerramento sem desbloquear, e máquinas virtuais descartáveis exercitam cada pacote
+com Sway e Linux-PAM reais no Arch, Fedora e Ubuntu, incluindo negativa, desbloqueio
+e bloqueio de conta.
 Caminhos de GPU, controles e ações de energia físicas, outros compositores e outras
 políticas de PAM ainda precisam de validação antes de substituir seu bloqueador.
 
