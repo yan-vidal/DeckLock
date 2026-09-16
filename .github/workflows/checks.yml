@@ -63,6 +63,19 @@ jobs:
       label: Fedora
       image: fedora:43@sha256:a651ddf48ea28a06ed4e1e6519f51c9f47e7a5a138722ade87369b8fbb7e5b42
 
+  # Ubuntu 26.04 packages gtk4-layer-shell 1.3.0. Debian 13 packages 1.0.4,
+  # below the 1.2 floor derived from this binary's symbols, so there is no
+  # Debian target yet.
+  package-ubuntu:
+    name: Package (Ubuntu)
+    needs: check
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group'
+    uses: ./.github/workflows/build-package.yml
+    with:
+      target: ubuntu
+      label: Ubuntu
+      image: ubuntu:26.04@sha256:513c074113a871b51a8d16ab445c88779d6452d937a164fb5cc479f32668a41d
+
   vm:
     name: Real Wayland and PAM
     needs: package

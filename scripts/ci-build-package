@@ -22,6 +22,30 @@ fedora)
     mv rpmbuild/RPMS/x86_64/decklock-*.rpm .
     sha256sum decklock-*.rpm >> SHA256SUMS
     ;;
+ubuntu)
+    # dpkg-deb assembles a staged tree, so the tested binary is copied in as
+    # built. debhelper is deliberately not used: it assumes a source build,
+    # which would rebuild the binary and break the byte-identity the package
+    # contract asserts. The payload checksum is verified here, which is where
+    # the Arch sha256sums and the Fedora %prep check happen for those targets.
+    sha256sum --check SHA256SUMS
+    root=deb/decklock
+    rm -rf deb
+    mkdir -p "$root/DEBIAN" "$root/usr/bin" "$root/usr/share" "$root/etc/pam.d"
+    tar xzf decklock-*-ubuntu-x86_64.tar.gz
+    payload=$(echo decklock-*-ubuntu-x86_64/)
+    install -Dm755 "$payload/bin/decklock" "$root/usr/bin/decklock"
+    cp -a "$payload/share/." "$root/usr/share/"
+    install -Dm644 "$payload/pam/decklock" "$root/etc/pam.d/decklock"
+    install -Dm644 "$payload/BUILD-INFO.json" "$root/usr/share/doc/decklock/BUILD-INFO.json"
+    # An administrator may edit the authentication policy, so dpkg must prompt
+    # instead of replacing it. This is the Arch backup= and the Fedora
+    # %config(noreplace) for this format.
+    echo /etc/pam.d/decklock > "$root/DEBIAN/conffiles"
+    cp control "$root/DEBIAN/control"
+    dpkg-deb --root-owner-group --build "$root" .
+    sha256sum decklock_*.deb >> SHA256SUMS
+    ;;
 *)
     echo "Unknown packaging target: $target" >&2
     exit 1
