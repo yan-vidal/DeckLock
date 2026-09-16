@@ -76,8 +76,8 @@ on Arch and include their linked-library provenance.
 ## GitHub flow
 
 - PR targeting main: required **DeckLock checks** and **Arch package contract**.
-  Fedora and Ubuntu packages also build, and are candidates only. Download any
-  `<target>-package` candidate from the workflow's artifacts if needed.
+  Fedora and Ubuntu packages also build. Download any `<target>-package`
+  candidate from the workflow's artifacts if needed.
 - After packaging: **Real Wayland and PAM** for each target, using that exact
   package in QEMU/KVM. Only the Arch contract is a required check today.
 - Main: the same checks after merge. No public release just because a PR exists.
@@ -92,7 +92,7 @@ on Arch and include their linked-library provenance.
 protection enforce the merge policy. A repository administrator can still change
 these policies; changes to safeguards must be reviewed as such.
 
-Cargo `0.2.0` / package revision `1` describe the `v0.2.0` release.
+Cargo `0.3.0` / package revision `1` describe the `v0.3.0` release.
 See `docs/releases.md` before preparing another one.
 
 Procedural media add deterministic frame/validation tests, actual CLI

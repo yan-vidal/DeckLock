@@ -2,16 +2,33 @@
 
 User-facing changes are reviewed in pull requests. Dates are assigned when a release is approved. Packaging-only rebuilds use Arch pkgrel and a separate -rN tag; published assets are never replaced.
 
-## [Unreleased]
+## [0.3.0] - 2026-09-16
 
 ### Added
 
+- Fedora 43 RPM and Ubuntu 26.04 DEB packages, published alongside the Arch package. Each is built against its own distribution's libraries, and the packaged binary is byte-identical to the one the package tests verified.
 - Each package installs its own `/etc/pam.d/decklock` including that distribution's authentication stack, with only `auth` and `account` lines because DeckLock never opens a session.
 - `--lock` refuses, naming the expected file, when the configured `pam_service` has no service file. Without this, PAM falls back to `/etc/pam.d/other`, every attempt is denied and the compositor keeps the session locked, trapping the user.
+- A "Which desktops work" section in both READMEs, listing tested, expected and unsupported desktops with the reason GNOME and KDE Plasma are unsupported.
+- Disposable VM gate per distribution: each package is installed into its own Arch, Fedora or Ubuntu guest and exercised against real Sway and real PAM, with Fedora's SELinux left enforcing.
 
 ### Changed
 
 - `pam_service` defaults to `decklock` instead of `login`. Existing configurations holding the previous default migrate on load and save; any other value is left alone, including a deliberate `login`, which cannot be told apart from the old default.
+- The refusal on an unsupported desktop explains that the desktop does not let other programs provide the lock screen, and names compositors that work, instead of stating only that the compositor lacks session locking.
+- Releases publish every package with one combined `SHA256SUMS`, and the channel follows the source version: a plain version publishes as a full release.
+
+### Fixed
+
+- The documented `gtk4-layer-shell` requirement was 1.3; the floor derived from the binary's symbol versions is 1.2.
+
+### Compatibility and limitations
+
+- GNOME and KDE Plasma are not supported and are not planned: both draw their own lock screen inside the desktop and do not let another program replace it. DeckLock refuses to lock there.
+- Ubuntu 24.04 and Debian 13 are not supported. Ubuntu 24.04 does not package `gtk4-layer-shell`, and Debian 13 packages 1.0.4, below the required 1.2.
+- With a stock configuration the lockout notice can only appear on Arch. Fedora and Ubuntu do not count failed passwords by default, so there is no lockout to report until an administrator enables it.
+- On Fedora and Ubuntu the VM gate installs Sway to exercise locking, because neither ships a compositor implementing `ext-session-lock-v1`. The packages work where such a compositor is installed, not on those distributions' default desktops.
+- Derivatives sharing these repositories are not tested. This remains experimental: physical-device recovery, GPU paths, accessibility and battery use remain unverified.
 
 ## [0.2.0] - 2026-09-09
 

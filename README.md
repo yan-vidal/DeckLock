@@ -29,22 +29,49 @@ way that would not be safe. Use the desktop's own lock screen there.
 
 ## Install
 
+Version **0.3.0** is published for Arch, Fedora 43 and Ubuntu 26.04 on
+[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.0). Each
+package installs the application, a **DeckLock Settings** launcher, the included
+media pack and the PAM service DeckLock uses. The package manager resolves the
+runtime dependencies; no Rust toolchain is needed. These are GitHub downloads, not
+packages from official repositories.
+
+Locking only works on one of the [desktops that work](#which-desktops-work):
+installing on a stock GNOME or KDE Plasma desktop will not let DeckLock lock it.
+
 ### Arch Linux · x86_64
 
-Download the **0.2.0** package from [GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.2.0),
-or use:
-
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.2.0/decklock-0.2.0-1-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.2.0/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/decklock-0.3.0-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.3.0-1-x86_64.pkg.tar.zst
 ```
 
-The package installs the application, a **DeckLock Settings** launcher and the
-included media pack. Pacman resolves the runtime dependencies; no Rust toolchain
-is needed. This is a GitHub download, not an AUR or official Arch package.
+### Fedora 43 · x86_64
+
+```sh
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/decklock-0.3.0-1.fc43.x86_64.rpm
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+sudo dnf install ./decklock-0.3.0-1.fc43.x86_64.rpm
+```
+
+### Ubuntu 26.04 · x86_64
+
+```sh
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/decklock_0.3.0-1_amd64.deb
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+sudo apt install ./decklock_0.3.0-1_amd64.deb
+```
+
+Each package is built against its own distribution's libraries. Derivatives that
+share those repositories, such as EndeavourOS or Fedora spins, may work but are not
+tested. **Ubuntu 24.04 and Debian 13 are not supported:** Ubuntu 24.04 does not
+package `gtk4-layer-shell` at all, and Debian 13 packages a version older than the
+1.2 DeckLock needs.
 
 Open **DeckLock Settings** from your app launcher, or run:
 
@@ -57,9 +84,9 @@ decklock --settings
 DeckLock is not tied to Arch. It needs GTK4, GStreamer, Linux-PAM and
 `gtk4-layer-shell` 1.2+, and one of the [desktops that work](#which-desktops-work).
 
-The 0.2.0 prebuilt archive targets the current **Arch x86_64** library stack; it is
-not a universal Linux binary. Packages for other distributions and architectures
-are not yet provided. See [build from source](#development) for another distribution.
+The packages above are not universal Linux binaries: each targets its own
+distribution's library stack, on x86_64 only. For another distribution, see
+[build from source](#development).
 
 The package installs `/etc/pam.d/decklock`, which `pam_service` now defaults to.
 Installing from the archive or from source does not create it, and DeckLock refuses
@@ -119,10 +146,11 @@ With no arguments, `decklock` prints help. Use `decklock --help` or
 `decklock config --help` for commands and examples. Preview never authenticates or runs
 power actions. Escape hides the keyboard, then closes the preview.
 
-**0.2.0 is experimental.** Preview/settings have been tested on Hyprland. Isolated
+**0.3.0 is experimental.** Preview/settings have been tested on Hyprland. Isolated
 protocol tests cover lock acquisition, monitor changes and termination without
-unlocking, and a disposable virtual machine exercises the packaged locker against
-real Sway and real Linux-PAM, including denial, unlock and account lockout. GPU
+unlocking, and disposable virtual machines exercise each packaged locker against
+real Sway and real Linux-PAM on Arch, Fedora and Ubuntu, including denial, unlock
+and account lockout. GPU
 paths, physical controllers and power actions, other compositors and other PAM
 policies still need validation before replacing an existing locker.
 
