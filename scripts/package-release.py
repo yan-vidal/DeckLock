@@ -19,6 +19,22 @@ import tomllib
 root = Path(__file__).resolve().parent.parent
 
 
+def shared_library_depends(binary):
+    """Run the Debian ELF scan, the equivalent of rpm's find-requires.
+
+    dpkg-shlibdeps reads a debian/ directory, so it gets a minimal one; the
+    package metadata it would find there is supplied by control.in instead.
+    """
+    with tempfile.TemporaryDirectory(prefix='decklock-shlibdeps-') as work:
+        control = Path(work)/'debian/control'
+        control.parent.mkdir()
+        control.write_text('Source: decklock\n\nPackage: decklock\nArchitecture: amd64\n')
+        output = subprocess.check_output(
+            ['dpkg-shlibdeps', '-O', '--ignore-missing-info', str(binary.resolve())],
+            cwd=work, text=True)
+    return output.strip().removeprefix('shlibs:Depends=')
+
+
 def distribution():
     """Identify the build environment; the baseline is recorded, never assumed."""
     fields = dict(
@@ -36,6 +52,11 @@ parser.add_argument('--output', type=Path, default=root/'dist')
 TARGETS = {
     'arch': {'slug': 'linux', 'label': 'Arch Linux x86_64', 'recipe': ('PKGBUILD.in', 'PKGBUILD')},
     'fedora': {'slug': 'fedora', 'label': 'Fedora x86_64', 'recipe': ('decklock.spec.in', 'decklock.spec')},
+    # Built against Ubuntu 26.04. Debian 13 packages gtk4-layer-shell 1.0.4,
+    # below the 1.2 floor dpkg-shlibdeps derives from this binary's symbols, so
+    # Debian is a separate target if it becomes possible rather than a name this
+    # one can claim.
+    'ubuntu': {'slug': 'ubuntu', 'label': 'Ubuntu x86_64', 'recipe': ('control.in', 'control')},
 }
 parser.add_argument('--target', choices=sorted(TARGETS), default='arch')
 args = parser.parse_args()
@@ -78,11 +99,25 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-') as work:
     commit = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
     (stage/'BUILD-INFO.json').write_text(json.dumps({'version':version,'source_commit':commit,
         'target':target['label'], 'distribution':distribution(), 'required_libraries': [line.split('=>')[0].strip() for line in subprocess.check_output(['ldd',str(args.binary.resolve())],text=True).splitlines() if '=>' in line]},indent=2)+'\n')
+    payload_kib = (sum(f.stat().st_size for f in stage.rglob('*') if f.is_file()) + 1023)//1024
     with tarfile.open(archive, 'w:gz') as tar:
         tar.add(stage, arcname=name)
 sha = hashlib.sha256(archive.read_bytes()).hexdigest()
 source, emitted = target['recipe']
-recipe = (root/f'packaging/{args.target}'/source).read_text().replace('@VERSION@',version).replace('@SHA256@',sha)
+fields = {'@VERSION@': version, '@SHA256@': sha}
+if args.target == 'ubuntu':
+    # dpkg-deb reads the installed size from the control file rather than
+    # measuring the tree, so it is computed from the payload that was staged.
+    fields['@DEPENDS@'] = shared_library_depends(args.binary)
+    fields['@SIZE@'] = str(payload_kib)
+recipe = (root/f'packaging/{args.target}'/source).read_text()
+if args.target == 'ubuntu':
+    # A binary package's DEBIAN/control has no comment syntax, unlike a source
+    # debian/control. The template keeps its rationale next to the fields it
+    # explains and the emitted file drops it.
+    recipe = ''.join(l for l in recipe.splitlines(keepends=True) if not l.startswith('#'))
+for placeholder, value in fields.items():
+    recipe = recipe.replace(placeholder, value)
 (args.output/emitted).write_text(recipe)
 (args.output/'SHA256SUMS').write_text(f'{sha}  {archive.name}\n')
 print(f'Created {archive}\n{args.target} recipe: {args.output / emitted}')

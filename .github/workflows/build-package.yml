@@ -39,6 +39,14 @@ jobs:
               gtk4-devel gtk4-layer-shell-devel gstreamer1-devel gstreamer1-plugins-base-devel \
               gstreamer1-plugins-good gstreamer1-libav pam-devel
             ;;
+          ubuntu)
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y git cargo rustc python3 build-essential pkg-config dpkg-dev \
+              libgtk-4-dev libgtk4-layer-shell-dev libgstreamer1.0-dev \
+              libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good gstreamer1.0-libav \
+              libpam0g-dev
+            ;;
           *)
             echo "Unknown packaging target: ${{ inputs.target }}" >&2
             exit 1
@@ -58,9 +66,11 @@ jobs:
           path: |
             dist/*.pkg.tar.zst
             dist/*.rpm
+            dist/*.deb
             dist/*.tar.gz
             dist/PKGBUILD
             dist/decklock.spec
+            dist/control
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 14

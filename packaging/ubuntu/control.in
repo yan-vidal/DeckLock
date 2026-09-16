@@ -1,0 +1,27 @@
+Package: decklock
+Version: @VERSION@-1
+Architecture: amd64
+Maintainer: DeckLock packaging <noreply@users.noreply.github.com>
+Section: x11
+Priority: optional
+Homepage: https://github.com/yan-vidal/DeckLock
+Installed-Size: @SIZE@
+# Comment lines are stripped when this is emitted: a binary DEBIAN/control has
+# no comment syntax. Shared libraries, libgtk4-layer-shell0 included, come from
+# dpkg-shlibdeps.
+# The GStreamer plugins are loaded through dlopen, so nothing in the binary
+# reveals them and they are declared by hand, as in the other recipes.
+Depends: @DEPENDS@, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-libav, libpam-modules
+Recommends: gstreamer1.0-plugins-bad, systemd
+X-Payload-Sha256: @SHA256@
+Description: Customizable Wayland lock screen with GTK4 settings and bundled media
+ DeckLock locks a Wayland session through ext-session-lock-v1, with a native
+ GTK4 settings application, configurable themes, procedural and video media,
+ an on-screen keyboard and offline bilingual help.
+ .
+ Real locking requires a compositor that implements ext-session-lock-v1. KDE
+ Plasma and GNOME do not, and X11 is not supported.
+ .
+ This package is built against the Ubuntu 26.04 library stack. It does not run
+ on Debian 13, which packages gtk4-layer-shell 1.0.4, below the 1.2 floor that
+ dpkg-shlibdeps derives from this binary's symbol versions.

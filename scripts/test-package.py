@@ -22,6 +22,9 @@ TARGETS={
               'markers':['%config(noreplace) %{_sysconfdir}/pam.d/decklock',
                          'install -Dm644 pam/decklock %{buildroot}%{_sysconfdir}/pam.d/decklock',
                          '%global debug_package %{nil}']},
+    'ubuntu':{'slug':'ubuntu','recipe':'control','include':'common-auth',
+              'markers':['Architecture: amd64','libgtk4-layer-shell0',
+                         'gstreamer1.0-plugins-good','Depends: ']},
 }
 parser.add_argument('--target',choices=sorted(TARGETS),default='arch')
 args=parser.parse_args()
