@@ -1,11 +1,30 @@
 #!/bin/sh
-# Run in the isolated Arch CI container as an unprivileged user.
+# Run in the isolated CI container for one target, as an unprivileged user.
 set -eu
+target="${1:?Pass the packaging target: arch or fedora}"
 cargo build --release --locked
 cargo test --release --locked --test cli_contract --test session_invariants
-python3 scripts/test-package.py --binary target/release/decklock
-python3 scripts/package-release.py
+python3 scripts/test-package.py --binary target/release/decklock --target "$target"
+python3 scripts/package-release.py --target "$target"
 cd dist
-makepkg
-sha256sum decklock-*.pkg.tar.zst >> SHA256SUMS
+case "$target" in
+arch)
+    makepkg
+    sha256sum decklock-*.pkg.tar.zst >> SHA256SUMS
+    ;;
+fedora)
+    # rpmbuild gets its own tree inside dist so nothing writes to $HOME, and the
+    # payload is shipped as built: the spec disables strip and debuginfo so the
+    # packaged bytes stay identical to the tested ones.
+    mkdir -p rpmbuild/SOURCES
+    cp decklock-*.tar.gz rpmbuild/SOURCES/
+    rpmbuild -bb --define "_topdir $PWD/rpmbuild" decklock.spec
+    mv rpmbuild/RPMS/x86_64/decklock-*.rpm .
+    sha256sum decklock-*.rpm >> SHA256SUMS
+    ;;
+*)
+    echo "Unknown packaging target: $target" >&2
+    exit 1
+    ;;
+esac
 sha256sum --check SHA256SUMS
