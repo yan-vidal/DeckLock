@@ -125,7 +125,11 @@ def main():
               'package_sha256': digest(package), 'package': package.name,
               'memory_mib': 2048, 'cpus': 2, 'status': 'running'}
     (logs / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
-    with tempfile.TemporaryDirectory(prefix='decklock-vm-') as directory:
+    # The copy-on-write overlay grows with every guest write, and a package
+    # install writes hundreds of MiB. /tmp is tmpfs by default on Arch and Fedora,
+    # where that growth would be host RAM rather than disk, so the work directory
+    # sits beside the image cache instead of in the system temporary directory.
+    with tempfile.TemporaryDirectory(prefix='decklock-vm-', dir=cache) as directory:
         work = Path(directory)
         key = work / 'id_ed25519'
         subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(key)], check=True)
