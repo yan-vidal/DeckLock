@@ -15,10 +15,13 @@ scripts/check         # format, clippy, Rust tests, real CLI, archive contract
 scripts/check --all   # additionally isolated GTK and real Wayland lock protocol
 ```
 
-The separate real Sway/PAM VM gate installs the candidate Arch package and tests
-actual password rejection, acceptance, account lockout and fail-closed termination.
-See [VM testing](vm-testing.md) for the command, isolation and evidence. It runs
-after packaging in CI; `scripts/check --all` remains the eight lightweight gates.
+The separate real Sway/PAM VM gate installs each distribution's own candidate
+package and tests actual password rejection, acceptance, account lockout and
+fail-closed termination. It runs once per target -- Arch, Fedora and Ubuntu --
+each in its own pinned cloud image, so a distribution's authentication stack is
+exercised rather than assumed. See [VM testing](vm-testing.md) for the command,
+isolation and evidence. It runs after packaging in CI; `scripts/check --all`
+remains the eight lightweight gates.
 
 Run `cargo fetch --locked` (or `scripts/cargo-local fetch --locked`) and
 `scripts/bootstrap-native --tests` first. Full GTK checks require `xvfb-run`, Xvfb,
@@ -73,8 +76,10 @@ on Arch and include their linked-library provenance.
 ## GitHub flow
 
 - PR targeting main: required **DeckLock checks** and **Arch package contract**.
-  Download the `arch-package` candidate from the workflow's artifacts if needed.
-- After packaging: **Real Wayland and PAM**, using that exact package in QEMU/KVM.
+  Fedora and Ubuntu packages also build, and are candidates only. Download any
+  `<target>-package` candidate from the workflow's artifacts if needed.
+- After packaging: **Real Wayland and PAM** for each target, using that exact
+  package in QEMU/KVM. Only the Arch contract is a required check today.
 - Main: the same checks after merge. No public release just because a PR exists.
 - Version/revision tag: `Release` invokes the checks and Arch package build, then
   verifies the tag matches Cargo/package metadata and the commit belongs to main.

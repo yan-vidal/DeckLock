@@ -1,17 +1,44 @@
 # Real Wayland/PAM integration VM
 
-The guest uses the installed Arch package, unmodified Sway and real Linux-PAM
-modules. It complements the small mock protocol and unit tests; it does not
-replace them or establish compatibility with every compositor and PAM policy.
+The guest uses that distribution's installed package, unmodified Sway and real
+Linux-PAM modules. It complements the small mock protocol and unit tests; it does
+not replace them or establish compatibility with every compositor and PAM policy.
+
+One target per distribution, each with its own pinned cloud image and its own
+candidate package:
+
+| Target | Image | Candidate |
+|---|---|---|
+| `arch` | Arch cloud image | `.pkg.tar.zst` |
+| `fedora` | Fedora Cloud Base Generic 43 | `.rpm` |
+| `ubuntu` | Ubuntu 26.04 server cloudimg | `.deb` |
+
+Sway 1.11 and wtype 0.4 are packaged on all three, so the assertions in
+`scripts/vm/exercise.py` are shared and unchanged. Only provisioning varies, as
+data in `scripts/vm/distros/<target>.env`: the package manager commands, the
+harness package names, the reinstall command and which `/etc/pam.d` files to
+record. A plain install of an already-installed version is a no-op on dnf and
+apt, so each target names its own reinstall command; otherwise the
+reinstall-preserves-configuration assertion would pass without reinstalling.
+
+Neither Fedora nor Ubuntu ships a compositor implementing `ext-session-lock-v1`,
+so each guest installs Sway. That is a property of the test rig, not a
+recommendation: it is how the lock path is exercised at all on those guests.
 
 Run from the repository on an x86_64 Linux host with KVM, at least 3 GiB available
 RAM, QEMU, qemu-img, genisoimage, curl and OpenSSH:
 
 ```sh
-python3 scripts/test-vm.py --package /path/to/decklock-0.2.0-1-x86_64.pkg.tar.zst
+python3 scripts/test-vm.py --target arch --package /path/to/decklock-0.2.0-1-x86_64.pkg.tar.zst
 ```
 
-Obtain the candidate from the `arch-package` artifact of the intended CI run.
+`qemu-img` must be 6.0 or newer. A much older copy ahead of the system one on
+`PATH`, for instance from a bundled Android SDK, is refused by name rather than
+left to fail later in a way that looks like a guest problem.
+
+Obtain the candidate from that target's `<target>-package` artifact of the
+intended CI run; the target and the package suffix must agree or the runner
+refuses to start.
 Verify its SHA256SUMS before running. The runner records the package hash; the
 installed package includes its original BUILD-INFO.json source provenance.
 
@@ -41,14 +68,16 @@ tally with the real faillock utility before running the locker. No tally records
 are fabricated.
 
 The ordinary test uses the default `decklock` service installed by the candidate
-package, so it exercises the policy real users receive. A separate
+package, so each target exercises its own authentication stack: `system-auth` on
+Arch and Fedora, `common-auth` and `common-account` on Ubuntu. A separate
 **guest-only** service loads real pam_unix and pam_faillock with a short known
 lockout policy to test lockout messages and expiry without waiting ten minutes.
 This fixture is not installed by the DeckLock package and does not change the
 application's default service or the host's policy.
 
-Evidence is written under `target/vm-logs`: host memory samples, package/image
-hashes, guest package versions and PAM configuration, compositor/client traces,
+Evidence is written under `target/vm-logs`: the target name, host memory samples,
+package/image hashes, guest package versions, the manifest used, the installed
+`/etc/pam.d/decklock` and the distribution's own PAM configuration, compositor/client traces,
 status notices and explicit assertion results. The temporary VM disk and SSH key
 are deleted after shutdown, including failures. Logs may contain the public test
 password's key events, so never adapt this fixture to personal credentials.
