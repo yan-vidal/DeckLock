@@ -35,8 +35,6 @@ printf 'locktest:DeckLock-test-42\n' | chpasswd
 # runuser bypasses login authentication: initialize the user-owned tally as a
 # privileged initial login normally would, without inventing binary tally data.
 faillock --user locktest --reset
-runtime=/run/user/$(id -u locktest)
-install -d -o locktest -g locktest -m 700 "$runtime"
 install -d -o locktest -g locktest /var/tmp/decklock-evidence
 cp $fixture/*.py /var/tmp/decklock-evidence/
 chmod a+r /var/tmp/decklock-evidence/*.py
@@ -73,4 +71,22 @@ sha256sum /home/locktest/candidate-config.toml > /var/tmp/decklock-evidence/conf
 $REINSTALL_CANDIDATE $fixture/$CANDIDATE_GLOB
 sha256sum --check /var/tmp/decklock-evidence/config-before.sha256
 printf 'PASS: candidate reinstallation preserves user configuration on %s\n' "$target"
-runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" dbus-run-session -- python3 /var/tmp/decklock-evidence/exercise.py
+# Whether the stack /etc/pam.d/decklock includes counts failures is that
+# distribution's policy, so it is read from configuration here and exercise.py
+# asserts PAM's behavior against it. Deriving it from the observed tally would
+# make the assertion tautological. Only Arch wires pam_faillock into its default
+# auth stack; Fedora keeps it an opt-in authselect feature and Ubuntu omits it.
+included=$(awk '$1 == "auth" && $2 == "include" {print $3; exit}' /etc/pam.d/decklock)
+[[ -n $included && -f /etc/pam.d/$included ]]
+if grep -qE '^[[:space:]]*-?auth[[:space:]].*pam_faillock\.so' "/etc/pam.d/$included"; then
+    stack_faillock=1
+else
+    stack_faillock=0
+fi
+printf 'decklock includes %s; default stack counts failures: %s\n' "$included" "$stack_faillock" \
+    > /var/tmp/decklock-evidence/stack-policy.txt
+runtime=/run/user/$(id -u locktest)
+install -d -o locktest -g locktest -m 700 "$runtime"
+runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
+    DECKLOCK_STACK_FAILLOCK="$stack_faillock" \
+    dbus-run-session -- python3 /var/tmp/decklock-evidence/exercise.py
