@@ -12,7 +12,18 @@ target="${1:?Pass the distribution target, matching a distros/<target>.env manif
 # shellcheck source=/dev/null
 source "$fixture/$target.env"
 export LC_ALL=C
-trap 'journalctl -b --no-pager > /var/tmp/decklock-evidence/journal.log' EXIT
+# Recorded on exit, so a failure is diagnosable without another CI round trip.
+# A guest's mandatory access control is part of the environment being tested:
+# SELinux denials go to the audit log, not the journal, so both are collected.
+collect_evidence() {
+    local out=/var/tmp/decklock-evidence
+    journalctl -b --no-pager > "$out/journal.log" 2>&1 || true
+    command -v getenforce >/dev/null && getenforce > "$out/selinux.txt" 2>&1 || true
+    [[ -r /var/log/audit/audit.log ]] && grep -a 'avc:' /var/log/audit/audit.log > "$out/avc.log" 2>&1 || true
+    command -v ausearch >/dev/null && ausearch -m AVC -ts boot > "$out/ausearch.log" 2>&1 || true
+    true
+}
+trap collect_evidence EXIT
 cloud-init status --wait
 [[ -z $PRE_SYNC ]] || $PRE_SYNC
 # shellcheck disable=SC2086
