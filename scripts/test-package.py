@@ -13,25 +13,40 @@ import tempfile
 root=Path(__file__).resolve().parent.parent
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary',type=Path,required=True)
+# Each target keeps its own archive name, PAM stack and recipe; nothing is shared
+# between distributions beyond the payload itself.
+TARGETS={
+    'arch':{'slug':'linux','recipe':'PKGBUILD','include':'system-auth',
+            'markers':["backup=('etc/pam.d/decklock')",'"$pkgdir/etc/pam.d/decklock"']},
+    'fedora':{'slug':'fedora','recipe':'decklock.spec','include':'system-auth',
+              'markers':['%config(noreplace) %{_sysconfdir}/pam.d/decklock',
+                         'install -Dm644 pam/decklock %{buildroot}%{_sysconfdir}/pam.d/decklock',
+                         '%global debug_package %{nil}']},
+}
+parser.add_argument('--target',choices=sorted(TARGETS),default='arch')
 args=parser.parse_args()
+target=TARGETS[args.target]
 binary=args.binary.resolve()
 subprocess.run(['python3', str(root/'scripts/test-release.py')], check=True)
 with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
     temp=Path(directory)
-    subprocess.run(['python3',str(root/'scripts/package-release.py'),'--binary',str(binary),'--output',str(temp)],check=True)
+    subprocess.run(['python3',str(root/'scripts/package-release.py'),'--binary',str(binary),'--output',str(temp),'--target',args.target],check=True)
     archive=next(temp.glob('decklock-*.tar.gz'))
     expected=(temp/'SHA256SUMS').read_text().split()[0]
     assert hashlib.sha256(archive.read_bytes()).hexdigest()==expected
-    assert expected in (temp/'PKGBUILD').read_text()
+    recipe=(temp/target['recipe']).read_text()
+    assert expected in recipe
     unpack=temp/'unpack';unpack.mkdir()
     with tarfile.open(archive) as tar:
         assert all(not Path(m.name).is_absolute() and '..' not in Path(m.name).parts and not m.issym() and not m.islnk() for m in tar.getmembers())
         tar.extractall(unpack,filter='data')
-    # The PKGBUILD's package() reads $srcdir/<name>/, so the archive root name is
-    # part of the contract, not an implementation detail.
+    # The recipes read the archive root by name -- $srcdir/<name>/ for makepkg and
+    # %setup -n <name> for rpmbuild -- so it is part of the contract, not an
+    # implementation detail. Arch keeps the already-published spelling.
     version=tomllib.loads((root/'Cargo.toml').read_text())['package']['version']
-    assert [p.name for p in unpack.iterdir()]==[f'decklock-{version}-linux-x86_64'],[p.name for p in unpack.iterdir()]
-    stage=unpack/f'decklock-{version}-linux-x86_64'
+    expected_root=f'decklock-{version}-{target["slug"]}-x86_64'
+    assert [p.name for p in unpack.iterdir()]==[expected_root],[p.name for p in unpack.iterdir()]
+    stage=unpack/expected_root
     executable=stage/'bin/decklock'
     assert executable.stat().st_mode&0o111
     assert executable.read_bytes()==binary.read_bytes()
@@ -44,12 +59,16 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
     for path in (root/'docs/guide').rglob('*.md'):
         assert (stage/'share/doc/decklock/guide'/path.relative_to(root/'docs/guide')).read_bytes() == path.read_bytes()
     assert (stage/'share/doc/decklock/CHANGELOG.md').read_bytes() == (root/'CHANGELOG.md').read_bytes()
-    assert (stage/'pam/decklock').read_bytes()==(root/'packaging/arch/pam/decklock').read_bytes()
-    assert 'auth     include  system-auth' in (stage/'pam/decklock').read_text()
-    assert "backup=('etc/pam.d/decklock')" in (temp/'PKGBUILD').read_text()
-    assert '"$pkgdir/etc/pam.d/decklock"' in (temp/'PKGBUILD').read_text()
+    assert (stage/'pam/decklock').read_bytes()==(root/f'packaging/{args.target}/pam/decklock').read_bytes()
+    assert f'auth     include  {target["include"]}' in (stage/'pam/decklock').read_text()
+    for marker in target['markers']:
+        assert marker in recipe, marker
     manifest=json.loads((stage/'BUILD-INFO.json').read_text())
     assert manifest['source_commit']==subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip()
+    # The baseline is recorded from the build environment, never copied between
+    # distributions; packaging/README.md requires each target to record its own.
+    assert manifest['distribution'] and manifest['distribution']!='?',manifest
+    assert manifest['required_libraries'],manifest
     env=os.environ.copy()
     for key in ['DISPLAY','WAYLAND_DISPLAY','WAYLAND_SOCKET','DBUS_SESSION_BUS_ADDRESS']:env.pop(key,None)
     env.update(XDG_CONFIG_HOME=str(temp/'config'),XDG_DATA_HOME=str(temp/'data'))
@@ -65,4 +84,4 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
     before=config.read_bytes()
     cli(['--config',str(config),'config','set','idle_seconds','0'],False)
     assert config.read_bytes()==before
-    print('PASS: archive checksums, safe paths, source provenance, original media, launcher and packaged CLI')
+    print(f'PASS[{args.target}]: archive checksums, safe paths, source provenance, recorded baseline, original media, launcher and packaged CLI')

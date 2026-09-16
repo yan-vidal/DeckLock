@@ -1,18 +1,49 @@
-name: Arch package
+name: Distribution package
 on:
   workflow_call:
+    inputs:
+      target:
+        description: Packaging target understood by scripts/package-release.py
+        required: true
+        type: string
+      image:
+        description: Container image digest for that distribution's build stack
+        required: true
+        type: string
+      label:
+        description: >
+          Display name for this job. It forms the status check context
+          "<caller job> / <label> package contract", which the repository's
+          mainProtect ruleset requires by exact string. Renaming it removes a
+          required check and blocks every pull request, so keep Arch's spelling.
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
   build:
-    name: Arch package contract
+    name: ${{ inputs.label }} package contract
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
-      image: archlinux:base-devel@sha256:84cd9ef000b3cff245ec028e87965b84724f4bf1cc63fc2741ba927b88515ed6
+      image: ${{ inputs.image }}
     steps:
-      - name: Arch build dependencies
-        run: pacman -Syu --noconfirm --needed git rust python gtk4 gtk4-layer-shell gstreamer gst-plugins-base gst-plugins-good gst-libav pam
+      - name: Build dependencies
+        run: |
+          case "${{ inputs.target }}" in
+          arch)
+            pacman -Syu --noconfirm --needed git rust python gtk4 gtk4-layer-shell gstreamer gst-plugins-base gst-plugins-good gst-libav pam
+            ;;
+          fedora)
+            dnf install -y git rust cargo python3 gcc pkgconf-pkg-config rpm-build shadow-utils \
+              gtk4-devel gtk4-layer-shell-devel gstreamer1-devel gstreamer1-plugins-base-devel \
+              gstreamer1-plugins-good gstreamer1-libav pam-devel
+            ;;
+          *)
+            echo "Unknown packaging target: ${{ inputs.target }}" >&2
+            exit 1
+            ;;
+          esac
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
@@ -20,14 +51,16 @@ jobs:
         run: |
           useradd --create-home builder
           chown -R builder "$GITHUB_WORKSPACE"
-          runuser -u builder -- scripts/ci-build-package
+          runuser -u builder -- scripts/ci-build-package "${{ inputs.target }}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: arch-package
+          name: ${{ inputs.target }}-package
           path: |
             dist/*.pkg.tar.zst
+            dist/*.rpm
             dist/*.tar.gz
             dist/PKGBUILD
+            dist/decklock.spec
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
