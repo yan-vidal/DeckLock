@@ -256,8 +256,14 @@ fn locking_refuses_and_names_the_file_when_the_configured_pam_service_is_absent(
     // The configuration error the user can fix is reported ahead of the
     // environment, which also keeps this assertion reachable with no compositor
     // and no display present.
+    // Read from the catalog rather than repeating the wording here, so rewording
+    // the refusal cannot quietly turn this into an assertion that always passes.
+    let unsupported = include_str!("../locales/en-US.ftl")
+        .lines()
+        .find_map(|line| line.strip_prefix("unsupported = "))
+        .expect("the English catalog defines the unsupported-compositor refusal");
     assert!(
-        !stderr.contains("does not support session locking"),
+        !stderr.contains(unsupported),
         "the PAM preflight must run before the compositor gate: {stderr}"
     );
 }

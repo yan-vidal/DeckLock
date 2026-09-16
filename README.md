@@ -10,6 +10,23 @@ Optional controller support includes devices such as the Steam Deck.
 
 ![DeckLock — keyboard, password visibility and power tooltips](docs/assets/demo.gif)
 
+## Which desktops work
+
+DeckLock locks the screen through `ext-session-lock-v1`, a Wayland protocol that
+lets another program provide the lock screen. Only compositors that implement it
+can use DeckLock.
+
+| | Desktops |
+|---|---|
+| **Tested** | Sway, exercised by the automated virtual-machine test on Arch, Fedora and Ubuntu |
+| **Expected to work** | Hyprland, niri, river, Wayfire, Labwc, COSMIC and other compositors with the protocol |
+| **Not supported** | GNOME, KDE Plasma and X11 sessions |
+
+**Why not GNOME or KDE Plasma?** Both draw their own lock screen inside the desktop
+and do not let another program replace it, so there is nothing for DeckLock to
+connect to. On them DeckLock refuses to lock and says so, rather than locking in a
+way that would not be safe. Use the desktop's own lock screen there.
+
 ## Install
 
 ### Arch Linux · x86_64
@@ -38,8 +55,7 @@ decklock --settings
 ### Other Linux distributions
 
 DeckLock is not tied to Arch. It needs GTK4, GStreamer, Linux-PAM and
-`gtk4-layer-shell` 1.3+, plus a Wayland compositor supporting `ext-session-lock-v1`
-for real locking. X11 is not supported.
+`gtk4-layer-shell` 1.2+, and one of the [desktops that work](#which-desktops-work).
 
 The 0.2.0 prebuilt archive targets the current **Arch x86_64** library stack; it is
 not a universal Linux binary. Packages for other distributions and architectures
