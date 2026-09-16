@@ -1,17 +1,44 @@
 # Real Wayland/PAM integration VM
 
-The guest uses the installed Arch package, unmodified Sway and real Linux-PAM
-modules. It complements the small mock protocol and unit tests; it does not
-replace them or establish compatibility with every compositor and PAM policy.
+The guest uses that distribution's installed package, unmodified Sway and real
+Linux-PAM modules. It complements the small mock protocol and unit tests; it does
+not replace them or establish compatibility with every compositor and PAM policy.
+
+One target per distribution, each with its own pinned cloud image and its own
+candidate package:
+
+| Target | Image | Candidate |
+|---|---|---|
+| `arch` | Arch cloud image | `.pkg.tar.zst` |
+| `fedora` | Fedora Cloud Base Generic 43 | `.rpm` |
+| `ubuntu` | Ubuntu 26.04 server cloudimg | `.deb` |
+
+Sway 1.11 and wtype 0.4 are packaged on all three, so the assertions in
+`scripts/vm/exercise.py` are shared and unchanged. Only provisioning varies, as
+data in `scripts/vm/distros/<target>.env`: the package manager commands, the
+harness package names, the reinstall command and which `/etc/pam.d` files to
+record. A plain install of an already-installed version is a no-op on dnf and
+apt, so each target names its own reinstall command; otherwise the
+reinstall-preserves-configuration assertion would pass without reinstalling.
+
+Neither Fedora nor Ubuntu ships a compositor implementing `ext-session-lock-v1`,
+so each guest installs Sway. That is a property of the test rig, not a
+recommendation: it is how the lock path is exercised at all on those guests.
 
 Run from the repository on an x86_64 Linux host with KVM, at least 3 GiB available
 RAM, QEMU, qemu-img, genisoimage, curl and OpenSSH:
 
 ```sh
-python3 scripts/test-vm.py --package /path/to/decklock-0.2.0-1-x86_64.pkg.tar.zst
+python3 scripts/test-vm.py --target arch --package /path/to/decklock-0.2.0-1-x86_64.pkg.tar.zst
 ```
 
-Obtain the candidate from the `arch-package` artifact of the intended CI run.
+`qemu-img` must be 6.0 or newer. A much older copy ahead of the system one on
+`PATH`, for instance from a bundled Android SDK, is refused by name rather than
+left to fail later in a way that looks like a guest problem.
+
+Obtain the candidate from that target's `<target>-package` artifact of the
+intended CI run; the target and the package suffix must agree or the runner
+refuses to start.
 Verify its SHA256SUMS before running. The runner records the package hash; the
 installed package includes its original BUILD-INFO.json source provenance.
 
@@ -36,21 +63,50 @@ Wayland protocol traces independently confirm ownership and unlock requests.
 AT-SPI reads the status label through the ordinary accessibility interface; the
 application contains no test authentication override or unlock backdoor.
 
+The test runs inside a real user manager rather than a `dbus-run-session`
+bus: provisioning enables linger, waits for logind's session bus, and runs
+against it. This matters on Fedora, the one target enforcing SELinux. Under
+`dbus-run-session` the bus daemon runs as `unconfined_dbusd_t` and must exec
+the AT-SPI launcher itself, a transition to `gnome_atspi_t` that policy does not
+authorize for the `unconfined_r` role, so execution is denied. With a user
+manager, `org.a11y.Bus` activates through its `SystemdService=` line, as it does
+on a desktop login. SELinux stays enforcing, so the gate keeps exercising the
+environment Fedora users have. That denial is recorded as a `SELINUX_ERR`, not
+an AVC, so searching audit records for AVC denials alone does not find it.
+
 Because runuser bypasses the initial login, provisioning initializes the user-owned
 tally with the real faillock utility before running the locker. No tally records
 are fabricated.
 
 The ordinary test uses the default `decklock` service installed by the candidate
-package, so it exercises the policy real users receive. A separate
+package, so each target exercises its own authentication stack: `system-auth` on
+Arch and Fedora, `common-auth` and `common-account` on Ubuntu.
+
+Whether that stack counts failed passwords is the distribution's policy, and
+they differ. Only Arch wires `pam_faillock` into its default stack; Fedora keeps
+it an opt-in `authselect` feature and Ubuntu omits it. Provisioning reads this
+from configuration and the test asserts PAM's behavior against it -- exactly one
+recorded failure on Arch, none on Fedora or Ubuntu -- so the gate verifies each
+distribution's real policy rather than assuming Arch's. The expectation is never
+derived from the observed tally, which would make the check tautological. A
+consequence for users: with a stock configuration the lock-screen lockout notice
+can only appear on Arch.
+
+A separate
 **guest-only** service loads real pam_unix and pam_faillock with a short known
 lockout policy to test lockout messages and expiry without waiting ten minutes.
 This fixture is not installed by the DeckLock package and does not change the
 application's default service or the host's policy.
 
-Evidence is written under `target/vm-logs`: host memory samples, package/image
-hashes, guest package versions and PAM configuration, compositor/client traces,
-status notices and explicit assertion results. The temporary VM disk and SSH key
-are deleted after shutdown, including failures. Logs may contain the public test
+Evidence is written under `target/vm-logs`: the target name, host memory samples,
+package/image hashes, guest package versions, the manifest used, the installed
+`/etc/pam.d/decklock` and the distribution's own PAM configuration, compositor/client traces,
+status notices, explicit assertion results, the guest's SELinux mode with its
+audit denials, and the failure-counting policy read from the stack. The temporary
+VM disk and SSH key are deleted after shutdown, including failures. They live
+under `.deps/vm-cache` rather than `/tmp`: the copy-on-write overlay grows with
+every guest write, and `/tmp` is tmpfs by default on Arch and Fedora, where that
+growth would be host memory rather than disk. Logs may contain the public test
 password's key events, so never adapt this fixture to personal credentials.
 
 The image checksum pins the base, not every guest runtime package: Arch mirrors

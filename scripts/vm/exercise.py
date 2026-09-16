@@ -129,7 +129,11 @@ try:
     assert len(text('probe-keys').splitlines()) == count, 'Input escaped to the underlying client'
     tally = run(['faillock', '--user', 'locktest'])
     (EVIDENCE / 'failed-tally.txt').write_text(tally)
-    assert valid_failures(tally) == 1, ('Real PAM did not record exactly one failed password', tally)
+    # Counting failures is the default stack's policy, read from configuration by
+    # setup.sh; missing is a harness error, so there is deliberately no default.
+    expected = int(os.environ['DECKLOCK_STACK_FAILLOCK'])
+    assert valid_failures(tally) == expected, (
+        f'Real PAM recorded {valid_failures(tally)} failed password(s); the default stack expects {expected}', tally)
     record('wrong password denied by real PAM; underlying client receives no input')
     submit('DeckLock-test-42')
     until(lambda: client.poll() is not None, 'correct password unlocks and exits', seconds=35)
