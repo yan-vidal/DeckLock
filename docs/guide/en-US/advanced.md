@@ -6,7 +6,7 @@ This chapter introduces the implementation for curious users and contributors. I
 
 Rust owns configuration, application state, keyboard logic and rendering orchestration. GTK4 builds ordinary settings/preview windows and the lock-screen widgets. CSS styles GTK widgets; TOML describes validated layout and configuration. Themes cannot run scripts. Lua/plugins are not implemented.
 
-The actual locker uses gtk4-session-lock and the compositor's ext-session-lock-v1 protocol. Ordinary window decorations belong only to settings, editors, help and preview. X11 lock support is not implemented.
+The actual locker uses gtk4-session-lock and the compositor's ext-session-lock-v1 protocol. Ordinary window decorations belong only to settings, editors, help and preview. A build with the optional `x11` feature, which no published package enables, adds an X11 backend: an override-redirect window per monitor plus keyboard and pointer grabs. It provides neither of the guarantees the Wayland path does, and says so on the lock screen: any other program in the session can read what is typed, and the session unlocks if DeckLock stops.
 
 ## Authentication boundary
 

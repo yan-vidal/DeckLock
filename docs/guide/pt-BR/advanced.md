@@ -6,7 +6,7 @@ Este capítulo apresenta a implementação para pessoas curiosas e colaboradores
 
 Rust controla configuração, estado da aplicação, lógica do teclado e coordenação da renderização. GTK4 constrói as janelas de configurações/preview e os widgets da tela de bloqueio. CSS estiliza widgets GTK; TOML descreve layout e configuração validados. Temas não executam scripts. Lua/plugins ainda não foram implementados.
 
-O bloqueador real usa gtk4-session-lock e o protocolo ext-session-lock-v1 do compositor. Decorações comuns pertencem apenas às configurações, editores, ajuda e preview. Não há bloqueio para X11.
+O bloqueador real usa gtk4-session-lock e o protocolo ext-session-lock-v1 do compositor. Decorações comuns pertencem apenas às configurações, editores, ajuda e preview. Uma compilação com a feature opcional `x11`, que nenhum pacote publicado ativa, acrescenta um backend X11: uma janela override-redirect por monitor mais captura de teclado e mouse. Ele não oferece nenhuma das duas garantias do caminho Wayland, e avisa isso na própria tela: qualquer outro programa da sessão consegue ler o que é digitado, e a sessão desbloqueia se o DeckLock parar.
 
 ## Limite da autenticação
 
