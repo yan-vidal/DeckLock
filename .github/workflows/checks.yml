@@ -17,10 +17,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      # xfwm4, xset and the Xtst/Xi/Xss client libraries belong to the X11 lock
+      # gate: a window manager that moves focus, a screen blank, and the helper
+      # that plays the part of another client in the session.
       - name: Native test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-gl libpam0g-dev libwayland-dev wayland-protocols libxkbcommon-dev meson ninja-build xvfb xauth dbus-x11
+          sudo apt-get install -y libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-gl libpam0g-dev libwayland-dev wayland-protocols libxkbcommon-dev meson ninja-build xvfb xauth dbus-x11 xfwm4 x11-xserver-utils libxss-dev libxtst6 libxi6
       - name: Pinned Rust toolchain
         run: |
           rustup toolchain install 1.93.0 --profile minimal --component rustfmt --component clippy

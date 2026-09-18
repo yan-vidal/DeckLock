@@ -26,7 +26,8 @@ impl Session {
         }
     }
 
-    /// Called only after the compositor confirms ownership of the session lock.
+    /// Called only after the backend holds the lock: compositor ownership on
+    /// Wayland, the keyboard and pointer grabs on X11.
     pub fn mark_locked(&mut self) -> bool {
         if self.state != State::Waiting {
             return false;

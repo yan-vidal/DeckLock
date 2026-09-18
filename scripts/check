@@ -51,6 +51,7 @@ with tempfile.TemporaryDirectory(prefix='decklock-check-') as temporary:
     cargo=str(ROOT/'scripts/cargo-local')
     step('format',[cargo,'fmt','--all','--','--check'],env)
     step('clippy',[cargo,'clippy','--locked','--offline','--all-targets','--','-D','warnings'],env)
+    step('clippy-x11',[cargo,'clippy','--locked','--offline','--all-targets','--features','x11','--target-dir','target/x11','--','-D','warnings'],env)
     step('rust-tests',[cargo,'test','--locked','--offline'],env)
     step('build-examples',[cargo,'build','--locked','--offline','--examples','--bin','decklock'],env)
     step('package-contract',[sys.executable,'scripts/test-package.py','--binary','target/debug/decklock'],env)
@@ -58,4 +59,6 @@ with tempfile.TemporaryDirectory(prefix='decklock-check-') as temporary:
     if args.all:
         step('isolated-gtk',['xvfb-run','-a','-s','-screen 0 1280x800x24 -nolisten tcp','dbus-run-session','--',sys.executable,'scripts/test-gui-isolated.py'],env,240)
         step('wayland-protocol',[sys.executable,'scripts/test-lock-isolated.py'],env,60)
+        step('build-x11',[cargo,'build','--locked','--offline','--features','x11','--target-dir','target/x11','--bin','decklock','--example','x11_intruder'],env)
+        step('x11-lock',[sys.executable,'scripts/test-lock-x11.py'],env,240)
 print(f'PASS: {len(results)} gates. Evidence: {logs}',flush=True)
