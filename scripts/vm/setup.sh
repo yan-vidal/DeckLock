@@ -17,6 +17,11 @@ export LC_ALL=C
 # SELinux denials go to the audit log, not the journal, so both are collected.
 collect_evidence() {
     local out=/var/tmp/decklock-evidence
+    # The directory may not exist yet: a failure during provisioning is exactly
+    # when this evidence is worth the most.
+    mkdir -p "$out"
+    cp /var/tmp/cloud-init-status.txt "$out/" 2>/dev/null || true
+    cp /var/log/cloud-init.log "$out/" 2>/dev/null || true
     journalctl -b --no-pager > "$out/journal.log" 2>&1 || true
     command -v getenforce >/dev/null && getenforce > "$out/selinux.txt" 2>&1 || true
     [[ -r /var/log/audit/audit.log ]] && grep -a 'avc:' /var/log/audit/audit.log > "$out/avc.log" 2>&1 || true
@@ -24,7 +29,7 @@ collect_evidence() {
     true
 }
 trap collect_evidence EXIT
-cloud-init status --wait
+bash "$fixture/cloud-init-ready.sh" /var/tmp/cloud-init-status.txt
 [[ -z $PRE_SYNC ]] || $PRE_SYNC
 # shellcheck disable=SC2086
 $SYNC_AND_INSTALL $HARNESS_PACKAGES
