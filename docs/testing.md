@@ -21,13 +21,19 @@ fail-closed termination. It runs once per target -- Arch, Fedora and Ubuntu --
 each in its own pinned cloud image, so a distribution's authentication stack is
 exercised rather than assumed. See [VM testing](vm-testing.md) for the command,
 isolation and evidence. It runs after packaging in CI; `scripts/check --all`
-remains the eight lightweight gates.
+remains the lightweight gates listed by `target/check-logs/results.json`.
 
 Run `cargo fetch --locked` (or `scripts/cargo-local fetch --locked`) and
 `scripts/bootstrap-native --tests` first. Full GTK checks require `xvfb-run`, Xvfb,
 xauth and `dbus-run-session`, in addition to the normal build dependencies/codecs.
 On Arch these are provided by `xorg-server-xvfb`, `xorg-xauth` and `dbus`.
-Missing tools fail the gate; none of the required suites silently skip.
+The X11 lock gate additionally needs `xfwm4` as the window manager, `xset` from
+`xorg-xset`/`x11-xserver-utils`, and the Xtst, Xi and Xss client libraries used by
+its helper. Missing tools fail the gate; none of the required suites silently skip.
+
+The optional `x11` feature is off by default and is not built into the published
+packages. `scripts/check` lints and builds it anyway, into `target/x11` so the
+package contract keeps checking a feature-free binary.
 
 The gate creates private HOME, XDG config/data/cache/runtime directories and clears
 the inherited desktop sockets. Cargo/Rustup caches remain usable. Logs and exit
@@ -52,6 +58,8 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | GTK settings | `examples/settings_check.rs`, `settings_live_check.rs` | Theme contrast providers, language, preview identity, idle clock, draft errors/persistence, cleanup |
 | Media | `src/library.rs`, invariants, `media_check`, `video_live_check` | Seeded photo/video selection, imports without overwrites, viewer reuse, video retained on palette changes |
 | Lock protocol | `scripts/test-lock-isolated.py` | Ownership, output hotplug/remove/re-add, SIGTERM without unlock, second-lock refusal |
+| X11 lock backend | `scripts/test-lock-x11.py`, `examples/x11_intruder` | Override-redirect window covering the screen, grabs another client cannot take, stacking and focus recovered from an intruding window, blank/wake, refusal when the keyboard cannot be grabbed, and the two gaps X11 leaves |
+| Reduced-guarantee notice | `examples/guarantee_check.rs` | Catalog text, silence when a backend keeps its guarantees, and a theme that cannot hide it |
 | Package boundary | `scripts/test-package.py`, Arch package CI | Archive paths/checksums, executable identity, original media, settings launcher and actual packaged CLI |
 
 Counts are not a coverage target. Add a contract test when a behavior can break;
@@ -100,11 +108,23 @@ round trips and a private GTK contract for texture updates, bounded dimensions,
 unmap/drop cleanup, library/pool selection, per-item eye/gear drafts, settings saves and rest preview. Rendering performance and
 battery use on physical GPUs still require measurement.
 
+### X11 backend boundaries
+
+The X11 gate runs against Xvfb, which has one fixed screen and no DPMS extension,
+so three parts of the backend are exercised by nothing here: real monitor power
+management, switching virtual terminals, and monitors added, removed or resized
+while locked. The last one has its bookkeeping tested as a pure function in
+`src/lock.rs`; the GDK signals that feed it are not. Only `xfwm4` stands in for a
+window manager, and the gate types no password into PAM. These belong to manual
+validation on a real Xorg session, on the list below.
+
 ## Manual validation still required
 
 The VM exercises real PAM and Sway with controlled guest policies. Other PAM
 stacks, suspend/hibernate integration, other compositors, controller recovery/haptics, accessibility,
-real-device ergonomics and visual quality need explicit UAT. Use a recoverable
+real-device ergonomics and visual quality need explicit UAT. For the X11 backend,
+add a real Xorg session: authentication through PAM, monitor power-down and wake,
+VT switching, several monitors and hotplug, and window managers other than xfwm4. Use a recoverable
 test environment for session-lock/PAM work. Never use an active desktop or actual
 power actions as an agent's automatic test target.
 

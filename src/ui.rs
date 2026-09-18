@@ -28,6 +28,8 @@ pub struct View {
     pub window: gtk::ApplicationWindow,
     pub entry: gtk::Entry,
     pub status: gtk::Label,
+    /// States a reduced backend guarantee. Empty and hidden on Wayland.
+    pub guarantee: gtk::Label,
     pub submit: gtk::Button,
     pub keyboard: gtk::Box,
     pub controller_event: Rc<dyn Fn(ControllerEvent)>,
@@ -94,6 +96,19 @@ impl View {
         assert!(self.preview, "Idle override is only available in preview");
         self.forced_idle.set(Some(idle));
     }
+    /// States on the lock screen itself what this backend does not protect.
+    /// Called at lock time, so a user who configured DeckLock under Wayland and
+    /// later logs into an X11 session is told rather than silently downgraded.
+    pub fn warn_about(&self, guarantees: &crate::lock::Guarantees) {
+        let text = guarantee_text(guarantees, &self.settings.strings);
+        if text.is_empty() {
+            return;
+        }
+        self.guarantee.set_text(&text);
+        self.guarantee.set_visible(true);
+        pin_guarantee_style();
+    }
+
     /// Report a rejected attempt, adding whatever PAM told us about a lockout.
     /// The notice is advice only: input stays enabled, because PAM decides when
     /// an attempt is accepted and this countdown is merely repeating its word.
@@ -183,6 +198,46 @@ pub fn apply_css(css: &str) -> Result<(), String> {
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
     Ok(())
+}
+
+/// What a backend does not protect, in the user's language. Empty when the
+/// backend keeps every guarantee, which is the Wayland case.
+pub(crate) fn guarantee_text(guarantees: &crate::lock::Guarantees, strings: &I18n) -> String {
+    let mut lines = Vec::new();
+    if !guarantees.isolates_input {
+        lines.push(strings.text("guarantee-input-exposed"));
+    }
+    if !guarantees.survives_process_exit {
+        lines.push(strings.text("guarantee-dies-with-process"));
+    }
+    lines.join(" ")
+}
+
+/// A theme must not be able to suppress the guarantee notice. Themes are CSS
+/// loaded at APPLICATION priority, so these rules go in at USER priority, which
+/// wins, and pin every property a stylesheet could use to make the label
+/// invisible: transparency, size, spacing and colors.
+pub(crate) fn pin_guarantee_style() {
+    thread_local! {
+        static PINNED: Cell<bool> = const { Cell::new(false) };
+    }
+    if PINNED.with(|pinned| pinned.replace(true)) {
+        return;
+    }
+    let Some(display) = gdk::Display::default() else {
+        return;
+    };
+    let provider = gtk::CssProvider::new();
+    provider.load_from_string(
+        "#guarantee { opacity: 1; font-size: 14px; min-height: 18px; min-width: 120px; \
+         margin: 6px; padding: 6px 10px; border-radius: 8px; text-shadow: none; \
+         color: #1b1300; background-color: #f5b301; }",
+    );
+    gtk::style_context_add_provider_for_display(
+        &display,
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_USER,
+    );
 }
 
 fn media_file(path: &Path) -> Option<PathBuf> {
@@ -1012,6 +1067,11 @@ fn build_in(
     let status = gtk::Label::new(None);
     status.set_widget_name("status");
     status.set_wrap(true);
+    let guarantee = gtk::Label::new(None);
+    guarantee.set_widget_name("guarantee");
+    guarantee.set_wrap(true);
+    guarantee.add_css_class("warning");
+    guarantee.set_visible(false);
     let caps = gtk::Label::new(Some(&settings.strings.text("caps-lock")));
     caps.set_widget_name("caps");
     caps.set_visible(false);
@@ -1040,6 +1100,7 @@ fn build_in(
     form.append(&caps);
     form.append(&row);
     form.append(&status);
+    form.append(&guarantee);
     let (keyboard, controller_event) = build_keyboard(&entry, &settings, &status);
     let physical_caps = Rc::new(Cell::new(false));
     let caps_label = caps.downgrade();
@@ -1297,6 +1358,7 @@ fn build_in(
         window,
         entry,
         status,
+        guarantee,
         submit,
         keyboard,
         controller_event,

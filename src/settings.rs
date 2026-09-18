@@ -232,6 +232,20 @@ pub fn build(
     hint.set_wrap(true);
     hint.set_xalign(0.0);
     root.append(&hint);
+    // #17: report the protocol that would lock this session, so a reduced
+    // guarantee is visible here and not only once the screen is already locked.
+    if let Some(protocol) = crate::lock::Protocol::detect() {
+        let notice = crate::ui::guarantee_text(&protocol.guarantees(), &strings);
+        if !notice.is_empty() {
+            let label = gtk::Label::new(Some(&notice));
+            label.set_widget_name("guarantee");
+            label.add_css_class("warning");
+            label.set_wrap(true);
+            label.set_xalign(0.0);
+            crate::ui::pin_guarantee_style();
+            root.append(&label);
+        }
+    }
     let scroll = gtk::ScrolledWindow::builder()
         .vexpand(true)
         .hscrollbar_policy(gtk::PolicyType::Never)

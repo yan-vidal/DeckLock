@@ -20,12 +20,22 @@ can use DeckLock.
 |---|---|
 | **Tested** | Sway, exercised by the automated virtual-machine test on Arch, Fedora and Ubuntu |
 | **Expected to work** | Hyprland, niri, river, Wayfire, Labwc, COSMIC and other compositors with the protocol |
-| **Not supported** | GNOME, KDE Plasma and X11 sessions |
+| **Not supported** | GNOME and KDE Plasma |
+| **Experimental, not in the packages** | X11 sessions, through a backend built with `--features x11` |
+
+**What about X11?** A backend exists and is tested, but it is not compiled into the
+published packages: build DeckLock yourself with `cargo build --release --features x11`
+to use it. X11 gives a weaker lock than Wayland, and the lock screen says so while it
+is up: any other program in the session can read what you type, and if DeckLock stops,
+the screen unlocks. Prefer Wayland where you have it; DeckLock never uses X11 in a
+session that has `ext-session-lock-v1`. Video backgrounds play on the software path
+there, because the bundled GStreamer plugin is built for Wayland only.
 
 **Why not GNOME or KDE Plasma?** Both draw their own lock screen inside the desktop
 and do not let another program replace it, so there is nothing for DeckLock to
 connect to. On them DeckLock refuses to lock and says so, rather than locking in a
-way that would not be safe. Use the desktop's own lock screen there.
+way that would not be safe. Use the desktop's own lock screen there. Their X11 sessions are not a way
+around this: GNOME has removed its X11 session and Plasma is dropping its own.
 
 ## Install
 

@@ -1,6 +1,8 @@
 # X11 lock probe (disposable)
 
-Evidence for the X11 backend design in #15/#16. This is not product code: it
+Evidence for the X11 backend design in #15/#16. The backend built from it lives in
+`src/lock/x11.rs`, and `scripts/test-lock-x11.py` tests that one against the real
+binary; this probe stays as the record of why it is shaped the way it is. This is not product code: it
 never authenticates, and nothing here is built, tested or packaged with DeckLock.
 
 `lock` is a minimal GTK4 window turned into an X11 lock surface. `intruder` is an
