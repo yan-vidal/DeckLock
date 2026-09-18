@@ -20,13 +20,23 @@ implementam podem usar o DeckLock.
 |---|---|
 | **Testado** | Sway, exercitado pelo teste automatizado em máquina virtual no Arch, Fedora e Ubuntu |
 | **Deve funcionar** | Hyprland, niri, river, Wayfire, Labwc, COSMIC e outros compositores com o protocolo |
-| **Sem suporte** | GNOME, KDE Plasma e sessões X11 |
+| **Sem suporte** | GNOME e KDE Plasma |
+| **Experimental, fora dos pacotes** | Sessões X11, por um backend compilado com `--features x11` |
+
+**E o X11?** O backend existe e é testado, mas não vem compilado nos pacotes
+publicados: para usá-lo, compile o DeckLock com `cargo build --release --features x11`.
+O X11 oferece um bloqueio mais fraco que o Wayland, e a tela de bloqueio avisa isso
+enquanto está no ar: qualquer outro programa da sessão consegue ler o que você digita,
+e se o DeckLock parar, a tela desbloqueia. Prefira o Wayland onde houver; o DeckLock
+nunca usa X11 numa sessão que tenha `ext-session-lock-v1`. Os fundos em vídeo rodam
+por software lá, porque o plugin GStreamer embutido é compilado só para Wayland.
 
 **Por que não GNOME nem KDE Plasma?** Os dois desenham a própria tela de bloqueio
 dentro do desktop e não deixam outro programa substituí-la, então não há onde o
 DeckLock se conectar. Neles o DeckLock se recusa a bloquear e avisa, em vez de
 bloquear de um jeito que não seria seguro. Use a tela de bloqueio do próprio
-desktop.
+desktop. As sessões X11 desses desktops não são um contorno: o
+GNOME removeu a sua e o Plasma está abandonando a dele.
 
 ## Instalação
 

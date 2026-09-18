@@ -2,6 +2,19 @@
 
 User-facing changes are reviewed in pull requests. Dates are assigned when a release is approved. Packaging-only rebuilds use Arch pkgrel and a separate -rN tag; published assets are never replaced.
 
+## [Unreleased]
+
+### Added
+
+- Experimental X11 lock backend behind the `x11` Cargo feature, off by default and not built into the published packages. It uses an override-redirect window per monitor plus keyboard and pointer grabs, keeps itself on top and takes X focus back from the window manager, and refuses to lock when it cannot take the keyboard.
+- The lock screen states a reduced guarantee while it is up, and the settings window reports it too: on X11 any other program in the session can read what is typed, and the screen unlocks if DeckLock stops. A theme cannot hide that notice.
+- An X11 lock gate that runs the real binary against a private Xvfb and xfwm4, with a helper playing another client in the session.
+- Under X11, video backgrounds play on the software path: the bundled GStreamer plugin is still built for Wayland only.
+
+### Changed
+
+- The lock is chosen through a `LockBackend` abstraction that states what each protocol guarantees, instead of the Wayland session-lock instance reaching the caller directly. Wayland behavior is unchanged, and a Wayland session is never downgraded to X11.
+
 ## [0.3.0] - 2026-09-16
 
 ### Added
