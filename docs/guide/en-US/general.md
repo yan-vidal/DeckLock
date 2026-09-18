@@ -50,6 +50,17 @@ When PAM reports an account lockout, the screen shows it and, when available, an
 
 None of this is enforced by DeckLock, which only repeats what the system said. When information is missing, the screen stays silent instead of estimating a number. The notices use the `#status.warning` and `#status.locked` selectors, which your theme can style.
 
+Whether anything counts your failures depends on the distribution. Arch Linux counts them out of the box, because `pam_faillock` sits in its `system-auth` stack. Fedora 43 ships the module but leaves it off, and Ubuntu 26.04 does not put it in the stack at all, so on a stock installation of either one no lockout notice ever appears: there is no lockout to report, and a wrong password is simply refused. To count failures there:
+
+```
+# Fedora 43
+sudo authselect enable-feature with-faillock
+# Ubuntu 26.04: add pam_faillock lines to /etc/pam.d/common-auth,
+# as pam_faillock(8) describes
+```
+
+DeckLock does not do this for you. Counting failures and locking accounts is the administrator's policy, and a lock screen that edited your authentication stack would change how every login on the machine behaves.
+
 ## Keyboard and power
 
 Use the physical or virtual keyboard. Shift changes case, double Shift latches Caps Lock, and Alt exposes alternate characters. The eye beside the password toggles its visibility. Optional sc-controller integration uses its external daemon and the embedded keyboard.
@@ -71,4 +82,4 @@ decklock config set procedurals.matrix.speed 1.0
 decklock config unset window_decorations
 ```
 
-Actual lock mode requires a compositor supporting the Wayland session-lock protocol. Test your recovery procedure before relying on this experimental locker for a daily session.
+Actual lock mode requires a compositor supporting the Wayland session-lock protocol, or a build with the optional `x11` feature for an X11 session, which locks with a weaker guarantee that the lock screen states while it is up. Test your recovery procedure before relying on this experimental locker for a daily session.

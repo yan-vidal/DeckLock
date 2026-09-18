@@ -50,6 +50,17 @@ Quando o PAM informa um bloqueio da conta, a tela mostra o aviso e, quando dispo
 
 Nada disso é imposto pelo DeckLock: ele só repete o que o sistema informou. Se faltar informação, a tela fica em silêncio em vez de estimar um número. Os avisos usam os seletores `#status.warning` e `#status.locked`, que o seu tema pode estilizar.
 
+Se alguém conta suas falhas depende da distribuição. O Arch Linux conta desde a instalação, porque o `pam_faillock` está na pilha `system-auth` dele. O Fedora 43 traz o módulo, mas desligado, e o Ubuntu 26.04 não o coloca na pilha, então numa instalação de fábrica de qualquer um dos dois nenhum aviso de conta bloqueada aparece: não há bloqueio a relatar, e a senha errada é apenas recusada. Para contar falhas neles:
+
+```
+# Fedora 43
+sudo authselect enable-feature with-faillock
+# Ubuntu 26.04: acrescente linhas pam_faillock ao /etc/pam.d/common-auth,
+# como descreve o pam_faillock(8)
+```
+
+O DeckLock não faz isso por você. Contar falhas e bloquear contas é política do administrador, e uma tela de bloqueio que editasse a sua pilha de autenticação mudaria o comportamento de todo login da máquina.
+
 ## Teclado e energia
 
 Use o teclado físico ou virtual. Shift altera a caixa das letras, dois toques em Shift mantêm Caps Lock e Alt mostra caracteres alternativos. O olho ao lado da senha alterna sua visibilidade. A integração opcional com sc-controller usa seu daemon externo e o teclado embutido.
@@ -71,4 +82,4 @@ decklock config set procedurals.matrix.speed 1.0
 decklock config unset window_decorations
 ```
 
-O bloqueio real exige um compositor com suporte ao protocolo de bloqueio de sessão do Wayland. Teste seu procedimento de recuperação antes de depender deste bloqueador experimental no uso diário.
+O bloqueio real exige um compositor com suporte ao protocolo de bloqueio de sessão do Wayland, ou uma compilação com a feature opcional `x11` para uma sessão X11, que bloqueia com uma garantia mais fraca e avisa isso na própria tela. Teste seu procedimento de recuperação antes de depender deste bloqueador experimental no uso diário.

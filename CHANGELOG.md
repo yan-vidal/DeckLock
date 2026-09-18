@@ -13,6 +13,8 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 ### Changed
 
+- The offline guide states, per distribution, whether the account-lockout notice can appear at all and how to make the system count failed passwords. On stock Fedora and Ubuntu nothing counts them, so the notice never appears; DeckLock does not change that, because it is the administrator's policy.
+- The offline guide no longer says X11 locking does not exist, and describes what a build with the `x11` feature provides instead.
 - The lock is chosen through a `LockBackend` abstraction that states what each protocol guarantees, instead of the Wayland session-lock instance reaching the caller directly. Wayland behavior is unchanged, and a Wayland session is never downgraded to X11.
 
 ## [0.3.0] - 2026-09-16
