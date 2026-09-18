@@ -1,0 +1,11 @@
+# Disposable probe for #16; not part of the DeckLock build or packages.
+[package]
+name = "x11-lock-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+gtk = { package = "gtk4", version = "0.11", features = ["v4_12"] }
+gdk4-x11 = { version = "0.11", features = ["xlib"] }
+glib = "0.22"

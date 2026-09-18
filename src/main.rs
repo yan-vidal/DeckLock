@@ -222,9 +222,11 @@ fn run(args: Args) -> Result<(), String> {
         }
     }
     gtk::init().map_err(|e| e.to_string())?;
-    if args.lock && !gtk4_session_lock::is_supported() {
-        return Err(strings.text("unsupported"));
-    }
+    let protocol = if args.lock {
+        Some(lock::Protocol::detect().ok_or_else(|| strings.text("unsupported"))?)
+    } else {
+        None
+    };
     ui::apply_css(&theme.css)?;
     let settings = Rc::new(ui::Settings {
         config,
@@ -306,18 +308,16 @@ fn run(args: Args) -> Result<(), String> {
         })
     };
     let exit_code = Rc::new(Cell::new(0));
-    let lock = if args.lock {
-        Some(lock::configure(
+    let lock = protocol.map(|protocol| {
+        protocol.configure(
             &app,
             settings.clone(),
             session.clone(),
             views.clone(),
             submit.clone(),
             exit_code.clone(),
-        ))
-    } else {
-        None
-    };
+        )
+    });
     let app_weak = app.downgrade();
     let result_views = views.clone();
     let result_session = session.clone();
