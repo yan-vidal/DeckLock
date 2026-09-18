@@ -28,8 +28,8 @@ published packages: build DeckLock yourself with `cargo build --release --featur
 to use it. X11 gives a weaker lock than Wayland, and the lock screen says so while it
 is up: any other program in the session can read what you type, and if DeckLock stops,
 the screen unlocks. Prefer Wayland where you have it; DeckLock never uses X11 in a
-session that has `ext-session-lock-v1`. Video backgrounds play on the software path
-there, because the bundled GStreamer plugin is built for Wayland only.
+session that has `ext-session-lock-v1`. That build also gives video backgrounds the
+accelerated path on X11; a Wayland-only build plays them through software there.
 
 **Why not GNOME or KDE Plasma?** Both draw their own lock screen inside the desktop
 and do not let another program replace it, so there is nothing for DeckLock to

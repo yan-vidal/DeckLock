@@ -7,7 +7,10 @@ description = "Customizable Wayland screen locker with an embedded keyboard"
 publish = false
 
 [features]
-x11 = ["dep:gdk4-x11"]
+# The GStreamer sink needs its own X11 GL support, or video on X11 falls back
+# to the software path. Tying it to this feature keeps the Wayland-only
+# packages byte-for-byte unaffected.
+x11 = ["dep:gdk4-x11", "gst-plugin-gtk4/x11egl", "gst-plugin-gtk4/x11glx"]
 
 [dependencies]
 gtk = { package = "gtk4", version = "0.11", features = ["v4_12"] }
@@ -34,6 +37,7 @@ tempfile = "3"
 [[example]]
 name = "x11_intruder"
 required-features = ["x11"]
+
 
 [build-dependencies]
 pkg-config = "0.3"
