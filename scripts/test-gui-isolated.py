@@ -11,9 +11,12 @@ assert 'decklock-check-' in env.get('XDG_RUNTIME_DIR',''), 'Use scripts/check --
 assert env.get('DISPLAY') and env.get('XAUTHORITY'), 'Private Xvfb required'
 assert not env.get('WAYLAND_DISPLAY') and not env.get('WAYLAND_SOCKET')
 env.update(GDK_BACKEND='x11',GSK_RENDERER='cairo',GTK_A11Y='none')
-for name in ['help_check','lockout_check','animation_check','settings_check','settings_live_check','preview_check','media_check','video_live_check','guarantee_check']:
+for name in ['help_check','lockout_check','animation_check','settings_check','settings_live_check','preview_check','media_check','video_live_check','guarantee_check','x11_video_check']:
     command=[str(root/'target/debug/examples'/name)]
     if name=='video_live_check':command.append(str(root/'assets/media/videos/osaka_dotombori.mp4'))
+    # Without the x11 feature the sink has no X11 GL support, so this display
+    # must reach the software path and still deliver frames.
+    if name=='x11_video_check':command+=[str(root/'assets/media/videos/osaka_dotombori.mp4'),'software']
     subprocess.run(command,env=env,check=True,timeout=90)
 subprocess.run(['python3',str(root/'scripts/test-controller-shortcut.py')],env=env,check=True,timeout=30)
 print('PASS: isolated GTK contracts and fake controller shortcut')

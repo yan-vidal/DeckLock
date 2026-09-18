@@ -127,6 +127,7 @@ fn prerolled_frame(
 
 pub struct Playback {
     pipeline: gst::Element,
+    accelerated: bool,
     _watch: gst::bus::BusWatchGuard,
 }
 
@@ -137,10 +138,13 @@ impl Playback {
             .build()
             .map_err(|e| e.to_string())?;
         let paintable = gtk_sink.property::<gdk::Paintable>("paintable");
-        let sink = if paintable
+        // The sink only offers a GL context when it was built for the running
+        // display protocol and GL actually came up. Asking it, rather than
+        // assuming, is what keeps video playing on a software path.
+        let accelerated = paintable
             .property::<Option<gdk::GLContext>>("gl-context")
-            .is_some()
-        {
+            .is_some();
+        let sink = if accelerated {
             gst::ElementFactory::make("glsinkbin")
                 .property("sink", &gtk_sink)
                 .build()
@@ -189,6 +193,7 @@ impl Playback {
         picture.set_paintable(Some(&paintable));
         let playback = Self {
             pipeline,
+            accelerated,
             _watch: watch,
         };
         playback
@@ -196,6 +201,14 @@ impl Playback {
             .set_state(gst::State::Playing)
             .map_err(|e| e.to_string())?;
         Ok(playback)
+    }
+
+    /// Whether this pipeline decodes into the GPU path. False means the sink
+    /// offered no GL context for the running display protocol and video plays
+    /// through the software path, which is what happens on X11 unless the
+    /// `x11` feature builds the sink's X11 GL support in.
+    pub fn accelerated(&self) -> bool {
+        self.accelerated
     }
 }
 

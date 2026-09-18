@@ -59,6 +59,7 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | Media | `src/library.rs`, invariants, `media_check`, `video_live_check` | Seeded photo/video selection, imports without overwrites, viewer reuse, video retained on palette changes |
 | Lock protocol | `scripts/test-lock-isolated.py` | Ownership, output hotplug/remove/re-add, SIGTERM without unlock, second-lock refusal |
 | X11 lock backend | `scripts/test-lock-x11.py`, `examples/x11_intruder` | Override-redirect window covering the screen, grabs another client cannot take, stacking and focus recovered from an intruding window, blank/wake, refusal when the keyboard cannot be grabbed, and the two gaps X11 leaves |
+| Video path on X11 | `examples/x11_video_check.rs`, run by both gates | Frames keep arriving on an X11 display, through the software path without the `x11` feature and the accelerated one with it |
 | Reduced-guarantee notice | `examples/guarantee_check.rs` | Catalog text, silence when a backend keeps its guarantees, and a theme that cannot hide it |
 | Guest provisioning fixture | `scripts/test-vm-fixture.py` | The readiness decision made before a guest is tested, and the cloud-init status recorded with it, checked against a stubbed cloud-init |
 | Package boundary | `scripts/test-package.py`, Arch package CI | Archive paths/checksums, executable identity, original media, settings launcher and actual packaged CLI |
@@ -110,6 +111,10 @@ unmap/drop cleanup, library/pool selection, per-item eye/gear drafts, settings s
 battery use on physical GPUs still require measurement.
 
 ### X11 backend boundaries
+
+Accelerated video on X11 is exercised against Xvfb's software OpenGL, which proves
+the sink takes the GL path and keeps delivering frames, not that a GPU is faster:
+performance on real hardware is still unmeasured.
 
 The X11 gate runs against Xvfb, which has one fixed screen and no DPMS extension,
 so three parts of the backend are exercised by nothing here: real monitor power

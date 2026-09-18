@@ -28,8 +28,9 @@ publicados: para usá-lo, compile o DeckLock com `cargo build --release --featur
 O X11 oferece um bloqueio mais fraco que o Wayland, e a tela de bloqueio avisa isso
 enquanto está no ar: qualquer outro programa da sessão consegue ler o que você digita,
 e se o DeckLock parar, a tela desbloqueia. Prefira o Wayland onde houver; o DeckLock
-nunca usa X11 numa sessão que tenha `ext-session-lock-v1`. Os fundos em vídeo rodam
-por software lá, porque o plugin GStreamer embutido é compilado só para Wayland.
+nunca usa X11 numa sessão que tenha `ext-session-lock-v1`. Essa compilação também dá
+aos fundos em vídeo o caminho acelerado no X11; uma compilação só para Wayland roda
+esses vídeos por software lá.
 
 **Por que não GNOME nem KDE Plasma?** Os dois desenham a própria tela de bloqueio
 dentro do desktop e não deixam outro programa substituí-la, então não há onde o
