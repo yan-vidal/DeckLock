@@ -290,3 +290,11 @@ work and local checks also ran; peak full-memory PSI avg10 2.52%. The VM was
 stopped after the test. Future runs abort on sustained low available memory or
 memory pressure. GPU/controllers/physical power actions and other PAM stacks
 remain separate validation boundaries. No merge, tag or release in this task.
+
+2026-09-19 Phase C completed and Phase D out-of-scope decision: Phase C issues #15-#18
+are closed. X11 lock backend merged behind optional --features x11 (PR #30), accelerated
+video via gst-plugin-gtk4 GLX/EGL merged (PR #32), and per-distribution lockout documentation
+plus X11 guarantee limits merged (PR #33). Phase D (other Unix systems: FreeBSD, OpenBSD,
+NetBSD, #19) closed as not planned by user decision to keep focus on Linux desktop sessions.
+Next: address testing gaps (real PAM on X11 in VM; additional Wayland compositors in VM) and
+packaging for x86_64 and ARM architectures.

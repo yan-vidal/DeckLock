@@ -10,18 +10,38 @@ Optional controller support includes devices such as the Steam Deck.
 
 ![DeckLock — keyboard, password visibility and power tooltips](docs/assets/demo.gif)
 
-## Which desktops work
+## Compatibility
+<a id="which-desktops-work"></a>
 
-DeckLock locks the screen through `ext-session-lock-v1`, a Wayland protocol that
-lets another program provide the lock screen. Only compositors that implement it
-can use DeckLock.
+DeckLock targets modern Linux desktop sessions. Because session locking interacts directly with display protocols and PAM authentication, compatibility depends on your compositor, distribution, and architecture:
 
-| | Desktops |
-|---|---|
-| **Tested** | Sway, exercised by the automated virtual-machine test on Arch, Fedora and Ubuntu |
-| **Expected to work** | Hyprland, niri, river, Wayfire, Labwc, COSMIC and other compositors with the protocol |
-| **Not supported** | GNOME and KDE Plasma |
-| **Experimental, not in the packages** | X11 sessions, through a backend built with `--features x11` |
+### Compositors & Display Servers
+
+| Environment | Status | Security Guarantee | Validation |
+|---|---|---|---|
+| **Sway** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Automated disposable VM (Arch, Fedora 43, Ubuntu 26.04) with real PAM |
+| **Hyprland, niri, river, Wayfire, Labwc, COSMIC** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Protocol compliance; same Wayland backend |
+| **X11 sessions** | ⚠️ Experimental (`--features x11`) | **Reduced** (keystrokes not isolated by protocol; screen unlocks if process dies) | Isolated gate (`Xvfb` + `xfwm4` + intruder probe); accelerated video via GLX/EGL |
+| **GNOME & KDE Plasma** | ❌ Not supported | N/A | Refuses to lock safely (both draw their own internal lock screen) |
+
+### Distributions & Packaging
+
+| Distribution | Prebuilt Package | PAM Service Included | VM Automated Test | Notes |
+|---|---|---|---|---|
+| **Arch Linux** | ✅ `.pkg.tar.zst` | ✅ `/etc/pam.d/decklock` | ✅ Real PAM + faillock | Primary tier |
+| **Fedora 43+** | ✅ `.rpm` | ✅ `/etc/pam.d/decklock` | ✅ Real PAM | Stock install requires `authselect` to enable faillock counting |
+| **Ubuntu 26.04+** | ✅ `.deb` | ✅ `/etc/pam.d/decklock` | ✅ Real PAM | Packages `gtk4-layer-shell >= 1.3` |
+| **Ubuntu 24.04** | ❌ No | — | — | Missing `gtk4-layer-shell` in distribution repositories |
+| **Debian 13** | ❌ Blocked | — | — | Ships `gtk4-layer-shell 1.0.4` (below 1.2 requirement) |
+| **Other Linux** | ⚙️ Build from source | Manual setup | — | Requires GTK 4.22+, GStreamer 1.28+, Linux-PAM, `gtk4-layer-shell >= 1.2` |
+| **BSD (FreeBSD / OpenBSD)** | ❌ Out of scope | — | — | Different auth/power stacks (BSD Auth, OpenPAM without faillock, no systemd) |
+
+### Architectures
+
+| Architecture | Status | Package Availability |
+|---|---|---|
+| **x86_64** (AMD64) | ✅ Supported | Published packages (`.pkg.tar.zst`, `.rpm`, `.deb`, `.tar.gz`) |
+| **aarch64** (ARM64) | 🚧 In progress | Source build supported; release packages in progress |
 
 **What about X11?** A backend exists and is tested, but it is not compiled into the
 published packages: build DeckLock yourself with `cargo build --release --features x11`
@@ -36,6 +56,7 @@ and do not let another program replace it, so there is nothing for DeckLock to
 connect to. On them DeckLock refuses to lock and says so, rather than locking in a
 way that would not be safe. Use the desktop's own lock screen there. Their X11 sessions are not a way
 around this: GNOME has removed its X11 session and Plasma is dropping its own.
+
 
 ## Install
 
