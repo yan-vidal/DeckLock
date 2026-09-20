@@ -1,0 +1,9 @@
+[terminal]
+# The VT to run the greeter on.
+vt = 1
+
+[default_session]
+# DeckLock Wayland greeter running inside cage kiosk compositor.
+# Includes on-screen keyboard by default for touchscreen/Steam Deck login.
+command = "cage -s -- decklock --greeter --keyboard"
+user = "greeter"

@@ -250,6 +250,30 @@ your terminal editor, then select the directory with `decklock config set theme 
 CLI commands change the saved file; reopen an existing lock/preview to load it.
 The visual editor's live preview follows that editor's unsaved controls.
 
+## Login and screen lock automation (`decklock setup`)
+
+DeckLock can serve as your unified login greeter (`greetd`), user-switching screen, and compositor screen locker (`hypridle`), keeping the exact same theme and on-screen keyboard everywhere.
+
+Inspect your system's current integration:
+
+```sh
+decklock setup status
+```
+
+Configure `greetd` to launch DeckLock greeter inside the `cage` kiosk compositor (virtual keyboard enabled by default):
+
+```sh
+sudo decklock setup greeter
+```
+
+Configure `hypridle` to lock using DeckLock:
+
+```sh
+decklock setup lock
+```
+
+Reference configuration templates are installed under `/usr/share/decklock/setup/` (`greetd.toml`, `hypridle.conf`, `decklock.service`). Use `--dry-run` to preview file changes without writing to disk.
+
 ## Keyboard and power controls
 
 Mouse, physical keyboard and optional controller input use the same password

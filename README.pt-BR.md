@@ -251,6 +251,30 @@ no seu editor de terminal e escolha a pasta com `decklock config set theme /cami
 Os comandos alteram o arquivo salvo; reabra um bloqueio/preview existente para
 carregá-lo. O preview ao vivo da interface acompanha os controles não salvos dela.
 
+## Automação de login e bloqueio de tela (`decklock setup`)
+
+O DeckLock pode atuar como interface unificada de login (`greetd`), troca de usuário e bloqueio de sessão do compositor (`hypridle`), mantendo o mesmo tema e o teclado virtual na tela em todas elas.
+
+Inspecione o estado atual de integração do sistema:
+
+```sh
+decklock setup status
+```
+
+Configure o `greetd` para iniciar o greeter do DeckLock dentro do compositor quiosque `cage` (teclado virtual ativado por padrão):
+
+```sh
+sudo decklock setup greeter
+```
+
+Configure o `hypridle` para realizar o bloqueio com o DeckLock:
+
+```sh
+decklock setup lock
+```
+
+Modelos de configuração de referência ficam instalados em `/usr/share/decklock/setup/` (`greetd.toml`, `hypridle.conf`, `decklock.service`). Use `--dry-run` para visualizar o que seria escrito sem alterar os arquivos no disco.
+
 ## Teclado e energia
 
 Mouse, teclado físico e controle opcional usam o mesmo campo de senha. Toque duas

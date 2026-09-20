@@ -38,4 +38,5 @@ mod video_thumbnails;
 
 pub mod faillock;
 pub mod help;
+pub mod setup;
 pub mod window_chrome;

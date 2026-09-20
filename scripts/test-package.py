@@ -57,6 +57,8 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
     assert executable.read_bytes()==binary.read_bytes()
     for path in (root/'assets/media').rglob('*'):
         if path.is_file():assert (stage/'share/decklock/media'/path.relative_to(root/'assets/media')).read_bytes()==path.read_bytes()
+    for path in (root/'packaging/setup').rglob('*'):
+        if path.is_file():assert (stage/'share/decklock/setup'/path.relative_to(root/'packaging/setup')).read_bytes()==path.read_bytes()
     assert 'Exec=decklock --settings' in (stage/'share/applications/io.github.yan_vidal.DeckLock.desktop').read_text()
     assert 'Icon=io.github.yan_vidal.DeckLock' in (stage/'share/applications/io.github.yan_vidal.DeckLock.desktop').read_text()
     for source, installed in [('decklock.svg', 'scalable/apps/io.github.yan_vidal.DeckLock.svg'), ('decklock-symbolic.svg', 'symbolic/apps/io.github.yan_vidal.DeckLock-symbolic.svg')]:
@@ -83,6 +85,8 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
         return result.stdout
     assert 'Usage:' in cli([])
     assert 'set' in cli(['config','--help'])
+    assert 'status' in cli(['setup','--help'])
+    assert 'DeckLock System Integration Status:' in cli(['setup','status'])
     config=temp/'config.toml'
     cli(['--config',str(config),'config','set','layout.padding','48'])
     assert cli(['config','get','layout.padding','--config',str(config)]).strip()=='48'

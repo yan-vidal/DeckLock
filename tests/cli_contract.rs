@@ -62,12 +62,14 @@ fn help_and_read_commands_never_open_a_display_or_write_configuration() {
         vec!["--help"],
         vec!["help"],
         vec!["config", "--help"],
+        vec!["setup", "--help"],
     ] {
         let output = cli.run(&args, true);
         let text = String::from_utf8_lossy(&output.stdout);
         assert!(text.contains("Usage:"));
         if args == ["--help"] {
             assert!(text.contains("--greeter"));
+            assert!(text.contains("setup"));
         }
     }
     cli.config(&["show"], true);
@@ -276,4 +278,54 @@ fn locking_refuses_and_names_the_file_when_the_configured_pam_service_is_absent(
         !stderr.contains(unsupported),
         "the PAM preflight must run before the compositor gate: {stderr}"
     );
+}
+
+#[test]
+fn setup_subcommands_exercise_cli_boundary_and_support_isolated_targets() {
+    let cli = Cli::new();
+    let status = cli.run(&["setup", "status"], true);
+    assert!(
+        String::from_utf8_lossy(&status.stdout).contains("DeckLock System Integration Status:")
+    );
+
+    let target_greetd = cli.home.path().join("greetd-test.toml");
+    let dry_run = cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--dry-run",
+            "--target",
+            target_greetd.to_str().unwrap(),
+        ],
+        true,
+    );
+    assert!(String::from_utf8_lossy(&dry_run.stdout).contains("Dry-run: would write"));
+    assert!(!target_greetd.exists());
+
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target_greetd.to_str().unwrap(),
+        ],
+        true,
+    );
+    assert!(target_greetd.exists());
+    let content = std::fs::read_to_string(&target_greetd).unwrap();
+    assert!(content.contains("cage -s -- decklock --greeter --keyboard"));
+
+    let target_hypridle = cli.home.path().join("hypridle-test.conf");
+    cli.run(
+        &[
+            "setup",
+            "lock",
+            "--target",
+            target_hypridle.to_str().unwrap(),
+        ],
+        true,
+    );
+    assert!(target_hypridle.exists());
+    let lock_content = std::fs::read_to_string(&target_hypridle).unwrap();
+    assert!(lock_content.contains("lock_cmd = pidof decklock || decklock --lock"));
 }
