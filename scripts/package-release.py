@@ -79,6 +79,7 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-') as work:
     share = stage/'share'
     shutil.copytree(root/'assets/media', share/'decklock/media')
     shutil.copytree(root/'themes', share/'decklock/themes')
+    shutil.copytree(root/'packaging/setup', share/'decklock/setup')
     (share/'applications').mkdir()
     shutil.copy2(root/'packaging/decklock.desktop', share/'applications/io.github.yan_vidal.DeckLock.desktop')
     # Do not shadow `name`: it is the archive root the PKGBUILD's package() reads.

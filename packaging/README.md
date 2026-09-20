@@ -22,6 +22,11 @@ Outputs:
   checks the account, and never opens a session. Each distribution needs its own
   (`packaging/<distro>/pam/decklock`); Debian and Ubuntu include `common-auth` and
   `common-account` rather than `system-auth`.
+- `share/decklock/setup`: configuration templates for display managers and lockers:
+  - `greetd.toml`: cage kiosk greeter configuration with on-screen keyboard enabled.
+  - `hypridle.conf`: hypridle configuration for DeckLock screen locking and idle management.
+  - `decklock.service`: systemd user service for lock-session integration.
+  Automated setup and status checks are handled via `decklock setup` (`status`, `greeter`, `lock`, `all`).
 - `PKGBUILD`, `decklock.spec` or `control`: recipe with a checksum for the archive.
   The spec verifies that checksum in `%prep`, the way `sha256sums` does for
   makepkg; for Ubuntu `scripts/ci-build-package` verifies it before assembling the

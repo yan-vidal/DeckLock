@@ -29,6 +29,9 @@ Requires:       gstreamer1-libav
 Requires:       pam
 Recommends:     gstreamer1-plugins-bad-free
 Recommends:     systemd
+Recommends:     greetd
+Recommends:     cage
+Recommends:     hypridle
 
 %description
 DeckLock locks a Wayland session through ext-session-lock-v1, with a native

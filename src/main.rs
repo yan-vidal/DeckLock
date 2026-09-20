@@ -15,7 +15,7 @@ use zeroize::Zeroizing;
 #[command(
     version,
     about = "Customizable Wayland screen locker with graphical and command-line settings.",
-    after_help = "Examples:\n  decklock --settings\n  decklock --preview\n  decklock --greeter\n  decklock --lock\n  decklock config show\n  decklock config set theme_preset catppuccin-mocha\n  decklock config set layout.padding 48\n  decklock config --help"
+    after_help = "Examples:\n  decklock --settings\n  decklock --preview\n  decklock --greeter\n  decklock --lock\n  decklock setup status\n  decklock setup greeter\n  decklock setup lock\n  decklock config show\n  decklock config set theme_preset catppuccin-mocha\n  decklock config set layout.padding 48\n  decklock config --help"
 )]
 struct Args {
     #[command(subcommand)]
@@ -79,6 +79,14 @@ enum Command {
         #[command(subcommand)]
         action: decklock::config_cli::Action,
     },
+    /// Inspect or configure system services for greetd login and screen lock.
+    #[command(
+        after_help = "Examples:\n  decklock setup status\n  sudo decklock setup greeter\n  decklock setup lock\n  sudo decklock setup all"
+    )]
+    Setup {
+        #[command(subcommand)]
+        action: Option<decklock::setup::Action>,
+    },
 }
 
 fn main() {
@@ -138,6 +146,10 @@ fn run(args: Args) -> Result<(), String> {
                 .join(path)
         };
         println!("{}", decklock::config_cli::execute(&path, action)?);
+        return Ok(());
+    }
+    if let Some(Command::Setup { action }) = args.command {
+        println!("{}", decklock::setup::execute(action)?);
         return Ok(());
     }
     if args.toggle_keyboard {

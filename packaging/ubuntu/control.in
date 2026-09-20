@@ -12,7 +12,7 @@ Installed-Size: @SIZE@
 # The GStreamer plugins are loaded through dlopen, so nothing in the binary
 # reveals them and they are declared by hand, as in the other recipes.
 Depends: @DEPENDS@, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-libav, libpam-modules
-Recommends: gstreamer1.0-plugins-bad, systemd
+Recommends: gstreamer1.0-plugins-bad, systemd, greetd, cage, hypridle
 X-Payload-Sha256: @SHA256@
 Description: Customizable Wayland lock screen with GTK4 settings and bundled media
  DeckLock locks a Wayland session through ext-session-lock-v1, with a native
