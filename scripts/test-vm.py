@@ -39,7 +39,7 @@ DISTROS = {
     },
     'ubuntu': {
         'image': 'ubuntu-26.04-server-cloudimg-amd64.img',
-        'sha256': '8196be9d7958059cb56c6c75c80fdf6cee8a8885bc149ea791d7db1c7ef93035',
+        'sha256': '4908fb59ccd4e87ae4e8e973b7ef56f535448eacb24a87fd787270c0048987bc',
         'base': 'https://cloud-images.ubuntu.com/releases/26.04/release/',
         'suffix': '.deb',
     },
