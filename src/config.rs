@@ -25,6 +25,7 @@ pub struct Config {
     pub controller_socket: Option<PathBuf>,
     pub system_keyboard: bool,
     pub window_decorations: bool,
+    pub switch_user_command: Option<String>,
     pub layout: Option<Layout>,
 }
 
@@ -50,6 +51,7 @@ impl Default for Config {
             controller_socket: None,
             system_keyboard: true,
             window_decorations: true,
+            switch_user_command: None,
             layout: None,
         }
     }
@@ -182,6 +184,11 @@ impl Config {
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
         {
             return Err("pam_service must be a service name, not a path".into());
+        }
+        if let Some(cmd) = &self.switch_user_command
+            && cmd.trim().is_empty()
+        {
+            return Err("switch_user_command cannot be empty".into());
         }
         if let Some(layout) = &self.layout {
             layout.validate()?;

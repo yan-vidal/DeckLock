@@ -6,7 +6,11 @@ use decklock::{
     ui,
 };
 use gtk::{gio, prelude::*};
-use std::{cell::Cell, rc::Rc};
+use std::{
+    cell::Cell,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 fn descendants(widget: &gtk::Widget) -> Vec<gtk::Widget> {
     let mut found = Vec::new();
@@ -100,7 +104,7 @@ fn main() {
         .into_iter()
         .filter_map(|w| w.downcast::<gtk::Button>().ok())
         .collect();
-    assert_eq!(buttons.len(), 4);
+    assert_eq!(buttons.len(), 5);
     for button in &buttons {
         assert!(
             button.is_sensitive(),
@@ -119,6 +123,89 @@ fn main() {
         weak_entry.upgrade().is_none(),
         "Destroyed preview retained password entry"
     );
+
+    // Verify switch-user button in non-preview mode executes switch_user_command,
+    // while in preview mode it must NEVER execute the command.
+    let dir = tempfile::tempdir().unwrap();
+    let preview_marker = dir.path().join("preview_switched");
+    let normal_marker = dir.path().join("normal_switched");
+
+    // 1. Preview mode with custom switch_user_command:
+    let preview_settings = Rc::new(ui::Settings {
+        config: Config {
+            switch_user_command: Some(format!("touch {}", preview_marker.display())),
+            ..Config::default()
+        },
+        theme: Theme::load(None).unwrap(),
+        strings: I18n::new(Some("pt-BR"), None).unwrap(),
+        preview: true,
+        show_keyboard: false,
+        start_idle: false,
+        username: "Preview".into(),
+    });
+    let preview_view = ui::build(&app, preview_settings, Rc::new(|_| {}));
+    preview_view.window.present();
+    while glib::MainContext::default().iteration(false) {}
+    let preview_power = descendants(preview_view.window.upcast_ref())
+        .into_iter()
+        .find(|w| w.widget_name() == "power")
+        .unwrap();
+    let preview_switch_btn = descendants(&preview_power)
+        .into_iter()
+        .filter_map(|w| w.downcast::<gtk::Button>().ok())
+        .next()
+        .unwrap();
+    preview_switch_btn.emit_clicked();
+    for _ in 0..10 {
+        while glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        !preview_marker.exists(),
+        "Preview mode must never execute switch_user_command"
+    );
+    preview_view.window.destroy();
+    drop(preview_view);
+    while glib::MainContext::default().iteration(false) {}
+
+    // 2. Normal mode (lock screen) with custom switch_user_command:
+    let normal_settings = Rc::new(ui::Settings {
+        config: Config {
+            switch_user_command: Some(format!("touch {}", normal_marker.display())),
+            ..Config::default()
+        },
+        theme: Theme::load(None).unwrap(),
+        strings: I18n::new(Some("pt-BR"), None).unwrap(),
+        preview: false,
+        show_keyboard: false,
+        start_idle: false,
+        username: "User".into(),
+    });
+    let normal_view = ui::build(&app, normal_settings, Rc::new(|_| {}));
+    normal_view.window.present();
+    while glib::MainContext::default().iteration(false) {}
+    let normal_power = descendants(normal_view.window.upcast_ref())
+        .into_iter()
+        .find(|w| w.widget_name() == "power")
+        .unwrap();
+    let normal_switch_btn = descendants(&normal_power)
+        .into_iter()
+        .filter_map(|w| w.downcast::<gtk::Button>().ok())
+        .next()
+        .unwrap();
+    normal_switch_btn.emit_clicked();
+    let timeout = Instant::now() + Duration::from_secs(2);
+    while !normal_marker.exists() && Instant::now() < timeout {
+        while glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        normal_marker.exists(),
+        "Normal lock screen must execute switch_user_command when clicked"
+    );
+    normal_view.window.destroy();
+    drop(normal_view);
+    while glib::MainContext::default().iteration(false) {}
     let settings = Rc::new(ui::Settings {
         config: Config {
             controller_socket: Some("/unused-fake-socket".into()),
