@@ -238,6 +238,21 @@ fn main() {
         4,
         "Greeter action bar must show 4 power buttons and omit switch-user"
     );
+    let all_descendants = descendants(greeter_view.window.upcast_ref());
+    assert!(
+        all_descendants.iter().any(|w| w.widget_name() == "avatar"),
+        "Greeter must display avatar widget"
+    );
+    assert!(
+        all_descendants
+            .iter()
+            .any(|w| w.widget_name() == "session-box"),
+        "Greeter must display session-box container when sessions exist"
+    );
+    assert_eq!(
+        greeter_view.submit.tooltip_text().as_deref(),
+        Some("Entrar")
+    );
     greeter_view.window.destroy();
     drop(greeter_view);
     while glib::MainContext::default().iteration(false) {}

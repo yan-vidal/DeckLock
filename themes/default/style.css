@@ -18,6 +18,11 @@ window.decklock, #background { background-color: black; color: @foreground; }
 #date { color: white; font-size: 22px; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
 #avatar { border: 2px solid alpha(@accent, 0.85); border-radius: 50%; margin-bottom: 8px; }
 #username { color: white; font-size: 20px; font-weight: bold; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
+#user-selector, #session-selector { background-color: alpha(@settings_surface, 0.75); color: @foreground; border: 1.5px solid alpha(@accent, 0.70); border-radius: 20px; padding: 6px 14px; font-size: 15px; font-weight: bold; }
+#user-selector:hover, #session-selector:hover { background-color: alpha(@settings_surface, 0.90); border-color: @accent; }
+#user-selector button, #session-selector button { background: transparent; border: none; box-shadow: none; color: @foreground; font-weight: bold; }
+#session-box { margin-top: 6px; opacity: 0.90; }
+#session-box:hover { opacity: 1.0; }
 #password { background-color: alpha(@settings_surface, 0.70); color: @foreground; border: 1.5px solid alpha(@accent, 0.85); border-radius: 20px; padding: 10px 18px; min-width: 260px; min-height: 30px; font-size: 16px; }
 #password:focus-within { border-color: @accent; background-color: alpha(@settings_surface, 0.85); outline: none; }
 #password placeholder { color: alpha(@foreground, 0.55); }

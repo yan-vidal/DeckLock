@@ -155,6 +155,64 @@ fn parse_session_file(path: &Path) -> Option<DesktopSession> {
     Some(DesktopSession { id, name, exec })
 }
 
+/// Persistent state across greeter restarts (e.g. remember last user and session).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+pub struct GreeterState {
+    pub last_user: Option<String>,
+    pub last_session: Option<String>,
+}
+
+impl GreeterState {
+    pub fn state_file_path() -> PathBuf {
+        if let Some(override_path) = std::env::var_os("DECKLOCK_GREETER_STATE") {
+            return PathBuf::from(override_path);
+        }
+        let system_path = Path::new("/var/lib/decklock/greeter-state.toml");
+        if system_path.parent().is_some_and(|p| p.is_dir()) {
+            return system_path.to_path_buf();
+        }
+        if let Some(state_home) = std::env::var_os("XDG_STATE_HOME") {
+            return PathBuf::from(state_home).join("decklock/greeter-state.toml");
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            return PathBuf::from(home).join(".local/state/decklock/greeter-state.toml");
+        }
+        std::env::temp_dir().join("decklock-greeter-state.toml")
+    }
+
+    pub fn load() -> Self {
+        Self::load_from(&Self::state_file_path())
+    }
+
+    pub fn load_from(path: &Path) -> Self {
+        if let Ok(content) = fs::read_to_string(path) {
+            toml::from_str(&content).unwrap_or_default()
+        } else {
+            Self::default()
+        }
+    }
+
+    pub fn save(&self) {
+        self.save_to(&Self::state_file_path());
+    }
+
+    pub fn save_to(&self, path: &Path) {
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(content) = toml::to_string_pretty(self) {
+            let _ = fs::write(path, content);
+        }
+    }
+}
+
+pub fn save_last_selection(user: &str, session_id: &str) {
+    let mut state = GreeterState::load();
+    state.last_user = Some(user.to_string());
+    state.last_session = Some(session_id.to_string());
+    state.save();
+}
+
 /// Greetd IPC request/response types according to greetd-ipc specification.
 #[derive(Debug)]
 pub enum GreetdResponse {
@@ -393,5 +451,26 @@ mod tests {
             }
             _ => panic!("Expected Error"),
         }
+    }
+
+    #[test]
+    fn test_greeter_state_persistence() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_path = dir.path().join("greeter-state.toml");
+
+        // Non-existent file yields default state
+        let state = GreeterState::load_from(&state_path);
+        assert_eq!(state, GreeterState::default());
+
+        // Saving and reloading preserves chosen user and session
+        let saved = GreeterState {
+            last_user: Some("yan".into()),
+            last_session: Some("hyprland".into()),
+        };
+        saved.save_to(&state_path);
+
+        let loaded = GreeterState::load_from(&state_path);
+        assert_eq!(loaded.last_user.as_deref(), Some("yan"));
+        assert_eq!(loaded.last_session.as_deref(), Some("hyprland"));
     }
 }

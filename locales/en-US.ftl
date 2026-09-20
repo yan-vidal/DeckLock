@@ -25,6 +25,7 @@ preview-title = DeckLock — Wayland lock screen preview
 greeter-title = DeckLock — Login
 session = Session
 select-user = Select user
+select-session = Desktop session
 login = Log in
 preview-greeter-notice = Greeter preview mode. Run under greetd for system session launch.
 lock-title = DeckLock
