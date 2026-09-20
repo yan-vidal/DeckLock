@@ -2,20 +2,30 @@
 
 User-facing changes are reviewed in pull requests. Dates are assigned when a release is approved. Packaging-only rebuilds use Arch pkgrel and a separate -rN tag; published assets are never replaced.
 
-## [Unreleased]
+## [0.4.0] - 2026-09-19
 
 ### Added
 
-- Experimental X11 lock backend behind the `x11` Cargo feature, off by default and not built into the published packages. It uses an override-redirect window per monitor plus keyboard and pointer grabs, keeps itself on top and takes X focus back from the window manager, and refuses to lock when it cannot take the keyboard.
+- Experimental X11 lock backend behind the `x11` Cargo feature, built into candidate release packages. It uses an override-redirect window per monitor plus keyboard and pointer grabs, keeps itself on top and takes X focus back from the window manager, and refuses to lock when it cannot take the keyboard.
 - The lock screen states a reduced guarantee while it is up, and the settings window reports it too: on X11 any other program in the session can read what is typed, and the screen unlocks if DeckLock stops. A theme cannot hide that notice.
 - An X11 lock gate that runs the real binary against a private Xvfb and xfwm4, with a helper playing another client in the session.
-- The `x11` feature also builds the GStreamer sink's X11 GL support, so video backgrounds take the accelerated path on X11 instead of the software one, for about 125 KiB more in a release build. Wayland-only builds, including every published package, are unaffected.
+- The `x11` feature builds the GStreamer sink's X11 GL support, so video backgrounds take the accelerated path on X11 instead of the software one.
+- Disposable VM gate exercises real PAM authentication, session release, and wrong password rejection under the X11 backend in addition to Wayland.
+- Multi-architecture packaging support: PKGBUILD, RPM spec, and DEB control files dynamically support both `x86_64` and `aarch64`.
+- Compatibility matrix in `README.md` and `README.pt-BR.md` covering compositors, distributions, and architectures.
 
 ### Changed
 
 - The offline guide states, per distribution, whether the account-lockout notice can appear at all and how to make the system count failed passwords. On stock Fedora and Ubuntu nothing counts them, so the notice never appears; DeckLock does not change that, because it is the administrator's policy.
-- The offline guide no longer says X11 locking does not exist, and describes what a build with the `x11` feature provides instead.
+- The offline guide describes what a build with the `x11` feature provides instead of stating that X11 locking does not exist.
 - The lock is chosen through a `LockBackend` abstraction that states what each protocol guarantees, instead of the Wayland session-lock instance reaching the caller directly. Wayland behavior is unchanged, and a Wayland session is never downgraded to X11.
+- Formally completed Phase C (X11 backend) and closed Phase D (BSDs out of scope).
+
+### Compatibility and limitations
+
+- GNOME and KDE Plasma Wayland sessions are not supported: both draw their own lock screen inside the desktop and do not let another program replace it. DeckLock refuses to lock there.
+- X11 support offers reduced security guarantees compared to Wayland: session-level processes can snoop input or terminate the locker.
+- Multi-architecture packaging supports `x86_64` and `aarch64`.
 
 ## [0.3.0] - 2026-09-16
 
