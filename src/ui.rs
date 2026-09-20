@@ -37,6 +37,7 @@ pub struct View {
     pub activity: Rc<Cell<Instant>>,
     pub selected_user: Rc<RefCell<String>>,
     pub selected_session: Rc<RefCell<Vec<String>>>,
+    pub selected_session_id: Rc<RefCell<String>>,
     settings: Rc<Settings>,
     bindings: Rc<Bindings>,
     preview: bool,
@@ -1101,54 +1102,136 @@ fn build_in(
     form.set_margin_top(60);
     form.set_margin_bottom(80);
     content.append(&form);
-    let face = std::env::var_os("HOME").and_then(|home| {
-        [".face", ".face.icon"].into_iter().find_map(|name| {
-            gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(
-                PathBuf::from(&home).join(name),
-                96,
-                96,
-                false,
-            )
-            .ok()
+    let selected_user = Rc::new(RefCell::new(settings.username.clone()));
+    let selected_session = Rc::new(RefCell::new(Vec::<String>::new()));
+    let selected_session_id = Rc::new(RefCell::new(String::new()));
+
+    let users = if settings.greeter {
+        crate::greeter::list_system_users()
+    } else {
+        Vec::new()
+    };
+    let sessions = if settings.greeter {
+        crate::greeter::list_desktop_sessions()
+    } else {
+        Vec::new()
+    };
+    let state = if settings.greeter {
+        crate::greeter::GreeterState::load()
+    } else {
+        crate::greeter::GreeterState::default()
+    };
+
+    let initial_user_idx = if settings.greeter && !users.is_empty() {
+        state
+            .last_user
+            .as_ref()
+            .and_then(|u| users.iter().position(|entry| &entry.username == u))
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    let initial_session_idx = if settings.greeter && !sessions.is_empty() {
+        state
+            .last_session
+            .as_ref()
+            .and_then(|s| sessions.iter().position(|entry| &entry.id == s))
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    if settings.greeter {
+        if let Some(user) = users.get(initial_user_idx) {
+            *selected_user.borrow_mut() = user.username.clone();
+        }
+        if let Some(session) = sessions.get(initial_session_idx) {
+            *selected_session.borrow_mut() = session.exec.clone();
+            *selected_session_id.borrow_mut() = session.id.clone();
+        }
+    }
+
+    let initial_face = if settings.greeter {
+        users
+            .get(initial_user_idx)
+            .and_then(|u| u.icon_path.as_ref())
+            .and_then(|path| gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(path, 96, 96, false).ok())
+    } else {
+        std::env::var_os("HOME").and_then(|home| {
+            [".face", ".face.icon"].into_iter().find_map(|name| {
+                gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(
+                    PathBuf::from(&home).join(name),
+                    96,
+                    96,
+                    false,
+                )
+                .ok()
+            })
         })
-    });
-    let avatar: gtk::Widget = if let Some(face) = face {
-        let drawing = gtk::DrawingArea::new();
-        drawing.set_draw_func(move |_, context, width, height| {
-            use gdk::prelude::GdkCairoContextExt;
-            let size = width.min(height) as f64;
-            context.arc(
-                width as f64 / 2.0,
-                height as f64 / 2.0,
-                size / 2.0,
-                0.0,
-                std::f64::consts::TAU,
-            );
-            context.clip();
+    };
+
+    let current_face = Rc::new(RefCell::new(initial_face));
+    let avatar = gtk::DrawingArea::new();
+    let draw_face = current_face.clone();
+    avatar.set_draw_func(move |_, context, width, height| {
+        use gdk::prelude::GdkCairoContextExt;
+        let size = width.min(height) as f64;
+        context.arc(
+            width as f64 / 2.0,
+            height as f64 / 2.0,
+            size / 2.0,
+            0.0,
+            std::f64::consts::TAU,
+        );
+        context.clip();
+        if let Some(ref face) = *draw_face.borrow() {
             context.set_source_pixbuf(
-                &face,
+                face,
                 (width - face.width()) as f64 / 2.0,
                 (height - face.height()) as f64 / 2.0,
             );
             let _ = context.paint();
-        });
-        drawing.upcast()
-    } else {
-        let image = gtk::Image::from_icon_name("avatar-default");
-        image.set_pixel_size(96);
-        image.upcast()
-    };
+        } else {
+            // Draw clean themed avatar circle with silhouette
+            context.set_source_rgba(0.18, 0.20, 0.26, 0.85);
+            let _ = context.paint();
+            context.set_source_rgba(0.70, 0.75, 0.85, 0.90);
+            context.arc(
+                width as f64 / 2.0,
+                height as f64 * 0.38,
+                size * 0.18,
+                0.0,
+                std::f64::consts::TAU,
+            );
+            let _ = context.fill();
+            context.arc(
+                width as f64 / 2.0,
+                height as f64 * 0.82,
+                size * 0.34,
+                0.0,
+                std::f64::consts::TAU,
+            );
+            let _ = context.fill();
+        }
+    });
     avatar.set_size_request(108, 108);
     avatar.set_halign(gtk::Align::Center);
     avatar.set_widget_name("avatar");
     avatar.set_visible(layout.avatar_visible);
     form.append(&avatar);
-    let selected_user = Rc::new(RefCell::new(settings.username.clone()));
-    let selected_session = Rc::new(RefCell::new(Vec::<String>::new()));
 
-    let username = gtk::Label::new(Some(&settings.username));
+    let initial_display_name = if settings.greeter {
+        users
+            .get(initial_user_idx)
+            .map(|u| u.display_name.clone())
+            .unwrap_or_else(|| settings.username.clone())
+    } else {
+        settings.username.clone()
+    };
+    let username = gtk::Label::new(Some(&initial_display_name));
     username.set_widget_name("username");
-    form.append(&username);
+
     let entry = gtk::Entry::builder()
         .visibility(false)
         .input_purpose(gtk::InputPurpose::Password)
@@ -1175,74 +1258,52 @@ fn build_in(
         Some(&settings.strings.text("virtual-keyboard")),
     );
 
-    if settings.greeter {
-        let users = crate::greeter::list_system_users();
-        let sessions = crate::greeter::list_desktop_sessions();
-
-        if let Some(first_user) = users.first() {
-            *selected_user.borrow_mut() = first_user.username.clone();
-            username.set_text(&first_user.display_name);
-        }
-        if let Some(first_session) = sessions.first() {
-            *selected_session.borrow_mut() = first_session.exec.clone();
-        }
-
-        if users.len() > 1 {
-            let user_labels: Vec<String> = users
-                .iter()
-                .map(|u| {
-                    if u.display_name != u.username && !u.display_name.is_empty() {
-                        format!("{} ({})", u.display_name, u.username)
-                    } else {
-                        u.username.clone()
-                    }
-                })
-                .collect();
-            let user_dropdown = gtk::DropDown::from_strings(
-                &user_labels.iter().map(String::as_str).collect::<Vec<_>>(),
-            );
-            user_dropdown.set_widget_name("user-selector");
-            user_dropdown.set_halign(gtk::Align::Center);
-
-            let users_list = users.clone();
-            let sel_user = selected_user.clone();
-            let lbl_user = username.clone();
-            let weak_entry = entry.downgrade();
-            user_dropdown.connect_selected_notify(move |d| {
-                let idx = d.selected() as usize;
-                if let Some(u) = users_list.get(idx) {
-                    *sel_user.borrow_mut() = u.username.clone();
-                    lbl_user.set_text(&u.display_name);
-                    if let Some(entry) = weak_entry.upgrade() {
-                        entry.set_text("");
-                        entry.grab_focus();
-                    }
+    if settings.greeter && users.len() > 1 {
+        let user_labels: Vec<String> = users
+            .iter()
+            .map(|u| {
+                if u.display_name != u.username && !u.display_name.is_empty() {
+                    format!("{} ({})", u.display_name, u.username)
+                } else {
+                    u.username.clone()
                 }
-            });
-            form.append(&user_dropdown);
-        }
+            })
+            .collect();
+        let user_dropdown = gtk::DropDown::from_strings(
+            &user_labels.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        user_dropdown.set_widget_name("user-selector");
+        user_dropdown.set_halign(gtk::Align::Center);
+        user_dropdown.set_tooltip_text(Some(&settings.strings.text("select-user")));
+        user_dropdown.set_selected(initial_user_idx as u32);
 
-        if !sessions.is_empty() {
-            let session_labels: Vec<String> = sessions.iter().map(|s| s.name.clone()).collect();
-            let session_dropdown = gtk::DropDown::from_strings(
-                &session_labels
-                    .iter()
-                    .map(String::as_str)
-                    .collect::<Vec<_>>(),
-            );
-            session_dropdown.set_widget_name("session-selector");
-            session_dropdown.set_halign(gtk::Align::Center);
-
-            let sessions_list = sessions.clone();
-            let sel_sess = selected_session.clone();
-            session_dropdown.connect_selected_notify(move |d| {
-                let idx = d.selected() as usize;
-                if let Some(s) = sessions_list.get(idx) {
-                    *sel_sess.borrow_mut() = s.exec.clone();
+        let users_list = users.clone();
+        let sel_user = selected_user.clone();
+        let lbl_user = username.clone();
+        let draw_face_notify = current_face.clone();
+        let weak_avatar = avatar.downgrade();
+        let weak_entry = entry.downgrade();
+        user_dropdown.connect_selected_notify(move |d| {
+            let idx = d.selected() as usize;
+            if let Some(u) = users_list.get(idx) {
+                *sel_user.borrow_mut() = u.username.clone();
+                lbl_user.set_text(&u.display_name);
+                let new_face = u.icon_path.as_ref().and_then(|p| {
+                    gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(p, 96, 96, false).ok()
+                });
+                *draw_face_notify.borrow_mut() = new_face;
+                if let Some(avatar) = weak_avatar.upgrade() {
+                    avatar.queue_draw();
                 }
-            });
-            form.append(&session_dropdown);
-        }
+                if let Some(entry) = weak_entry.upgrade() {
+                    entry.set_text("");
+                    entry.grab_focus();
+                }
+            }
+        });
+        form.append(&user_dropdown);
+    } else {
+        form.append(&username);
     }
 
     let status = gtk::Label::new(None);
@@ -1286,6 +1347,39 @@ fn build_in(
     form.append(&row);
     form.append(&status);
     form.append(&guarantee);
+
+    if settings.greeter && !sessions.is_empty() {
+        let session_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        session_box.set_widget_name("session-box");
+        session_box.set_halign(gtk::Align::Center);
+        let session_icon = gtk::Image::from_icon_name("preferences-desktop-display-symbolic");
+        session_icon.set_pixel_size(16);
+        session_box.append(&session_icon);
+
+        let session_labels: Vec<String> = sessions.iter().map(|s| s.name.clone()).collect();
+        let session_dropdown = gtk::DropDown::from_strings(
+            &session_labels
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        );
+        session_dropdown.set_widget_name("session-selector");
+        session_dropdown.set_tooltip_text(Some(&settings.strings.text("select-session")));
+        session_dropdown.set_selected(initial_session_idx as u32);
+
+        let sessions_list = sessions.clone();
+        let sel_sess = selected_session.clone();
+        let sel_sess_id = selected_session_id.clone();
+        session_dropdown.connect_selected_notify(move |d| {
+            let idx = d.selected() as usize;
+            if let Some(s) = sessions_list.get(idx) {
+                *sel_sess.borrow_mut() = s.exec.clone();
+                *sel_sess_id.borrow_mut() = s.id.clone();
+            }
+        });
+        session_box.append(&session_dropdown);
+        form.append(&session_box);
+    }
     let (keyboard, controller_event) = build_keyboard(&entry, &settings, &status);
     let physical_caps = Rc::new(Cell::new(false));
     let caps_label = caps.downgrade();
@@ -1550,6 +1644,7 @@ fn build_in(
         activity,
         selected_user,
         selected_session,
+        selected_session_id,
         settings: settings.clone(),
         bindings,
         preview: settings.preview,

@@ -302,19 +302,20 @@ fn run(args: Args) -> Result<(), String> {
         let greetd_sock = greetd_sock.clone();
         Rc::new(move |password| {
             if is_greeter {
-                let (user, session_cmd) = if let Some(views) = views.upgrade() {
+                let (user, session_cmd, session_id) = if let Some(views) = views.upgrade() {
                     let v = views.borrow();
                     if let Some(view) = v.first() {
                         view.busy(true, &settings.strings.text("authenticating"));
                         (
                             view.selected_user.borrow().clone(),
                             view.selected_session.borrow().clone(),
+                            view.selected_session_id.borrow().clone(),
                         )
                     } else {
-                        (settings.username.clone(), Vec::new())
+                        (settings.username.clone(), Vec::new(), String::new())
                     }
                 } else {
-                    (settings.username.clone(), Vec::new())
+                    (settings.username.clone(), Vec::new(), String::new())
                 };
 
                 let tx = tx.clone();
@@ -330,6 +331,10 @@ fn run(args: Args) -> Result<(), String> {
                                     let auth_resp = client.post_auth_response(&password)?;
                                     match auth_resp {
                                         decklock::greeter::GreetdResponse::Success => {
+                                            decklock::greeter::save_last_selection(
+                                                &user,
+                                                &session_id,
+                                            );
                                             client.start_session(&session_cmd, &[])?;
                                             Ok(())
                                         }
@@ -341,6 +346,7 @@ fn run(args: Args) -> Result<(), String> {
                                     }
                                 }
                                 decklock::greeter::GreetdResponse::Success => {
+                                    decklock::greeter::save_last_selection(&user, &session_id);
                                     client.start_session(&session_cmd, &[])?;
                                     Ok(())
                                 }
@@ -351,7 +357,8 @@ fn run(args: Args) -> Result<(), String> {
                         })();
                         let _ = tx.send((1, Ok(res.is_ok()), faillock::Advice::default()));
                     } else {
-                        // Greeter standalone / preview mode: simulated feedback
+                        // Greeter standalone / preview mode: simulated feedback and state save
+                        decklock::greeter::save_last_selection(&user, &session_id);
                         std::thread::sleep(Duration::from_millis(200));
                         let _ = tx.send((1, Ok(true), faillock::Advice::default()));
                     }

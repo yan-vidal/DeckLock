@@ -25,6 +25,7 @@ preview-title = DeckLock — prévia da tela de bloqueio Wayland
 greeter-title = DeckLock — Login
 session = Sessão
 select-user = Selecionar usuário
+select-session = Sessão de desktop
 login = Entrar
 preview-greeter-notice = Modo de prévia do greeter. Execute sob o greetd para iniciar a sessão do sistema.
 lock-title = DeckLock
