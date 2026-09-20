@@ -12,6 +12,7 @@ unsupported = Este desktop não permite que outros programas forneçam a tela de
 pam-service-missing = Nenhum arquivo de serviço PAM para o pam_service configurado; instale o pacote do DeckLock ou aponte pam_service para um serviço existente
 guarantee-input-exposed = Sessão X11: qualquer outro programa em execução aqui consegue ler o que você digita, inclusive esta senha. O caminho recomendado para bloquear é o Wayland com um compositor como Sway ou Hyprland.
 guarantee-dies-with-process = Se o DeckLock parar, a tela desbloqueia: no X11 a sessão não continua bloqueada sem ele.
+switch-user = Trocar usuário
 suspend = Suspender
 restart = Reiniciar
 shutdown = Desligar

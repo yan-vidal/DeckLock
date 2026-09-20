@@ -94,6 +94,7 @@ fn documented_options_round_trip_in_the_real_binary() {
         ("layout.avatar_visible", "false"),
         ("background_pool", "[\"photo.jpg\", \"video.mp4\"]"),
         ("idle_pool", "[]"),
+        ("switch_user_command", "\"loginctl activate 2\""),
     ] {
         cli.config(&["set", key, value], true);
         cli.config(&["get", key], true);
@@ -111,6 +112,10 @@ fn documented_options_round_trip_in_the_real_binary() {
     );
     let config = decklock::config::Config::load(Some(&cli.file)).unwrap();
     assert_eq!(config.pam_service, "preserve-me");
+    assert_eq!(
+        config.switch_user_command.as_deref(),
+        Some("loginctl activate 2")
+    );
     assert!(config.idle_enabled);
     assert_eq!(config.layout.unwrap().padding, 48);
     assert_eq!(
@@ -139,6 +144,7 @@ fn invalid_commands_leave_existing_bytes_unchanged() {
         ("layout.typo", "1"),
         ("pam_service", "/etc/shadow"),
         ("background_pool", "42"),
+        ("switch_user_command", "\"   \""),
         ("unknown", "true"),
     ] {
         cli.config(&["set", key, value], false);

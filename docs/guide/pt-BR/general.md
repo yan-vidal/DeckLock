@@ -65,7 +65,7 @@ O DeckLock não faz isso por você. Contar falhas e bloquear contas é política
 
 Use o teclado físico ou virtual. Shift altera a caixa das letras, dois toques em Shift mantêm Caps Lock e Alt mostra caracteres alternativos. O olho ao lado da senha alterna sua visibilidade. A integração opcional com sc-controller usa seu daemon externo e o teclado embutido.
 
-Suspender, hibernar, reiniciar e desligar são pedidos ao systemctl. Dependem do suporte, permissões e configuração do sistema; o DeckLock não configura a hibernação. Essas ações ficam desativadas no preview.
+A troca de usuário delega ao seu gerenciador de login ou `loginctl` (personalizável com `switch_user_command`). Suspender, hibernar, reiniciar e desligar são pedidos ao systemctl. Dependem do suporte, permissões e configuração do sistema; o DeckLock não configura a hibernação. Essas ações ficam desativadas no preview.
 
 ## Temas, mídias e terminal
 

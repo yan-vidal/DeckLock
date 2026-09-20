@@ -12,6 +12,7 @@ unsupported = This desktop does not let other programs provide the lock screen. 
 pam-service-missing = No PAM service file for the configured pam_service; install the DeckLock package or set pam_service to a service that exists
 guarantee-input-exposed = X11 session: any other program running here can read what you type, including this password. The recommended way to lock is Wayland with a compositor such as Sway or Hyprland.
 guarantee-dies-with-process = If DeckLock stops, the screen unlocks: X11 cannot keep this session locked without it.
+switch-user = Switch user
 suspend = Suspend
 restart = Restart
 shutdown = Shut down

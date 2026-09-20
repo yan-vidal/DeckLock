@@ -268,7 +268,7 @@ The settings preview never captures a controller. Normal controller preview need
 explicit `--controller` or `--controller-socket`. Existing `deck-osk --toggle`
 shortcuts remain compatible. Capture is released when the keyboard closes.
 
-Power buttons call `systemctl suspend`, `hibernate`, `reboot` and `poweroff`.
+Power and session buttons support fast user switching (`switch_user_command`, `dm-tool`, `gdmflexiserver`, or `loginctl`) as well as `systemctl suspend`, `hibernate`, `reboot` and `poweroff`.
 Permissions and working sleep/hibernate behavior belong to the host system.
 Preview buttons only show tooltips. Plugins are not implemented; media playback
 uses installed GStreamer codecs.

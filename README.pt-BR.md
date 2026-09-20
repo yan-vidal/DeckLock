@@ -269,7 +269,7 @@ O preview das configurações nunca captura um controle. No preview normal, a
 integração exige `--controller` ou `--controller-socket` explícito. Atalhos antigos
 `deck-osk --toggle` continuam compatíveis. Fechar o teclado libera a captura.
 
-Os botões de energia chamam `systemctl suspend`, `hibernate`, `reboot` e `poweroff`.
+Os botões de energia e sessão suportam troca rápida de usuário (`switch_user_command`, `dm-tool`, `gdmflexiserver` ou `loginctl`), além de `systemctl suspend`, `hibernate`, `reboot` e `poweroff`.
 As permissões e o funcionamento da suspensão/hibernação dependem do sistema.
 No preview, os botões só mostram dicas. Plugins ainda não estão implementados;
 a reprodução depende dos codecs GStreamer instalados.

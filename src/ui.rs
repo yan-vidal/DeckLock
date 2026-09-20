@@ -754,6 +754,65 @@ fn build_keyboard(
     (container, event_handler)
 }
 
+fn dispatch_switch_user(custom_command: Option<&str>) {
+    if let Some(cmd) = custom_command {
+        if let Err(err) = std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
+            eprintln!("Custom switch-user action failed: {err}");
+        }
+        return;
+    }
+
+    // Try dm-tool switch-to-greeter (LightDM)
+    match std::process::Command::new("dm-tool")
+        .arg("switch-to-greeter")
+        .spawn()
+    {
+        Ok(_) => return,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            eprintln!("dm-tool switch-to-greeter failed: {err}");
+        }
+    }
+
+    // Try gdmflexiserver (GDM)
+    match std::process::Command::new("gdmflexiserver").spawn() {
+        Ok(_) => return,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            eprintln!("gdmflexiserver failed: {err}");
+        }
+    }
+
+    // Try finding an active greeter session via loginctl
+    if let Ok(output) = std::process::Command::new("loginctl")
+        .args(["list-sessions", "--no-legend", "--no-pager"])
+        .output()
+        && let Ok(text) = String::from_utf8(output.stdout)
+    {
+        for line in text.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 6 && parts[5] == "greeter" {
+                let session_id = parts[0];
+                if let Err(err) = std::process::Command::new("loginctl")
+                    .args(["activate", session_id])
+                    .spawn()
+                {
+                    eprintln!("Failed to activate greeter session {session_id}: {err}");
+                }
+                return;
+            }
+        }
+    }
+
+    // Fallback: loginctl switch-user
+    if let Err(err) = std::process::Command::new("loginctl")
+        .arg("switch-user")
+        .spawn()
+    {
+        eprintln!("Switch user failed: {err}. Set switch_user_command in decklock.toml if needed.");
+    }
+}
+
 pub fn build(
     app: &gtk::Application,
     settings: Rc<Settings>,
@@ -866,17 +925,46 @@ fn build_in(
     power.set_valign(gtk::Align::Start);
     power.set_margin_top(12);
     power.set_margin_end(12);
-    for (label, command, icon) in [
-        ("suspend", "suspend", "system-suspend-symbolic"),
-        ("hibernate", "hibernate", "weather-clear-night-symbolic"),
-        ("restart", "reboot", "system-reboot-symbolic"),
-        ("shutdown", "poweroff", "system-shutdown-symbolic"),
+
+    #[derive(Clone, Copy)]
+    enum PowerAction {
+        SwitchUser,
+        Command(&'static str),
+    }
+
+    for (label, action, icon) in [
+        (
+            "switch-user",
+            PowerAction::SwitchUser,
+            "system-switch-user-symbolic",
+        ),
+        (
+            "suspend",
+            PowerAction::Command("suspend"),
+            "system-suspend-symbolic",
+        ),
+        (
+            "hibernate",
+            PowerAction::Command("hibernate"),
+            "weather-clear-night-symbolic",
+        ),
+        (
+            "restart",
+            PowerAction::Command("reboot"),
+            "system-reboot-symbolic",
+        ),
+        (
+            "shutdown",
+            PowerAction::Command("poweroff"),
+            "system-shutdown-symbolic",
+        ),
     ] {
         let button = gtk::Button::new();
         let image = gtk::Image::from_icon_name(icon);
         // Some icon themes draw the power glyph smaller inside the same canvas.
         // Equal slots preserve button sizes while giving that glyph more room.
-        image.set_pixel_size(if command == "poweroff" { 32 } else { 24 });
+        let is_poweroff = matches!(action, PowerAction::Command("poweroff"));
+        image.set_pixel_size(if is_poweroff { 32 } else { 24 });
         image.set_halign(gtk::Align::Center);
         image.set_valign(gtk::Align::Center);
         let slot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -895,9 +983,15 @@ fn build_in(
                 settings.strings.text("preview-power")
             )));
         } else {
-            button.connect_clicked(move |_| {
-                if let Err(err) = std::process::Command::new("systemctl").arg(command).spawn() {
-                    eprintln!("Power action failed: {err}");
+            let custom_switch_cmd = settings.config.switch_user_command.clone();
+            button.connect_clicked(move |_| match action {
+                PowerAction::SwitchUser => {
+                    dispatch_switch_user(custom_switch_cmd.as_deref());
+                }
+                PowerAction::Command(command) => {
+                    if let Err(err) = std::process::Command::new("systemctl").arg(command).spawn() {
+                        eprintln!("Power action failed: {err}");
+                    }
                 }
             });
         }
