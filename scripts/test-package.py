@@ -15,39 +15,41 @@ parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--binary',type=Path,required=True)
 # Each target keeps its own archive name, PAM stack and recipe; nothing is shared
 # between distributions beyond the payload itself.
-TARGETS={
-    'arch':{'slug':'linux','recipe':'PKGBUILD','include':'system-auth',
-            'markers':["backup=('etc/pam.d/decklock')",'"$pkgdir/etc/pam.d/decklock"']},
-    'fedora':{'slug':'fedora','recipe':'decklock.spec','include':'system-auth',
-              'markers':['%config(noreplace) %{_sysconfdir}/pam.d/decklock',
-                         'install -Dm644 pam/decklock %{buildroot}%{_sysconfdir}/pam.d/decklock',
-                         '%global debug_package %{nil}']},
-    'ubuntu':{'slug':'ubuntu','recipe':'control','include':'common-auth',
-              'markers':['Architecture: amd64','libgtk4-layer-shell0',
-                         'gstreamer1.0-plugins-good','Depends: ']},
+machine = subprocess.check_output(['uname', '-m'], text=True).strip()
+deb_arch = 'amd64' if machine == 'x86_64' else 'arm64'
+TARGETS = {
+    'arch': {'slug': 'linux', 'recipe': 'PKGBUILD', 'include': 'system-auth',
+             'markers': ["backup=('etc/pam.d/decklock')", '"$pkgdir/etc/pam.d/decklock"']},
+    'fedora': {'slug': 'fedora', 'recipe': 'decklock.spec', 'include': 'system-auth',
+               'markers': ['%config(noreplace) %{_sysconfdir}/pam.d/decklock',
+                           'install -Dm644 pam/decklock %{buildroot}%{_sysconfdir}/pam.d/decklock',
+                           '%global debug_package %{nil}']},
+    'ubuntu': {'slug': 'ubuntu', 'recipe': 'control', 'include': 'common-auth',
+               'markers': [f'Architecture: {deb_arch}', 'libgtk4-layer-shell0',
+                           'gstreamer1.0-plugins-good', 'Depends: ']},
 }
-parser.add_argument('--target',choices=sorted(TARGETS),default='arch')
-args=parser.parse_args()
-target=TARGETS[args.target]
-binary=args.binary.resolve()
+parser.add_argument('--target', choices=sorted(TARGETS), default='arch')
+args = parser.parse_args()
+target = TARGETS[args.target]
+binary = args.binary.resolve()
 subprocess.run(['python3', str(root/'scripts/test-release.py')], check=True)
 with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
-    temp=Path(directory)
-    subprocess.run(['python3',str(root/'scripts/package-release.py'),'--binary',str(binary),'--output',str(temp),'--target',args.target],check=True)
-    archive=next(temp.glob('decklock-*.tar.gz'))
-    expected=(temp/'SHA256SUMS').read_text().split()[0]
-    assert hashlib.sha256(archive.read_bytes()).hexdigest()==expected
-    recipe=(temp/target['recipe']).read_text()
+    temp = Path(directory)
+    subprocess.run(['python3', str(root/'scripts/package-release.py'), '--binary', str(binary), '--output', str(temp), '--target', args.target], check=True)
+    archive = next(temp.glob('decklock-*.tar.gz'))
+    expected = (temp/'SHA256SUMS').read_text().split()[0]
+    assert hashlib.sha256(archive.read_bytes()).hexdigest() == expected
+    recipe = (temp/target['recipe']).read_text()
     assert expected in recipe
-    unpack=temp/'unpack';unpack.mkdir()
+    unpack = temp/'unpack'; unpack.mkdir()
     with tarfile.open(archive) as tar:
         assert all(not Path(m.name).is_absolute() and '..' not in Path(m.name).parts and not m.issym() and not m.islnk() for m in tar.getmembers())
-        tar.extractall(unpack,filter='data')
+        tar.extractall(unpack, filter='data')
     # The recipes read the archive root by name -- $srcdir/<name>/ for makepkg and
     # %setup -n <name> for rpmbuild -- so it is part of the contract, not an
     # implementation detail. Arch keeps the already-published spelling.
-    version=tomllib.loads((root/'Cargo.toml').read_text())['package']['version']
-    expected_root=f'decklock-{version}-{target["slug"]}-x86_64'
+    version = tomllib.loads((root/'Cargo.toml').read_text())['package']['version']
+    expected_root = f'decklock-{version}-{target["slug"]}-{machine}'
     assert [p.name for p in unpack.iterdir()]==[expected_root],[p.name for p in unpack.iterdir()]
     stage=unpack/expected_root
     executable=stage/'bin/decklock'

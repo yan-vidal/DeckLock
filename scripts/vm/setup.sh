@@ -25,7 +25,7 @@ collect_evidence() {
     journalctl -b --no-pager > "$out/journal.log" 2>&1 || true
     command -v getenforce >/dev/null && getenforce > "$out/selinux.txt" 2>&1 || true
     [[ -r /var/log/audit/audit.log ]] && grep -a 'avc:' /var/log/audit/audit.log > "$out/avc.log" 2>&1 || true
-    command -v ausearch >/dev/null && ausearch -m AVC -ts boot > "$out/ausearch.log" 2>&1 || true
+    command -v ausearch >/dev/null && [[ -r /var/log/audit/audit.log ]] && timeout 5 ausearch -m AVC -ts boot > "$out/ausearch.log" 2>&1 || true
     true
 }
 trap collect_evidence EXIT

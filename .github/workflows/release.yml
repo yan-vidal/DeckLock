@@ -56,7 +56,7 @@ jobs:
           for target in arch fedora ubuntu; do
             (cd "artifacts/$target" && sha256sum --check SHA256SUMS)
             cat "artifacts/$target/SHA256SUMS" >> dist/SHA256SUMS
-            cp "artifacts/$target"/decklock-*-x86_64.tar.gz dist/
+            cp "artifacts/$target"/decklock-*.tar.gz dist/
           done
           cp artifacts/arch/*.pkg.tar.zst artifacts/arch/PKGBUILD dist/
           cp artifacts/fedora/*.rpm dist/
