@@ -64,6 +64,7 @@ impl LivePreview {
             show_keyboard: false,
             start_idle: self.idle,
             username: crate::auth::current_username()?,
+            greeter: false,
         });
         let view = if self.is_open() {
             ui::rebuild_preview(self.view.take().unwrap(), app, settings)

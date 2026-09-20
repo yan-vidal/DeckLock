@@ -64,7 +64,11 @@ fn help_and_read_commands_never_open_a_display_or_write_configuration() {
         vec!["config", "--help"],
     ] {
         let output = cli.run(&args, true);
-        assert!(String::from_utf8_lossy(&output.stdout).contains("Usage:"));
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert!(text.contains("Usage:"));
+        if args == ["--help"] {
+            assert!(text.contains("--greeter"));
+        }
     }
     cli.config(&["show"], true);
     cli.config(&["path"], true);

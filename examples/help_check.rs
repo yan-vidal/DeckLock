@@ -208,6 +208,7 @@ fn main() {
                 show_keyboard: false,
                 start_idle: false,
                 username: "test".into(),
+                greeter: false,
             }),
             Rc::new(|_| panic!("Help must not authenticate")),
         );

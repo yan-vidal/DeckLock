@@ -123,6 +123,7 @@ não foi medida. Veja a [configuração de exemplo](config.example.toml).
 ```sh
 decklock --preview                 # Experimentar sem bloquear
 decklock --preview --keyboard      # Mostrar o teclado integrado
+decklock --greeter                 # Login nativo via greetd ou prévia standalone
 decklock --lock                    # Bloquear explicitamente a sessão
 ```
 

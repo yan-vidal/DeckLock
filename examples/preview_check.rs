@@ -49,6 +49,7 @@ fn main() {
         show_keyboard: true,
         start_idle: false,
         username: "Preview".into(),
+        greeter: false,
     });
     ui::apply_css(&settings.theme.css).unwrap();
     let submitted = Rc::new(Cell::new(false));
@@ -142,6 +143,7 @@ fn main() {
         show_keyboard: false,
         start_idle: false,
         username: "Preview".into(),
+        greeter: false,
     });
     let preview_view = ui::build(&app, preview_settings, Rc::new(|_| {}));
     preview_view.window.present();
@@ -180,6 +182,7 @@ fn main() {
         show_keyboard: false,
         start_idle: false,
         username: "User".into(),
+        greeter: false,
     });
     let normal_view = ui::build(&app, normal_settings, Rc::new(|_| {}));
     normal_view.window.present();
@@ -206,6 +209,38 @@ fn main() {
     normal_view.window.destroy();
     drop(normal_view);
     while glib::MainContext::default().iteration(false) {}
+
+    // 3. Greeter mode UI validation:
+    let greeter_settings = Rc::new(ui::Settings {
+        config: Config::default(),
+        theme: Theme::load(None).unwrap(),
+        strings: I18n::new(Some("pt-BR"), None).unwrap(),
+        preview: true,
+        show_keyboard: false,
+        start_idle: false,
+        username: "PreviewUser".into(),
+        greeter: true,
+    });
+    let greeter_view = ui::build(&app, greeter_settings, Rc::new(|_| {}));
+    greeter_view.window.present();
+    while glib::MainContext::default().iteration(false) {}
+    assert!(greeter_view.window.title().unwrap().contains("Login"));
+    let greeter_power = descendants(greeter_view.window.upcast_ref())
+        .into_iter()
+        .find(|w| w.widget_name() == "power")
+        .unwrap();
+    let greeter_buttons: Vec<_> = descendants(&greeter_power)
+        .into_iter()
+        .filter_map(|w| w.downcast::<gtk::Button>().ok())
+        .collect();
+    assert_eq!(
+        greeter_buttons.len(),
+        4,
+        "Greeter action bar must show 4 power buttons and omit switch-user"
+    );
+    greeter_view.window.destroy();
+    drop(greeter_view);
+    while glib::MainContext::default().iteration(false) {}
     let settings = Rc::new(ui::Settings {
         config: Config {
             controller_socket: Some("/unused-fake-socket".into()),
@@ -218,6 +253,7 @@ fn main() {
         show_keyboard: true,
         start_idle: false,
         username: "Preview".into(),
+        greeter: false,
     });
     let view = ui::build(&app, settings, Rc::new(|_| panic!("Preview authenticated")));
     view.window.present();

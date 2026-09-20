@@ -371,6 +371,8 @@ impl Backend {
             // SAFETY: GDK's connection, on the GTK thread.
             unsafe { (self.xlib.XRaiseWindow)(self.dpy, screen.xid) };
         }
+        // SAFETY: GDK's connection, on the GTK thread.
+        unsafe { (self.xlib.XFlush)(self.dpy) };
     }
 
     fn take_focus(&self) {
@@ -379,7 +381,8 @@ impl Backend {
         };
         // SAFETY: GDK's connection, on the GTK thread.
         unsafe {
-            (self.xlib.XSetInputFocus)(self.dpy, xid, xlib::RevertToParent, xlib::CurrentTime)
+            (self.xlib.XSetInputFocus)(self.dpy, xid, xlib::RevertToParent, xlib::CurrentTime);
+            (self.xlib.XFlush)(self.dpy);
         };
     }
 

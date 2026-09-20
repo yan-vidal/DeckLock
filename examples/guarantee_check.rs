@@ -53,6 +53,7 @@ fn main() {
             show_keyboard: false,
             start_idle: false,
             username: "test".into(),
+            greeter: false,
         }),
         Rc::new(|_| panic!("A guarantee notice must never authenticate")),
     );

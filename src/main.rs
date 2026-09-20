@@ -15,7 +15,7 @@ use zeroize::Zeroizing;
 #[command(
     version,
     about = "Customizable Wayland screen locker with graphical and command-line settings.",
-    after_help = "Examples:\n  decklock --settings\n  decklock --preview\n  decklock --lock\n  decklock config show\n  decklock config set theme_preset catppuccin-mocha\n  decklock config set layout.padding 48\n  decklock config --help"
+    after_help = "Examples:\n  decklock --settings\n  decklock --preview\n  decklock --greeter\n  decklock --lock\n  decklock config show\n  decklock config set theme_preset catppuccin-mocha\n  decklock config set layout.padding 48\n  decklock config --help"
 )]
 struct Args {
     #[command(subcommand)]
@@ -23,6 +23,9 @@ struct Args {
     /// Open a normal window; authentication and power actions are disabled.
     #[arg(long, conflicts_with = "lock")]
     preview: bool,
+    /// Run as a greetd greeter or display manager login screen.
+    #[arg(long, visible_alias = "greetter", conflicts_with_all = ["lock", "settings", "toggle_keyboard", "check_config"])]
+    greeter: bool,
     /// Open the configuration window (never acquires a lock).
     #[arg(long, conflicts_with_all = ["lock", "preview", "toggle_keyboard", "check_config"])]
     settings: bool,
@@ -228,14 +231,24 @@ fn run(args: Args) -> Result<(), String> {
         None
     };
     ui::apply_css(&theme.css)?;
+    let username = if args.greeter {
+        decklock::greeter::list_system_users()
+            .first()
+            .map(|u| u.username.clone())
+            .unwrap_or_else(|| "user".into())
+    } else {
+        auth::current_username()?
+    };
+    let is_preview = !args.lock && !args.greeter;
     let settings = Rc::new(ui::Settings {
         config,
         theme,
         strings,
-        preview: !args.lock,
+        preview: is_preview,
         show_keyboard: args.keyboard,
         start_idle: args.preview_idle,
-        username: auth::current_username()?,
+        username,
+        greeter: args.greeter,
     });
     let app = gtk::Application::new(
         Some("io.github.yan_vidal.DeckLock"),
@@ -279,12 +292,73 @@ fn run(args: Args) -> Result<(), String> {
             glib::ControlFlow::Continue
         });
     }
+    let is_greeter = args.greeter;
+    let greetd_sock = std::env::var("GREETD_SOCK").ok();
     let (tx, rx) = mpsc::channel();
     let submit: Rc<dyn Fn(Zeroizing<String>)> = {
         let session = session.clone();
         let settings = settings.clone();
         let views = Rc::downgrade(&views);
+        let greetd_sock = greetd_sock.clone();
         Rc::new(move |password| {
+            if is_greeter {
+                let (user, session_cmd) = if let Some(views) = views.upgrade() {
+                    let v = views.borrow();
+                    if let Some(view) = v.first() {
+                        view.busy(true, &settings.strings.text("authenticating"));
+                        (
+                            view.selected_user.borrow().clone(),
+                            view.selected_session.borrow().clone(),
+                        )
+                    } else {
+                        (settings.username.clone(), Vec::new())
+                    }
+                } else {
+                    (settings.username.clone(), Vec::new())
+                };
+
+                let tx = tx.clone();
+                let sock = greetd_sock.clone();
+                std::thread::spawn(move || {
+                    if let Some(sock_path) = sock {
+                        let res = (|| -> Result<(), String> {
+                            let mut client =
+                                decklock::greeter::GreetdClient::connect_path(&sock_path)?;
+                            let resp = client.create_session(&user)?;
+                            match resp {
+                                decklock::greeter::GreetdResponse::AuthMessage { .. } => {
+                                    let auth_resp = client.post_auth_response(&password)?;
+                                    match auth_resp {
+                                        decklock::greeter::GreetdResponse::Success => {
+                                            client.start_session(&session_cmd, &[])?;
+                                            Ok(())
+                                        }
+                                        decklock::greeter::GreetdResponse::Error {
+                                            description,
+                                            ..
+                                        } => Err(description),
+                                        _ => Err("Unexpected response from greetd".into()),
+                                    }
+                                }
+                                decklock::greeter::GreetdResponse::Success => {
+                                    client.start_session(&session_cmd, &[])?;
+                                    Ok(())
+                                }
+                                decklock::greeter::GreetdResponse::Error {
+                                    description, ..
+                                } => Err(description),
+                            }
+                        })();
+                        let _ = tx.send((1, Ok(res.is_ok()), faillock::Advice::default()));
+                    } else {
+                        // Greeter standalone / preview mode: simulated feedback
+                        std::thread::sleep(Duration::from_millis(200));
+                        let _ = tx.send((1, Ok(true), faillock::Advice::default()));
+                    }
+                });
+                return;
+            }
+
             let Some(attempt) = session.borrow_mut().begin_auth() else {
                 return;
             };
@@ -322,12 +396,35 @@ fn run(args: Args) -> Result<(), String> {
     let result_views = views.clone();
     let result_session = session.clone();
     let result_lock = lock.clone();
+    let greeter_notice = settings.strings.text("preview-greeter-notice");
+    let greeter_failed = settings.strings.text("authentication-failed");
     glib::timeout_add_local(Duration::from_millis(50), move || {
         if app_weak.upgrade().is_none() {
             return glib::ControlFlow::Break;
         }
         for (attempt, result, advice) in rx.try_iter() {
             let ok = result.unwrap_or(false);
+            if is_greeter {
+                if ok {
+                    if greetd_sock.is_some() {
+                        if let Some(app) = app_weak.upgrade() {
+                            app.quit();
+                        }
+                    } else {
+                        for view in result_views.borrow().iter() {
+                            view.busy(false, "");
+                            view.status.set_text(&greeter_notice);
+                        }
+                    }
+                } else {
+                    for view in result_views.borrow().iter() {
+                        view.busy(false, "");
+                        view.status.set_text(&greeter_failed);
+                        view.entry.grab_focus();
+                    }
+                }
+                continue;
+            }
             if result_session.borrow_mut().complete_auth(attempt, ok) {
                 if let Some(lock) = &result_lock {
                     lock.unlock();
