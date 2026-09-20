@@ -45,6 +45,7 @@ fn main() {
         show_keyboard: false,
         start_idle: false,
         username: "Demo".into(),
+        greeter: false,
     });
     ui::apply_css(&settings.theme.css).unwrap();
     let view = ui::build(

@@ -122,6 +122,7 @@ not yet measured. See [example configuration](config.example.toml).
 ```sh
 decklock --preview                 # Try without locking
 decklock --preview --keyboard      # Show the embedded keyboard
+decklock --greeter                 # Native greetd login or standalone greeter preview
 decklock --lock                    # Explicitly lock the session
 ```
 

@@ -21,6 +21,7 @@ pub struct Settings {
     pub show_keyboard: bool,
     pub start_idle: bool,
     pub username: String,
+    pub greeter: bool,
 }
 
 #[derive(Clone)]
@@ -34,6 +35,8 @@ pub struct View {
     pub keyboard: gtk::Box,
     pub controller_event: Rc<dyn Fn(ControllerEvent)>,
     pub activity: Rc<Cell<Instant>>,
+    pub selected_user: Rc<RefCell<String>>,
+    pub selected_session: Rc<RefCell<Vec<String>>>,
     settings: Rc<Settings>,
     bindings: Rc<Bindings>,
     preview: bool,
@@ -830,7 +833,9 @@ fn build_in(
     crate::branding::install();
     let window = existing.unwrap_or_else(|| {
         gtk::ApplicationWindow::builder()
-            .title(settings.strings.text(if settings.preview {
+            .title(settings.strings.text(if settings.greeter {
+                "greeter-title"
+            } else if settings.preview {
                 "preview-title"
             } else {
                 "lock-title"
@@ -843,15 +848,15 @@ fn build_in(
     // with GtkApplication makes GTK 4.22's removal handler access a gone surface.
     // The lock mode holds the application explicitly; only preview uses its
     // ordinary application-window lifecycle.
-    if settings.preview {
+    if settings.preview || settings.greeter {
         window.set_application(Some(app));
     }
     window.add_css_class("decklock");
-    if settings.preview {
+    if settings.preview || settings.greeter {
         crate::window_chrome::install(&window);
         window.set_decorated(settings.config.window_decorations);
     }
-    if !settings.preview {
+    if !settings.preview && !settings.greeter {
         window.set_title(Some("DeckLock"));
         window.set_decorated(false);
     }
@@ -900,8 +905,13 @@ fn build_in(
     outer.set_hexpand(true);
     outer.set_vexpand(true);
     overlay.add_overlay(&outer);
-    if settings.preview {
-        let banner = gtk::Label::new(Some(&settings.strings.text("preview-banner")));
+    if settings.preview || settings.greeter {
+        let banner_text = if settings.greeter {
+            settings.strings.text("greeter-title")
+        } else {
+            settings.strings.text("preview-banner")
+        };
+        let banner = gtk::Label::new(Some(&banner_text));
         banner.set_widget_name("preview-banner");
         banner.set_max_width_chars(24);
         banner.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -959,6 +969,9 @@ fn build_in(
             "system-shutdown-symbolic",
         ),
     ] {
+        if settings.greeter && matches!(action, PowerAction::SwitchUser) {
+            continue;
+        }
         let button = gtk::Button::new();
         let image = gtk::Image::from_icon_name(icon);
         // Some icon themes draw the power glyph smaller inside the same canvas.
@@ -1130,6 +1143,9 @@ fn build_in(
     avatar.set_widget_name("avatar");
     avatar.set_visible(layout.avatar_visible);
     form.append(&avatar);
+    let selected_user = Rc::new(RefCell::new(settings.username.clone()));
+    let selected_session = Rc::new(RefCell::new(Vec::<String>::new()));
+
     let username = gtk::Label::new(Some(&settings.username));
     username.set_widget_name("username");
     form.append(&username);
@@ -1158,6 +1174,77 @@ fn build_in(
         gtk::EntryIconPosition::Secondary,
         Some(&settings.strings.text("virtual-keyboard")),
     );
+
+    if settings.greeter {
+        let users = crate::greeter::list_system_users();
+        let sessions = crate::greeter::list_desktop_sessions();
+
+        if let Some(first_user) = users.first() {
+            *selected_user.borrow_mut() = first_user.username.clone();
+            username.set_text(&first_user.display_name);
+        }
+        if let Some(first_session) = sessions.first() {
+            *selected_session.borrow_mut() = first_session.exec.clone();
+        }
+
+        if users.len() > 1 {
+            let user_labels: Vec<String> = users
+                .iter()
+                .map(|u| {
+                    if u.display_name != u.username && !u.display_name.is_empty() {
+                        format!("{} ({})", u.display_name, u.username)
+                    } else {
+                        u.username.clone()
+                    }
+                })
+                .collect();
+            let user_dropdown = gtk::DropDown::from_strings(
+                &user_labels.iter().map(String::as_str).collect::<Vec<_>>(),
+            );
+            user_dropdown.set_widget_name("user-selector");
+            user_dropdown.set_halign(gtk::Align::Center);
+
+            let users_list = users.clone();
+            let sel_user = selected_user.clone();
+            let lbl_user = username.clone();
+            let weak_entry = entry.downgrade();
+            user_dropdown.connect_selected_notify(move |d| {
+                let idx = d.selected() as usize;
+                if let Some(u) = users_list.get(idx) {
+                    *sel_user.borrow_mut() = u.username.clone();
+                    lbl_user.set_text(&u.display_name);
+                    if let Some(entry) = weak_entry.upgrade() {
+                        entry.set_text("");
+                        entry.grab_focus();
+                    }
+                }
+            });
+            form.append(&user_dropdown);
+        }
+
+        if !sessions.is_empty() {
+            let session_labels: Vec<String> = sessions.iter().map(|s| s.name.clone()).collect();
+            let session_dropdown = gtk::DropDown::from_strings(
+                &session_labels
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+            );
+            session_dropdown.set_widget_name("session-selector");
+            session_dropdown.set_halign(gtk::Align::Center);
+
+            let sessions_list = sessions.clone();
+            let sel_sess = selected_session.clone();
+            session_dropdown.connect_selected_notify(move |d| {
+                let idx = d.selected() as usize;
+                if let Some(s) = sessions_list.get(idx) {
+                    *sel_sess.borrow_mut() = s.exec.clone();
+                }
+            });
+            form.append(&session_dropdown);
+        }
+    }
+
     let status = gtk::Label::new(None);
     status.set_widget_name("status");
     status.set_wrap(true);
@@ -1175,7 +1262,11 @@ fn build_in(
     let submit_icon = gtk::Image::from_icon_name("go-next-symbolic");
     submit_icon.set_pixel_size(24);
     submit.set_child(Some(&submit_icon));
-    submit.set_tooltip_text(Some(&settings.strings.text("unlock")));
+    submit.set_tooltip_text(Some(&settings.strings.text(if settings.greeter {
+        "login"
+    } else {
+        "unlock"
+    })));
     submit.set_sensitive(false);
     let weak_submit = submit.downgrade();
     entry.connect_changed(move |entry| {
@@ -1442,7 +1533,7 @@ fn build_in(
                 entry.grab_focus();
             }
         }));
-    if !settings.preview {
+    if !settings.preview && !settings.greeter {
         bindings
             .signals
             .borrow_mut()
@@ -1457,6 +1548,8 @@ fn build_in(
         keyboard,
         controller_event,
         activity,
+        selected_user,
+        selected_session,
         settings: settings.clone(),
         bindings,
         preview: settings.preview,

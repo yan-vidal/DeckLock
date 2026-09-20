@@ -97,6 +97,7 @@ fn main() {
             show_keyboard: false,
             start_idle: true,
             username: "Test".into(),
+            greeter: false,
         })
     };
     let view = ui::build(
