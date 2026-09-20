@@ -10,58 +10,10 @@ Optional controller support includes devices such as the Steam Deck.
 
 ![DeckLock — keyboard, password visibility and power tooltips](docs/assets/demo.gif)
 
-## Compatibility
-<a id="which-desktops-work"></a>
-
-DeckLock targets modern Linux desktop sessions. Because session locking interacts directly with display protocols and PAM authentication, compatibility depends on your compositor, distribution, and architecture:
-
-### Compositors & Display Servers
-
-| Environment | Status | Security Guarantee | Validation |
-|---|---|---|---|
-| **Sway** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Automated disposable VM (Arch, Fedora 43, Ubuntu 26.04) with real PAM |
-| **Hyprland, niri, river, Wayfire, Labwc, COSMIC** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Protocol compliance; same Wayland backend |
-| **X11 sessions** | ⚠️ Experimental (`--features x11`) | **Reduced** (keystrokes not isolated by protocol; screen unlocks if process dies) | Isolated gate (`Xvfb` + `xfwm4` + intruder probe); accelerated video via GLX/EGL |
-| **GNOME & KDE Plasma** | ❌ Not supported | N/A | Refuses to lock safely (both draw their own internal lock screen) |
-
-### Distributions & Packaging
-
-| Distribution | Prebuilt Package | PAM Service Included | VM Automated Test | Notes |
-|---|---|---|---|---|
-| **Arch Linux** | ✅ `.pkg.tar.zst` | ✅ `/etc/pam.d/decklock` | ✅ Real PAM + faillock | Primary tier |
-| **Fedora 43+** | ✅ `.rpm` | ✅ `/etc/pam.d/decklock` | ✅ Real PAM | Stock install requires `authselect` to enable faillock counting |
-| **Ubuntu 26.04+** | ✅ `.deb` | ✅ `/etc/pam.d/decklock` | ✅ Real PAM | Packages `gtk4-layer-shell >= 1.3` |
-| **Ubuntu 24.04** | ❌ No | — | — | Missing `gtk4-layer-shell` in distribution repositories |
-| **Debian 13** | ❌ Blocked | — | — | Ships `gtk4-layer-shell 1.0.4` (below 1.2 requirement) |
-| **Other Linux** | ⚙️ Build from source | Manual setup | — | Requires GTK 4.22+, GStreamer 1.28+, Linux-PAM, `gtk4-layer-shell >= 1.2` |
-| **BSD (FreeBSD / OpenBSD)** | ❌ Out of scope | — | — | Different auth/power stacks (BSD Auth, OpenPAM without faillock, no systemd) |
-
-### Architectures
-
-| Architecture | Status | Package Availability |
-|---|---|---|
-| **x86_64** (AMD64) | ✅ Supported | Published packages (`.pkg.tar.zst`, `.rpm`, `.deb`, `.tar.gz`) |
-| **aarch64** (ARM64) | 🚧 In progress | Source build supported; release packages in progress |
-
-**What about X11?** A backend exists and is tested, but it is not compiled into the
-published packages: build DeckLock yourself with `cargo build --release --features x11`
-to use it. X11 gives a weaker lock than Wayland, and the lock screen says so while it
-is up: any other program in the session can read what you type, and if DeckLock stops,
-the screen unlocks. Prefer Wayland where you have it; DeckLock never uses X11 in a
-session that has `ext-session-lock-v1`. That build also gives video backgrounds the
-accelerated path on X11; a Wayland-only build plays them through software there.
-
-**Why not GNOME or KDE Plasma?** Both draw their own lock screen inside the desktop
-and do not let another program replace it, so there is nothing for DeckLock to
-connect to. On them DeckLock refuses to lock and says so, rather than locking in a
-way that would not be safe. Use the desktop's own lock screen there. Their X11 sessions are not a way
-around this: GNOME has removed its X11 session and Plasma is dropping its own.
-
-
 ## Install
 
-Version **0.3.0** is published for Arch, Fedora 43 and Ubuntu 26.04 on
-[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.0). Each
+Version **0.3.1** is published for Arch, Fedora 43 and Ubuntu 26.04 on
+[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.1). Each
 package installs the application, a **DeckLock Settings** launcher, the included
 media pack and the PAM service DeckLock uses. The package manager resolves the
 runtime dependencies; no Rust toolchain is needed. These are GitHub downloads, not
@@ -73,29 +25,29 @@ installing on a stock GNOME or KDE Plasma desktop will not let DeckLock lock it.
 ### Arch Linux · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/decklock-0.3.0-1-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/decklock-0.3.1-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.3.0-1-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.3.1-1-x86_64.pkg.tar.zst
 ```
 
 ### Fedora 43 · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/decklock-0.3.0-1.fc43.x86_64.rpm
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/decklock-0.3.1-1.fc43.x86_64.rpm
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo dnf install ./decklock-0.3.0-1.fc43.x86_64.rpm
+sudo dnf install ./decklock-0.3.1-1.fc43.x86_64.rpm
 ```
 
 ### Ubuntu 26.04 · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/decklock_0.3.0-1_amd64.deb
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/decklock_0.3.1-1_amd64.deb
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo apt install ./decklock_0.3.0-1_amd64.deb
+sudo apt install ./decklock_0.3.1-1_amd64.deb
 ```
 
 Each package is built against its own distribution's libraries. Derivatives that
@@ -177,7 +129,7 @@ With no arguments, `decklock` prints help. Use `decklock --help` or
 `decklock config --help` for commands and examples. Preview never authenticates or runs
 power actions. Escape hides the keyboard, then closes the preview.
 
-**0.3.0 is experimental.** Preview/settings have been tested on Hyprland. Isolated
+**0.3.1 is experimental.** Preview/settings have been tested on Hyprland. Isolated
 protocol tests cover lock acquisition, monitor changes and termination without
 unlocking, and disposable virtual machines exercise each packaged locker against
 real Sway and real Linux-PAM on Arch, Fedora and Ubuntu, including denial, unlock
@@ -328,6 +280,43 @@ Read [General](docs/guide/en-US/general.md) and [Advanced](docs/guide/en-US/adva
 Ordinary windows have close controls; the title-bar preference is also available through `decklock config set window_decorations false`.
 
 See the [roadmap](docs/ROADMAP.md), [changelog](CHANGELOG.md) and [release procedure](docs/releases.md).
+
+## Compatibility
+<a id="which-desktops-work"></a>
+
+DeckLock targets modern Linux desktop sessions. Because session locking interacts directly with display protocols and PAM authentication, compatibility depends on your compositor, distribution, and architecture:
+
+### Compositors & Display Servers
+
+| Environment | Status | Security Guarantee | Validation |
+|---|---|---|---|
+| **Sway** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Automated disposable VM (Arch, Fedora 43, Ubuntu 26.04) with real PAM |
+| **Hyprland, niri, river, Wayfire, Labwc, COSMIC** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Protocol compliance; same Wayland backend |
+| **X11 sessions** | ⚠️ Experimental (`--features x11`) | **Reduced** (keystrokes not isolated by protocol; screen unlocks if process dies) | Isolated gate (`Xvfb` + `xfwm4` + intruder probe); accelerated video via GLX/EGL |
+| **GNOME & KDE Plasma** | ❌ Not supported | N/A | Refuses to lock safely (both draw their own internal lock screen) |
+
+### Distributions & Packaging
+
+| Distribution | Prebuilt Package | PAM Service Included | VM Automated Test | Notes |
+|---|---|---|---|---|
+| **Arch Linux** | ✅ `.pkg.tar.zst` | ✅ `/etc/pam.d/decklock` | ✅ Real PAM + faillock | Primary tier |
+| **Fedora 43+** | ✅ `.rpm` | ✅ `/etc/pam.d/decklock` | ✅ Real PAM | Stock install requires `authselect` to enable faillock counting |
+| **Ubuntu 26.04+** | ✅ `.deb` | ✅ `/etc/pam.d/decklock` | ✅ Real PAM | Packages `gtk4-layer-shell >= 1.3` |
+| **Ubuntu 24.04** | ❌ No | — | — | Missing `gtk4-layer-shell` in distribution repositories |
+| **Debian 13** | ❌ Blocked | — | — | Ships `gtk4-layer-shell 1.0.4` (below 1.2 requirement) |
+| **Other Linux** | ⚙️ Build from source | Manual setup | — | Requires GTK 4.22+, GStreamer 1.28+, Linux-PAM, `gtk4-layer-shell >= 1.2` |
+| **BSD (FreeBSD / OpenBSD)** | ❌ Out of scope | — | — | Different auth/power stacks (BSD Auth, OpenPAM without faillock, no systemd) |
+
+### Architectures
+
+| Architecture | Status | Package Availability |
+|---|---|---|
+| **x86_64** (AMD64) | ✅ Supported | Published packages (`.pkg.tar.zst`, `.rpm`, `.deb`, `.tar.gz`) |
+| **aarch64** (ARM64) | 🚧 Supported | Source build and release packaging recipes ready |
+
+**What about X11?** An X11 backend is included in candidate release packages (`--features x11`). X11 gives a weaker lock than Wayland, and the lock screen says so while it is up: any other program in the session can read what you type, and if DeckLock stops, the screen unlocks. Prefer Wayland where you have it; DeckLock never uses X11 in a session that has `ext-session-lock-v1`. Video backgrounds take the accelerated GL path on X11 when built with this feature.
+
+**Why not GNOME or KDE Plasma?** Both draw their own lock screen inside the desktop and do not let another program replace it, so there is nothing for DeckLock to connect to. On them DeckLock refuses to lock and says so, rather than locking in a way that would not be safe. Use the desktop's own lock screen there. Their X11 sessions are not a way around this: GNOME has removed its X11 session and Plasma is dropping its own.
 
 ## Automated checks
 

@@ -10,60 +10,10 @@ Suporte opcional a controles, incluindo dispositivos como o Steam Deck.
 
 ![DeckLock — teclado, exibição de senha e dicas dos botões de energia](docs/assets/demo.gif)
 
-## Compatibilidade
-<a id="quais-desktops-funcionam"></a>
-
-O DeckLock tem como foco sessões desktop Linux modernas. Como o bloqueio de sessão interage diretamente com protocolos de exibição e com a autenticação PAM, a compatibilidade varia por compositor, distribuição e arquitetura:
-
-### Compositores e Servidores de Exibição
-
-| Ambiente | Status | Garantia de Segurança | Validação |
-|---|---|---|---|
-| **Sway** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | VM descartável automatizada (Arch, Fedora 43, Ubuntu 26.04) com PAM real |
-| **Hyprland, niri, river, Wayfire, Labwc, COSMIC** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | Conformidade com o protocolo; mesmo backend Wayland |
-| **Sessões X11** | ⚠️ Experimental (`--features x11`) | **Reduzida** (teclas não são isoladas pelo protocolo; tela desbloqueia se o processo morrer) | Gate isolado (`Xvfb` + `xfwm4` + teste de invasão); vídeo acelerado via GLX/EGL |
-| **GNOME e KDE Plasma** | ❌ Não suportado | N/A | Recusa bloqueio com segurança (ambos desenham a própria tela de bloqueio interna) |
-
-### Distribuições e Empacotamento
-
-| Distribuição | Pacote Pronto | Serviço PAM Incluído | Teste em VM Real | Observações |
-|---|---|---|---|---|
-| **Arch Linux** | ✅ `.pkg.tar.zst` | ✅ `/etc/pam.d/decklock` | ✅ PAM real + faillock | Plataforma primária |
-| **Fedora 43+** | ✅ `.rpm` | ✅ `/etc/pam.d/decklock` | ✅ PAM real | Instalação padrão requer `authselect` para ativar contagem de faillock |
-| **Ubuntu 26.04+** | ✅ `.deb` | ✅ `/etc/pam.d/decklock` | ✅ PAM real | Empacota `gtk4-layer-shell >= 1.3` |
-| **Ubuntu 24.04** | ❌ Não | — | — | Não possui `gtk4-layer-shell` nos repositórios oficiais |
-| **Debian 13** | ❌ Bloqueado | — | — | Empacota `gtk4-layer-shell 1.0.4` (abaixo da versão 1.2 exigida) |
-| **Outro Linux** | ⚙️ Compilação via código-fonte | Configuração manual | — | Requer GTK 4.22+, GStreamer 1.28+, Linux-PAM, `gtk4-layer-shell >= 1.2` |
-| **BSD (FreeBSD / OpenBSD)** | ❌ Fora de escopo | — | — | Pilhas de autenticação/energia diferentes (BSD Auth, OpenPAM sem faillock, sem systemd) |
-
-### Arquiteturas
-
-| Arquitetura | Status | Disponibilidade de Pacotes |
-|---|---|---|
-| **x86_64** (AMD64) | ✅ Suportado | Pacotes publicados (`.pkg.tar.zst`, `.rpm`, `.deb`, `.tar.gz`) |
-| **aarch64** (ARM64) | 🚧 Em andamento | Compilação via código-fonte suportada; pacotes de release em preparação |
-
-**E o X11?** O backend existe e é testado, mas não vem compilado nos pacotes
-publicados: para usá-lo, compile o DeckLock com `cargo build --release --features x11`.
-O X11 oferece um bloqueio mais fraco que o Wayland, e a tela de bloqueio avisa isso
-enquanto está no ar: qualquer outro programa da sessão consegue ler o que você digita,
-e se o DeckLock parar, a tela desbloqueia. Prefira o Wayland onde houver; o DeckLock
-nunca usa X11 numa sessão que tenha `ext-session-lock-v1`. Essa compilação também dá
-aos fundos em vídeo o caminho acelerado no X11; uma compilação só para Wayland roda
-esses vídeos por software lá.
-
-**Por que não GNOME nem KDE Plasma?** Os dois desenham a própria tela de bloqueio
-dentro do desktop e não deixam outro programa substituí-la, então não há onde o
-DeckLock se conectar. Neles o DeckLock se recusa a bloquear e avisa, em vez de
-bloquear de um jeito que não seria seguro. Use a tela de bloqueio do próprio
-desktop. As sessões X11 desses desktops não são um contorno: o
-GNOME removeu a sua e o Plasma está abandonando a dele.
-
-
 ## Instalação
 
-A versão **0.3.0** é publicada para Arch, Fedora 43 e Ubuntu 26.04 no
-[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.0). Cada
+A versão **0.3.1** é publicada para Arch, Fedora 43 e Ubuntu 26.04 no
+[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.1). Cada
 pacote instala o aplicativo, o atalho **Configurações do DeckLock**, as mídias
 incluídas e o serviço PAM que o DeckLock usa. O gerenciador de pacotes resolve as
 dependências de execução; não é necessário instalar Rust. Os downloads vêm do
@@ -75,29 +25,29 @@ instalar num GNOME ou KDE Plasma padrão não permite que o DeckLock bloqueie a 
 ### Arch Linux · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/decklock-0.3.0-1-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/decklock-0.3.1-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.3.0-1-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.3.1-1-x86_64.pkg.tar.zst
 ```
 
 ### Fedora 43 · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/decklock-0.3.0-1.fc43.x86_64.rpm
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/decklock-0.3.1-1.fc43.x86_64.rpm
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo dnf install ./decklock-0.3.0-1.fc43.x86_64.rpm
+sudo dnf install ./decklock-0.3.1-1.fc43.x86_64.rpm
 ```
 
 ### Ubuntu 26.04 · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/decklock_0.3.0-1_amd64.deb
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.0/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/decklock_0.3.1-1_amd64.deb
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo apt install ./decklock_0.3.0-1_amd64.deb
+sudo apt install ./decklock_0.3.1-1_amd64.deb
 ```
 
 Cada pacote é construído com as bibliotecas da própria distribuição. Derivadas que
@@ -180,7 +130,7 @@ Sem argumentos, `decklock` mostra a ajuda. Use `decklock --help` ou
 `decklock config --help` para comandos e exemplos. O preview não autentica nem
 executa ações de energia. Escape oculta o teclado e, depois, fecha a janela.
 
-**A versão 0.3.0 é experimental.** Preview e configurações foram testados no Hyprland.
+**A versão 0.3.1 é experimental.** Preview e configurações foram testados no Hyprland.
 Testes de protocolo isolados cobrem aquisição do bloqueio, mudanças de monitores e
 encerramento sem desbloquear, e máquinas virtuais descartáveis exercitam cada pacote
 com Sway e Linux-PAM reais no Arch, Fedora e Ubuntu, incluindo negativa, desbloqueio
@@ -331,6 +281,43 @@ Leia [Geral](docs/guide/pt-BR/general.md) e [Avançada](docs/guide/pt-BR/advance
 As janelas comuns têm botão de fechar; a opção de barras de título também pode ser alterada com `decklock config set window_decorations false`.
 
 Veja o [roadmap](docs/ROADMAP.md), o [changelog](CHANGELOG.md) e o [processo de release](docs/releases.md).
+
+## Compatibilidade
+<a id="quais-desktops-funcionam"></a>
+
+O DeckLock tem como foco sessões desktop Linux modernas. Como o bloqueio de sessão interage diretamente com protocolos de exibição e com a autenticação PAM, a compatibilidade varia por compositor, distribuição e arquitetura:
+
+### Compositores e Servidores de Exibição
+
+| Ambiente | Status | Garantia de Segurança | Validação |
+|---|---|---|---|
+| **Sway** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | VM descartável automatizada (Arch, Fedora 43, Ubuntu 26.04) com PAM real |
+| **Hyprland, niri, river, Wayfire, Labwc, COSMIC** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | Conformidade com o protocolo; mesmo backend Wayland |
+| **Sessões X11** | ⚠️ Experimental (`--features x11`) | **Reduzida** (teclas não são isoladas pelo protocolo; tela desbloqueia se o processo morrer) | Gate isolado (`Xvfb` + `xfwm4` + teste de invasão); vídeo acelerado via GLX/EGL |
+| **GNOME e KDE Plasma** | ❌ Não suportado | N/A | Recusa bloqueio com segurança (ambos desenham a própria tela de bloqueio interna) |
+
+### Distribuições e Empacotamento
+
+| Distribuição | Pacote Pronto | Serviço PAM Incluído | Teste em VM Real | Observações |
+|---|---|---|---|---|
+| **Arch Linux** | ✅ `.pkg.tar.zst` | ✅ `/etc/pam.d/decklock` | ✅ PAM real + faillock | Plataforma primária |
+| **Fedora 43+** | ✅ `.rpm` | ✅ `/etc/pam.d/decklock` | ✅ PAM real | Instalação padrão requer `authselect` para ativar contagem de faillock |
+| **Ubuntu 26.04+** | ✅ `.deb` | ✅ `/etc/pam.d/decklock` | ✅ PAM real | Empacota `gtk4-layer-shell >= 1.3` |
+| **Ubuntu 24.04** | ❌ Não | — | — | Não possui `gtk4-layer-shell` nos repositórios oficiais |
+| **Debian 13** | ❌ Bloqueado | — | — | Empacota `gtk4-layer-shell 1.0.4` (abaixo da versão 1.2 exigida) |
+| **Outro Linux** | ⚙️ Compilação via código-fonte | Configuração manual | — | Requer GTK 4.22+, GStreamer 1.28+, Linux-PAM, `gtk4-layer-shell >= 1.2` |
+| **BSD (FreeBSD / OpenBSD)** | ❌ Fora de escopo | — | — | Pilhas de autenticação/energia diferentes (BSD Auth, OpenPAM sem faillock, sem systemd) |
+
+### Arquiteturas
+
+| Arquitetura | Status | Disponibilidade de Pacotes |
+|---|---|---|
+| **x86_64** (AMD64) | ✅ Suportado | Pacotes publicados (`.pkg.tar.zst`, `.rpm`, `.deb`, `.tar.gz`) |
+| **aarch64** (ARM64) | 🚧 Suportado | Compilação via código-fonte e receitas de empacotamento prontas |
+
+**E o X11?** O backend X11 vem incluído nos pacotes de release candidatos (`--features x11`). O X11 oferece um bloqueio mais fraco que o Wayland, e a tela de bloqueio avisa isso enquanto está no ar: qualquer outro programa da sessão consegue ler o que você digita, e se o DeckLock parar, a tela desbloqueia. Prefira o Wayland onde houver; o DeckLock nunca usa X11 numa sessão que tenha `ext-session-lock-v1`. Os fundos em vídeo utilizam aceleração GL no X11 quando compilados com esse recurso.
+
+**Por que não GNOME nem KDE Plasma?** Os dois desenham a própria tela de bloqueio dentro do desktop e não deixam outro programa substituí-la, então não há onde o DeckLock se conectar. Neles o DeckLock se recusa a bloquear e avisa, em vez de bloquear de um jeito que não seria seguro. Use a tela de bloqueio do próprio desktop. As sessões X11 desses desktops não são um contorno: o GNOME removeu a sua e o Plasma está abandonando a dele.
 
 ## Verificações automáticas
 
