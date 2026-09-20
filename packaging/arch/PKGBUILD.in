@@ -3,7 +3,7 @@ pkgname=decklock
 pkgver=@VERSION@
 pkgrel=1
 pkgdesc='Customizable Wayland lock screen with native GTK4 settings and bundled media'
-arch=('x86_64')
+arch=('@ARCH@')
 url='https://github.com/yan-vidal/DeckLock'
 # No project-wide license has been selected by the author yet.
 depends=('gtk4>=4.22' 'glib2>=2.88' 'glibc>=2.44' 'gtk4-layer-shell>=1.3' 'gstreamer>=1.28' 'gst-plugins-base' 'gst-plugins-good' 'gst-libav' 'pam')
@@ -11,12 +11,12 @@ optdepends=('systemd: power actions' 'gst-plugins-bad: additional video formats'
 options=('!strip' '!debug')
 # Authentication policy the administrator may edit; pacman must not replace it.
 backup=('etc/pam.d/decklock')
-source=("decklock-${pkgver}-linux-x86_64.tar.gz")
+source=("decklock-${pkgver}-linux-@ARCH@.tar.gz")
 sha256sums=('@SHA256@')
 package() {
-    install -Dm755 "$srcdir/decklock-${pkgver}-linux-x86_64/bin/decklock" "$pkgdir/usr/bin/decklock"
+    install -Dm755 "$srcdir/decklock-${pkgver}-linux-@ARCH@/bin/decklock" "$pkgdir/usr/bin/decklock"
     install -d "$pkgdir/usr/share"
-    cp -a "$srcdir/decklock-${pkgver}-linux-x86_64/share/." "$pkgdir/usr/share/"
-    install -Dm644 "$srcdir/decklock-${pkgver}-linux-x86_64/pam/decklock" "$pkgdir/etc/pam.d/decklock"
-    install -Dm644 "$srcdir/decklock-${pkgver}-linux-x86_64/BUILD-INFO.json" "$pkgdir/usr/share/doc/decklock/BUILD-INFO.json"
+    cp -a "$srcdir/decklock-${pkgver}-linux-@ARCH@/share/." "$pkgdir/usr/share/"
+    install -Dm644 "$srcdir/decklock-${pkgver}-linux-@ARCH@/pam/decklock" "$pkgdir/etc/pam.d/decklock"
+    install -Dm644 "$srcdir/decklock-${pkgver}-linux-@ARCH@/BUILD-INFO.json" "$pkgdir/usr/share/doc/decklock/BUILD-INFO.json"
 }

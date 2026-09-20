@@ -16,8 +16,8 @@ Summary:        Customizable Wayland lock screen with native GTK4 settings and b
 # Fedora repositories.
 License:        LicenseRef-None
 URL:            https://github.com/yan-vidal/DeckLock
-Source0:        decklock-%{version}-fedora-x86_64.tar.gz
-ExclusiveArch:  x86_64
+Source0:        decklock-%{version}-fedora-@ARCH@.tar.gz
+ExclusiveArch:  @ARCH@
 BuildRequires:  coreutils
 
 # Shared libraries the binary links, including gtk4-layer-shell, are detected
@@ -35,14 +35,15 @@ DeckLock locks a Wayland session through ext-session-lock-v1, with a native
 GTK4 settings application, configurable themes, procedural and video media,
 an on-screen keyboard and offline bilingual help.
 
-Real locking requires a compositor that implements ext-session-lock-v1. KDE
-Plasma and GNOME do not, and X11 is not supported.
+Real locking requires a Wayland compositor implementing ext-session-lock-v1
+or an X11 session. Compositors without ext-session-lock-v1 (such as KDE Plasma
+and GNOME on Wayland) are not supported.
 
 %prep
 # Verify the payload the way the Arch recipe's sha256sums does: the archive must
 # be exactly the one test-package.py checksummed, or the build stops here.
 echo '@SHA256@  %{SOURCE0}' | sha256sum --check -
-%setup -q -n decklock-%{version}-fedora-x86_64
+%setup -q -n decklock-%{version}-fedora-@ARCH@
 
 %install
 install -Dm755 bin/decklock %{buildroot}%{_bindir}/decklock

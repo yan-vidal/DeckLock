@@ -2,8 +2,8 @@
 # Run in the isolated CI container for one target, as an unprivileged user.
 set -eu
 target="${1:?Pass the packaging target: arch or fedora}"
-cargo build --release --locked
-cargo test --release --locked --test cli_contract --test session_invariants
+cargo build --release --locked --features x11
+cargo test --release --locked --features x11 --test cli_contract --test session_invariants
 python3 scripts/test-package.py --binary target/release/decklock --target "$target"
 python3 scripts/package-release.py --target "$target"
 cd dist
@@ -19,7 +19,7 @@ fedora)
     mkdir -p rpmbuild/SOURCES
     cp decklock-*.tar.gz rpmbuild/SOURCES/
     rpmbuild -bb --define "_topdir $PWD/rpmbuild" decklock.spec
-    mv rpmbuild/RPMS/x86_64/decklock-*.rpm .
+    mv rpmbuild/RPMS/*/decklock-*.rpm .
     sha256sum decklock-*.rpm >> SHA256SUMS
     ;;
 ubuntu)
@@ -32,8 +32,8 @@ ubuntu)
     root=deb/decklock
     rm -rf deb
     mkdir -p "$root/DEBIAN" "$root/usr/bin" "$root/usr/share" "$root/etc/pam.d"
-    tar xzf decklock-*-ubuntu-x86_64.tar.gz
-    payload=$(echo decklock-*-ubuntu-x86_64/)
+    tar xzf decklock-*-ubuntu-*.tar.gz
+    payload=$(echo decklock-*-ubuntu-*/)
     install -Dm755 "$payload/bin/decklock" "$root/usr/bin/decklock"
     cp -a "$payload/share/." "$root/usr/share/"
     install -Dm644 "$payload/pam/decklock" "$root/etc/pam.d/decklock"

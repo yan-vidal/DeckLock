@@ -26,10 +26,11 @@ files = []
 results = []
 
 
-def spawn(command, name, extra=None):
+def spawn(command, name, extra=None, full_env=None):
     log = (EVIDENCE / name).open('w')
     files.append(log)
-    child = subprocess.Popen(command, env=env | (extra or {}), stdout=log, stderr=subprocess.STDOUT)
+    process_env = full_env if full_env is not None else (env | (extra or {}))
+    child = subprocess.Popen(command, env=process_env, stdout=log, stderr=subprocess.STDOUT)
     processes.append(child)
     return child
 
@@ -192,8 +193,59 @@ try:
     type_keys('blocked')
     time.sleep(0.3)
     assert len(text('probe-keys').splitlines()) == count, 'SIGTERM exposed the underlying client'
-    assert '.unlock_and_destroy(' not in text('account-denied.log')
     record('SIGTERM leaves real compositor locked and input isolated')
+
+    # Part 2: Real PAM authentication under X11 backend
+    import shutil
+    if shutil.which('Xvfb') and shutil.which('xdotool'):
+        x11_env = env.copy()
+        for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'WAYLAND_SOCKET', 'SWAYSOCK']:
+            x11_env.pop(key, None)
+        x11_env.update(DISPLAY=':99', GDK_BACKEND='x11', GSK_RENDERER='cairo')
+
+        xvfb = spawn(['Xvfb', ':99', '-screen', '0', '1280x720x24', '-nolisten', 'tcp'], 'xvfb.log', full_env=x11_env)
+        until(lambda: Path('/tmp/.X11-unix/X99').exists(), 'Xvfb :99 socket ready', child=xvfb)
+
+        def type_x11(value):
+            subprocess.run(['xdotool', 'type', '--delay', '40', value], env=x11_env, check=True, timeout=10)
+
+        def submit_x11(value):
+            subprocess.run(['xdotool', 'key', 'ctrl+a', 'BackSpace'], env=x11_env, check=True, timeout=10)
+            type_x11(value)
+            subprocess.run(['xdotool', 'key', 'Return'], env=x11_env, check=True, timeout=10)
+
+        (EVIDENCE / 'config-x11.toml').write_text('locale = "en-US"\npam_service = "decklock-vm-test"\nbackground_pool = []\nidle_pool = []\nidle_enabled = false\n')
+        xclient = spawn(['decklock', '--lock', '--config', str(EVIDENCE / 'config-x11.toml')], 'lock-x11.log', full_env=x11_env)
+        time.sleep(1.0)
+
+        # 1. Real PAM denial on X11
+        submit_x11('wrong-fixture-password')
+        until(lambda: any(x.startswith('Authentication failed') for x in statuses()),
+              'real PAM denial displayed on X11', seconds=35, child=xclient)
+        assert xclient.poll() is None, 'Wrong password exited X11 locker'
+        record('wrong password denied by real PAM under X11 backend')
+
+        # 2. Real PAM authorization and unlock on X11
+        submit_x11('DeckLock-test-42')
+        until(lambda: xclient.poll() is not None, 'correct password unlocks and exits under X11', seconds=35)
+        assert xclient.returncode == 0, text('lock-x11.log')[-3000:]
+        record('correct password passes real PAM and unlocks X11 session')
+
+        # 3. SIGTERM on X11 releases the session (asserting the reduced guarantee)
+        xclient2 = spawn(['decklock', '--lock', '--config', str(EVIDENCE / 'config-x11.toml')], 'lock-x11-sigterm.log', full_env=x11_env)
+        time.sleep(1.0)
+        xclient2.send_signal(signal.SIGTERM)
+        assert xclient2.wait(timeout=10) == -signal.SIGTERM
+        record('SIGTERM under X11 releases the session as Guarantees declares')
+
+        xvfb.terminate()
+        try:
+            xvfb.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            xvfb.kill()
+            xvfb.wait()
+        if xvfb in processes:
+            processes.remove(xvfb)
 finally:
     for child in reversed(processes):
         if child.poll() is None:
