@@ -16,8 +16,14 @@ window.decklock, #background { background-color: black; color: @foreground; }
 #content { background: transparent; }
 #clock { color: white; font-size: 96px; font-weight: 300; text-shadow: 0 2px 12px rgba(0,0,0,0.8); }
 #date { color: white; font-size: 22px; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
-#avatar { border: 2px solid alpha(@accent, 0.85); border-radius: 50%; margin-bottom: 8px; }
-#username { color: white; font-size: 20px; font-weight: bold; text-shadow: 0 2px 10px rgba(0,0,0,0.8); }
+#avatar, .user-avatar-current { border: 2px solid alpha(@accent, 0.85); border-radius: 50%; }
+#user-carousel { margin-bottom: 4px; }
+.user-avatar-side { opacity: 0.38; border: 1.5px solid alpha(@foreground, 0.25); border-radius: 50%; transition: opacity 200ms ease, border-color 200ms ease, transform 200ms ease; }
+.user-avatar-side:hover { opacity: 0.85; border-color: alpha(@accent, 0.80); transform: scale(1.06); }
+.user-nav-btn { background-color: alpha(@settings_surface, 0.65); color: @foreground; border: 1px solid alpha(@accent, 0.45); border-radius: 50%; min-width: 38px; min-height: 38px; padding: 6px; margin: 0 4px; transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease; }
+.user-nav-btn:hover { background-color: alpha(@accent, 0.45); border-color: @accent; transform: scale(1.10); }
+.user-nav-btn:active { background-color: alpha(@accent, 0.70); transform: scale(0.95); }
+#username { color: white; font-size: 20px; font-weight: bold; text-shadow: 0 2px 10px rgba(0,0,0,0.8); margin-bottom: 2px; }
 #user-selector, #session-selector { background-color: alpha(@settings_surface, 0.75); color: @foreground; border: 1.5px solid alpha(@accent, 0.70); border-radius: 20px; padding: 6px 14px; font-size: 15px; font-weight: bold; }
 #user-selector:hover, #session-selector:hover { background-color: alpha(@settings_surface, 0.90); border-color: @accent; }
 #user-selector button, #session-selector button { background: transparent; border: none; box-shadow: none; color: @foreground; font-weight: bold; }
