@@ -1172,65 +1172,82 @@ fn build_in(
     };
 
     let current_face = Rc::new(RefCell::new(initial_face));
+
+    let draw_avatar_content =
+        |context: &gtk::cairo::Context,
+         width: i32,
+         height: i32,
+         face: Option<&gtk::gdk_pixbuf::Pixbuf>| {
+            use gdk::prelude::GdkCairoContextExt;
+            let size = width.min(height) as f64;
+            context.arc(
+                width as f64 / 2.0,
+                height as f64 / 2.0,
+                size / 2.0,
+                0.0,
+                std::f64::consts::TAU,
+            );
+            context.clip();
+            if let Some(pixbuf) = face {
+                context.set_source_pixbuf(
+                    pixbuf,
+                    (width - pixbuf.width()) as f64 / 2.0,
+                    (height - pixbuf.height()) as f64 / 2.0,
+                );
+                let _ = context.paint();
+            } else {
+                // Draw clean themed avatar circle with silhouette
+                context.set_source_rgba(0.18, 0.20, 0.26, 0.85);
+                let _ = context.paint();
+                context.set_source_rgba(0.70, 0.75, 0.85, 0.90);
+                context.arc(
+                    width as f64 / 2.0,
+                    height as f64 * 0.38,
+                    size * 0.18,
+                    0.0,
+                    std::f64::consts::TAU,
+                );
+                let _ = context.fill();
+                context.arc(
+                    width as f64 / 2.0,
+                    height as f64 * 0.82,
+                    size * 0.34,
+                    0.0,
+                    std::f64::consts::TAU,
+                );
+                let _ = context.fill();
+            }
+        };
+
     let avatar = gtk::DrawingArea::new();
-    let draw_face = current_face.clone();
+    let draw_center = current_face.clone();
     avatar.set_draw_func(move |_, context, width, height| {
-        use gdk::prelude::GdkCairoContextExt;
-        let size = width.min(height) as f64;
-        context.arc(
-            width as f64 / 2.0,
-            height as f64 / 2.0,
-            size / 2.0,
-            0.0,
-            std::f64::consts::TAU,
-        );
-        context.clip();
-        if let Some(ref face) = *draw_face.borrow() {
-            context.set_source_pixbuf(
-                face,
-                (width - face.width()) as f64 / 2.0,
-                (height - face.height()) as f64 / 2.0,
-            );
-            let _ = context.paint();
-        } else {
-            // Draw clean themed avatar circle with silhouette
-            context.set_source_rgba(0.18, 0.20, 0.26, 0.85);
-            let _ = context.paint();
-            context.set_source_rgba(0.70, 0.75, 0.85, 0.90);
-            context.arc(
-                width as f64 / 2.0,
-                height as f64 * 0.38,
-                size * 0.18,
-                0.0,
-                std::f64::consts::TAU,
-            );
-            let _ = context.fill();
-            context.arc(
-                width as f64 / 2.0,
-                height as f64 * 0.82,
-                size * 0.34,
-                0.0,
-                std::f64::consts::TAU,
-            );
-            let _ = context.fill();
-        }
+        draw_avatar_content(context, width, height, draw_center.borrow().as_ref());
     });
     avatar.set_size_request(108, 108);
     avatar.set_halign(gtk::Align::Center);
+    avatar.set_valign(gtk::Align::Center);
     avatar.set_widget_name("avatar");
+    avatar.add_css_class("user-avatar-current");
     avatar.set_visible(layout.avatar_visible);
-    form.append(&avatar);
 
     let initial_display_name = if settings.greeter {
         users
             .get(initial_user_idx)
-            .map(|u| u.display_name.clone())
+            .map(|u| {
+                if !u.display_name.is_empty() && u.display_name != u.username {
+                    format!("{} ({})", u.display_name, u.username)
+                } else {
+                    u.display_name.clone()
+                }
+            })
             .unwrap_or_else(|| settings.username.clone())
     } else {
         settings.username.clone()
     };
     let username = gtk::Label::new(Some(&initial_display_name));
     username.set_widget_name("username");
+    username.set_halign(gtk::Align::Center);
 
     let entry = gtk::Entry::builder()
         .visibility(false)
@@ -1259,50 +1276,219 @@ fn build_in(
     );
 
     if settings.greeter && users.len() > 1 {
-        let user_labels: Vec<String> = users
-            .iter()
-            .map(|u| {
-                if u.display_name != u.username && !u.display_name.is_empty() {
-                    format!("{} ({})", u.display_name, u.username)
-                } else {
-                    u.username.clone()
-                }
-            })
-            .collect();
-        let user_dropdown = gtk::DropDown::from_strings(
-            &user_labels.iter().map(String::as_str).collect::<Vec<_>>(),
-        );
-        user_dropdown.set_widget_name("user-selector");
-        user_dropdown.set_halign(gtk::Align::Center);
-        user_dropdown.set_tooltip_text(Some(&settings.strings.text("select-user")));
-        user_dropdown.set_selected(initial_user_idx as u32);
+        let n_users = users.len();
+        let initial_prev_idx = if initial_user_idx == 0 {
+            n_users - 1
+        } else {
+            initial_user_idx - 1
+        };
+        let initial_next_idx = (initial_user_idx + 1) % n_users;
+
+        let load_face = |idx: usize, scale: i32| -> Option<gtk::gdk_pixbuf::Pixbuf> {
+            users
+                .get(idx)
+                .and_then(|u| u.icon_path.as_ref())
+                .and_then(|p| {
+                    gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(p, scale, scale, false).ok()
+                })
+        };
+
+        let prev_face = Rc::new(RefCell::new(load_face(initial_prev_idx, 64)));
+        let next_face = Rc::new(RefCell::new(load_face(initial_next_idx, 64)));
+        let current_user_idx = Rc::new(std::cell::Cell::new(initial_user_idx));
+
+        let prev_avatar = gtk::DrawingArea::new();
+        prev_avatar.set_size_request(64, 64);
+        prev_avatar.set_halign(gtk::Align::Center);
+        prev_avatar.set_valign(gtk::Align::Center);
+        prev_avatar.set_widget_name("avatar-prev");
+        prev_avatar.add_css_class("user-avatar-side");
+        if let Some(prev_u) = users.get(initial_prev_idx) {
+            prev_avatar.set_tooltip_text(Some(&prev_u.display_name));
+        }
+        prev_avatar.set_cursor_from_name(Some("pointer"));
+        let draw_prev = prev_face.clone();
+        prev_avatar.set_draw_func(move |_, context, width, height| {
+            draw_avatar_content(context, width, height, draw_prev.borrow().as_ref());
+        });
+
+        let next_avatar = gtk::DrawingArea::new();
+        next_avatar.set_size_request(64, 64);
+        next_avatar.set_halign(gtk::Align::Center);
+        next_avatar.set_valign(gtk::Align::Center);
+        next_avatar.set_widget_name("avatar-next");
+        next_avatar.add_css_class("user-avatar-side");
+        if let Some(next_u) = users.get(initial_next_idx) {
+            next_avatar.set_tooltip_text(Some(&next_u.display_name));
+        }
+        next_avatar.set_cursor_from_name(Some("pointer"));
+        let draw_next = next_face.clone();
+        next_avatar.set_draw_func(move |_, context, width, height| {
+            draw_avatar_content(context, width, height, draw_next.borrow().as_ref());
+        });
+
+        let prev_btn = gtk::Button::from_icon_name("go-previous-symbolic");
+        prev_btn.set_widget_name("user-prev-btn");
+        prev_btn.add_css_class("user-nav-btn");
+        prev_btn.set_valign(gtk::Align::Center);
+        prev_btn.set_tooltip_text(Some(&settings.strings.text("previous-user")));
+        prev_btn.set_cursor_from_name(Some("pointer"));
+
+        let next_btn = gtk::Button::from_icon_name("go-next-symbolic");
+        next_btn.set_widget_name("user-next-btn");
+        next_btn.add_css_class("user-nav-btn");
+        next_btn.set_valign(gtk::Align::Center);
+        next_btn.set_tooltip_text(Some(&settings.strings.text("next-user")));
+        next_btn.set_cursor_from_name(Some("pointer"));
 
         let users_list = users.clone();
         let sel_user = selected_user.clone();
         let lbl_user = username.clone();
-        let draw_face_notify = current_face.clone();
         let weak_avatar = avatar.downgrade();
+        let weak_prev_avatar = prev_avatar.downgrade();
+        let weak_next_avatar = next_avatar.downgrade();
         let weak_entry = entry.downgrade();
-        user_dropdown.connect_selected_notify(move |d| {
-            let idx = d.selected() as usize;
-            if let Some(u) = users_list.get(idx) {
+        let cur_idx = current_user_idx.clone();
+        let cur_face = current_face.clone();
+        let p_face = prev_face.clone();
+        let n_face = next_face.clone();
+        let sel_session_id = selected_session_id.clone();
+        let prev_av_handle = prev_avatar.clone();
+        let next_av_handle = next_avatar.clone();
+
+        let navigate_to = Rc::new(move |new_idx: usize| {
+            cur_idx.set(new_idx);
+            let count = users_list.len();
+            let p_idx = if new_idx == 0 { count - 1 } else { new_idx - 1 };
+            let n_idx = (new_idx + 1) % count;
+
+            if let Some(u) = users_list.get(new_idx) {
                 *sel_user.borrow_mut() = u.username.clone();
-                lbl_user.set_text(&u.display_name);
+                let display = if !u.display_name.is_empty() && u.display_name != u.username {
+                    format!("{} ({})", u.display_name, u.username)
+                } else {
+                    u.display_name.clone()
+                };
+                lbl_user.set_text(&display);
                 let new_face = u.icon_path.as_ref().and_then(|p| {
                     gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(p, 96, 96, false).ok()
                 });
-                *draw_face_notify.borrow_mut() = new_face;
-                if let Some(avatar) = weak_avatar.upgrade() {
-                    avatar.queue_draw();
-                }
-                if let Some(entry) = weak_entry.upgrade() {
-                    entry.set_text("");
-                    entry.grab_focus();
-                }
+                *cur_face.borrow_mut() = new_face;
+                crate::greeter::save_last_selection(&u.username, &sel_session_id.borrow());
+            }
+
+            if let Some(prev_u) = users_list.get(p_idx) {
+                let pf = prev_u.icon_path.as_ref().and_then(|p| {
+                    gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(p, 64, 64, false).ok()
+                });
+                *p_face.borrow_mut() = pf;
+                prev_av_handle.set_tooltip_text(Some(&prev_u.display_name));
+            }
+
+            if let Some(next_u) = users_list.get(n_idx) {
+                let nf = next_u.icon_path.as_ref().and_then(|p| {
+                    gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(p, 64, 64, false).ok()
+                });
+                *n_face.borrow_mut() = nf;
+                next_av_handle.set_tooltip_text(Some(&next_u.display_name));
+            }
+
+            if let Some(avatar) = weak_avatar.upgrade() {
+                avatar.queue_draw();
+            }
+            if let Some(pav) = weak_prev_avatar.upgrade() {
+                pav.queue_draw();
+            }
+            if let Some(nav) = weak_next_avatar.upgrade() {
+                nav.queue_draw();
+            }
+            if let Some(entry) = weak_entry.upgrade() {
+                entry.set_text("");
+                entry.grab_focus();
             }
         });
-        form.append(&user_dropdown);
+
+        let nav_prev = {
+            let nav = navigate_to.clone();
+            let cur_idx = current_user_idx.clone();
+            let count = users.len();
+            move || {
+                let cur = cur_idx.get();
+                let prev = if cur == 0 { count - 1 } else { cur - 1 };
+                nav(prev);
+            }
+        };
+
+        let nav_next = {
+            let nav = navigate_to.clone();
+            let cur_idx = current_user_idx.clone();
+            let count = users.len();
+            move || {
+                let cur = cur_idx.get();
+                let next = (cur + 1) % count;
+                nav(next);
+            }
+        };
+
+        prev_btn.connect_clicked({
+            let on_prev = nav_prev.clone();
+            move |_| on_prev()
+        });
+
+        next_btn.connect_clicked({
+            let on_next = nav_next.clone();
+            move |_| on_next()
+        });
+
+        let click_prev = gtk::GestureClick::new();
+        click_prev.connect_released({
+            let on_prev = nav_prev.clone();
+            move |_, _, _, _| on_prev()
+        });
+        prev_avatar.add_controller(click_prev);
+
+        let click_next = gtk::GestureClick::new();
+        click_next.connect_released({
+            let on_next = nav_next.clone();
+            move |_, _, _, _| on_next()
+        });
+        next_avatar.add_controller(click_next);
+
+        let entry_key_ctrl = gtk::EventControllerKey::new();
+        let weak_e = entry.downgrade();
+        entry_key_ctrl.connect_key_pressed({
+            let on_prev = nav_prev.clone();
+            let on_next = nav_next.clone();
+            move |_, key, _, _| {
+                if weak_e.upgrade().is_some_and(|e| e.text().is_empty()) {
+                    if key == gdk::Key::Left {
+                        on_prev();
+                        return glib::Propagation::Stop;
+                    } else if key == gdk::Key::Right {
+                        on_next();
+                        return glib::Propagation::Stop;
+                    }
+                }
+                glib::Propagation::Proceed
+            }
+        });
+        entry.add_controller(entry_key_ctrl);
+
+        let carousel_box = gtk::Box::new(gtk::Orientation::Horizontal, 14);
+        carousel_box.set_widget_name("user-carousel");
+        carousel_box.set_halign(gtk::Align::Center);
+        carousel_box.set_valign(gtk::Align::Center);
+
+        carousel_box.append(&prev_btn);
+        carousel_box.append(&prev_avatar);
+        carousel_box.append(&avatar);
+        carousel_box.append(&next_avatar);
+        carousel_box.append(&next_btn);
+
+        form.append(&carousel_box);
+        form.append(&username);
     } else {
+        form.append(&avatar);
         form.append(&username);
     }
 

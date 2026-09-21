@@ -243,6 +243,38 @@ fn main() {
         all_descendants.iter().any(|w| w.widget_name() == "avatar"),
         "Greeter must display avatar widget"
     );
+    if decklock::greeter::list_system_users().len() > 1 {
+        assert!(
+            all_descendants
+                .iter()
+                .any(|w| w.widget_name() == "user-carousel"),
+            "Greeter must display user-carousel container when multiple users exist"
+        );
+        assert!(
+            all_descendants
+                .iter()
+                .any(|w| w.widget_name() == "avatar-prev"),
+            "User carousel must display previous avatar preview"
+        );
+        assert!(
+            all_descendants
+                .iter()
+                .any(|w| w.widget_name() == "avatar-next"),
+            "User carousel must display next avatar preview"
+        );
+        assert!(
+            all_descendants
+                .iter()
+                .any(|w| w.widget_name() == "user-prev-btn"),
+            "User carousel must display previous button"
+        );
+        assert!(
+            all_descendants
+                .iter()
+                .any(|w| w.widget_name() == "user-next-btn"),
+            "User carousel must display next button"
+        );
+    }
     assert!(
         all_descendants
             .iter()

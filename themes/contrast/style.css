@@ -3,6 +3,11 @@ window.decklock { background-color: #000000; color: #ffffff; }
 #clock { font-size: 64px; font-weight: 700; }
 #date, #username { font-size: 24px; }
 #password, #user-selector, #session-selector, button { background-image: none; background-color: #000000; color: #ffffff; border: 2px solid #ffffff; border-radius: 4px; min-height: 44px; }
+.user-avatar-side { opacity: 0.45; border: 2px solid #ffffff; border-radius: 50%; }
+.user-avatar-side:hover { opacity: 1.0; border-color: #ffff00; }
+.user-avatar-current { border: 3px solid #ffff00; border-radius: 50%; }
+.user-nav-btn { background-color: #000000; color: #ffffff; border: 2px solid #ffffff; border-radius: 50%; min-width: 38px; min-height: 38px; padding: 6px; margin: 0 4px; }
+.user-nav-btn:hover { background-color: #ffffff; color: #000000; }
 button:hover, #submit { background-color: #ffffff; color: #000000; }
 button:focus-visible, entry:focus { outline: 3px solid #ffff00; outline-offset: 3px; }
 #preview-banner { padding: 12px; background-color: #ffffff; color: #000000; }
