@@ -278,14 +278,7 @@ pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String
         .or(default_path)
         .ok_or_else(|| "Could not determine hypridle.conf path".to_string())?;
 
-    if dry_run {
-        return Ok(format!(
-            "Dry-run: would configure screen lock in {}",
-            target_path.display()
-        ));
-    }
-
-    if target_path.exists() {
+    let (content_to_write, was_existing) = if target_path.exists() {
         let content = fs::read_to_string(&target_path)
             .map_err(|e| format!("Failed to read {}: {e}", target_path.display()))?;
         if content.contains("decklock --lock") {
@@ -294,14 +287,43 @@ pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String
                 target_path.display()
             ));
         }
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let backup_path = target_path.with_extension(format!("conf.bak.{timestamp}"));
-        let _ = fs::copy(&target_path, &backup_path);
-
-        let updated = if content.contains("gtklock") {
+        let mut updated_lines = Vec::new();
+        let mut has_lock_cmd = false;
+        for line in content.lines() {
+            if let Some(pos) = line.find("lock_cmd") {
+                let after = &line[pos + "lock_cmd".len()..];
+                let after_trimmed = after.trim_start();
+                if after_trimmed.starts_with('=') {
+                    has_lock_cmd = true;
+                    let indent = &line[..pos];
+                    let suffix = if line.ends_with('}') { " }" } else { "" };
+                    updated_lines.push(format!(
+                        "{indent}lock_cmd = pidof decklock || decklock --lock{suffix}"
+                    ));
+                    continue;
+                }
+            }
+            if let Some(pos) = line.find("before_sleep_cmd") {
+                let after = &line[pos + "before_sleep_cmd".len()..];
+                let after_trimmed = after.trim_start();
+                if after_trimmed.starts_with('=') {
+                    let indent = &line[..pos];
+                    let suffix = if line.ends_with('}') { " }" } else { "" };
+                    updated_lines.push(format!(
+                        "{indent}before_sleep_cmd = pidof decklock || decklock --lock{suffix}"
+                    ));
+                    continue;
+                }
+            }
+            updated_lines.push(line.to_string());
+        }
+        let updated = if has_lock_cmd {
+            let mut res = updated_lines.join("\n");
+            if content.ends_with('\n') {
+                res.push('\n');
+            }
+            res
+        } else if content.contains("gtklock") {
             content.replace("gtklock", "decklock --lock")
         } else {
             format!(
@@ -315,17 +337,39 @@ pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String
                 content
             )
         };
-        fs::write(&target_path, updated)
-            .map_err(|e| format!("Failed to write {}: {e}", target_path.display()))?;
+        (updated, true)
     } else {
-        if let Some(parent) = target_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create directory {}: {e}", parent.display()))?;
-        }
-        let template = include_str!("../packaging/setup/hypridle.conf");
-        fs::write(&target_path, template)
-            .map_err(|e| format!("Failed to write {}: {e}", target_path.display()))?;
+        let template = include_str!("../packaging/setup/hypridle.conf").to_string();
+        (template, false)
+    };
+
+    if dry_run {
+        let action_desc = if was_existing {
+            "would update screen lock in"
+        } else {
+            "would create screen lock config in"
+        };
+        return Ok(format!(
+            "Dry-run: {action_desc} {}\n---\n{}",
+            target_path.display(),
+            content_to_write
+        ));
     }
+
+    if was_existing {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let backup_path = target_path.with_extension(format!("conf.bak.{timestamp}"));
+        let _ = fs::copy(&target_path, &backup_path);
+    } else if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create directory {}: {e}", parent.display()))?;
+    }
+
+    fs::write(&target_path, content_to_write)
+        .map_err(|e| format!("Failed to write {}: {e}", target_path.display()))?;
 
     Ok(format!(
         "Successfully configured hypridle at {}",
@@ -369,7 +413,8 @@ mod tests {
         assert!(!greetd_path.exists());
 
         let out = setup_lock(Some(&hypridle_path), true).unwrap();
-        assert!(out.contains("Dry-run: would configure"));
+        assert!(out.contains("Dry-run: would"));
+        assert!(out.contains("lock_cmd = pidof decklock || decklock --lock"));
         assert!(!hypridle_path.exists());
     }
 
@@ -413,7 +458,7 @@ mod tests {
         let out = setup_lock(Some(&hypridle_path), false).unwrap();
         assert!(out.contains("Successfully configured hypridle"));
         let content = fs::read_to_string(&hypridle_path).unwrap();
-        assert!(content.contains("general { lock_cmd = decklock --lock }"));
+        assert!(content.contains("lock_cmd = pidof decklock || decklock --lock"));
     }
 
     #[test]
