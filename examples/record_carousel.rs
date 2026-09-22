@@ -29,6 +29,13 @@ fn find_button(view: &ui::View, name: &str) -> gtk::Button {
         .unwrap_or_else(|_| panic!("Widget {name} is not a Button"))
 }
 
+fn find_dropdown(view: &ui::View, name: &str) -> Option<gtk::DropDown> {
+    descendants(view.window.upcast_ref())
+        .into_iter()
+        .find(|w| w.widget_name() == name)
+        .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+}
+
 fn main() {
     gtk::init().expect("Display required for recording");
     let app = gtk::Application::new(
@@ -84,13 +91,25 @@ fn main() {
                 let next_avatar = find_button(&view, "avatar-next");
                 next_avatar.emit_clicked();
             }
-            // Step 12 (~4.8s from start): Click translucent side avatar directly -> switches back to yan
-            12 => {
+            // Step 10 (~4.0s from start): Switch session in footer
+            10 => {
+                if let Some(dropdown) = find_dropdown(&view, "session-selector") {
+                    dropdown.set_selected(0);
+                }
+            }
+            // Step 14 (~5.6s from start): Click translucent side avatar directly -> switches back to yan
+            14 => {
                 let prev_avatar = find_button(&view, "avatar-prev");
                 prev_avatar.emit_clicked();
             }
-            // Step 17 (~6.8s from start): Exit cleanly
-            17 => {
+            // Step 18 (~7.2s from start): Switch session back in footer
+            18 => {
+                if let Some(dropdown) = find_dropdown(&view, "session-selector") {
+                    dropdown.set_selected(1);
+                }
+            }
+            // Step 22 (~8.8s from start): Exit cleanly
+            22 => {
                 view.window.close();
                 stop.quit();
                 return glib::ControlFlow::Break;

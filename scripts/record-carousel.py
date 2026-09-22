@@ -94,7 +94,7 @@ def run_capture(display_env=None):
             [
                 "ffmpeg", "-v", "error", "-y",
                 "-ss", str(start_trim),
-                "-t", "5.8",
+                "-t", "8.2",
                 "-i", str(video_raw),
                 "-c:v", "libx264",
                 "-crf", "18",
@@ -106,7 +106,7 @@ def run_capture(display_env=None):
 
         print(f"Generating screenshots and GIFs into {OUTPUT_DIR}...")
 
-        # 1. Fullscreen screenshot: initial user (Yan) at t=0.5s of clean video
+        # 1. Fullscreen screenshot: initial user (Yan) at t=0.6s of clean video
         full_yan = OUTPUT_DIR / "user-carousel-yan.png"
         subprocess.run(
             [
@@ -138,10 +138,11 @@ def run_capture(display_env=None):
         default_png = OUTPUT_DIR / "user-carousel.png"
         subprocess.run(["cp", str(full_yan), str(default_png)], check=True)
 
-        # 3. Cropped zoom screenshots focusing on user carousel & login card
+        # 3. Cropped zoom screenshots focusing on user carousel & login card & footer
         # Center in 1280x800 is x=640, y=400.
-        # Carousel + name + password box: width 680, height 360, x=300, y=290
-        crop_filter = "crop=680:360:300:290"
+        # Carousel + name + password box + footer session selector:
+        # width 740, height 510, x=270, y=275
+        crop_filter = "crop=740:510:270:275"
         zoom_png = OUTPUT_DIR / "user-carousel-zoom.png"
         subprocess.run(
             [
@@ -181,14 +182,14 @@ def run_capture(display_env=None):
         )
         print(f"Created: {full_gif}")
 
-        # 5. Zoom animated GIF focusing on avatar carousel interaction
+        # 5. Zoom animated GIF focusing on avatar carousel interaction and footer session
         zoom_gif = OUTPUT_DIR / "user-carousel-zoom.gif"
         palette_zoom = work / "palette_zoom.png"
         subprocess.run(
             [
                 "ffmpeg", "-v", "error", "-y",
                 "-i", str(video_clean),
-                "-vf", f"{crop_filter},fps=14,scale=560:-1:flags=lanczos,palettegen=max_colors=192",
+                "-vf", f"{crop_filter},fps=14,scale=580:-1:flags=lanczos,palettegen=max_colors=192",
                 str(palette_zoom),
             ],
             check=True,
@@ -198,7 +199,7 @@ def run_capture(display_env=None):
                 "ffmpeg", "-v", "error", "-y",
                 "-i", str(video_clean),
                 "-i", str(palette_zoom),
-                "-lavfi", f"{crop_filter},fps=14,scale=560:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3",
+                "-lavfi", f"{crop_filter},fps=14,scale=580:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3",
                 "-loop", "0",
                 str(zoom_gif),
             ],
