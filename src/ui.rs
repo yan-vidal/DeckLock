@@ -1275,7 +1275,7 @@ fn build_in(
         Some(&settings.strings.text("virtual-keyboard")),
     );
 
-    if settings.greeter && users.len() > 1 {
+    let carousel_box_handle = if settings.greeter && users.len() > 1 {
         let n_users = users.len();
         let initial_prev_idx = if initial_user_idx == 0 {
             n_users - 1
@@ -1297,35 +1297,45 @@ fn build_in(
         let next_face = Rc::new(RefCell::new(load_face(initial_next_idx, 64)));
         let current_user_idx = Rc::new(std::cell::Cell::new(initial_user_idx));
 
-        let prev_avatar = gtk::DrawingArea::new();
-        prev_avatar.set_size_request(64, 64);
-        prev_avatar.set_halign(gtk::Align::Center);
-        prev_avatar.set_valign(gtk::Align::Center);
+        let prev_avatar = gtk::Button::new();
         prev_avatar.set_widget_name("avatar-prev");
         prev_avatar.add_css_class("user-avatar-side");
+        prev_avatar.set_valign(gtk::Align::Center);
         if let Some(prev_u) = users.get(initial_prev_idx) {
             prev_avatar.set_tooltip_text(Some(&prev_u.display_name));
         }
         prev_avatar.set_cursor_from_name(Some("pointer"));
+
+        let prev_draw = gtk::DrawingArea::new();
+        prev_draw.set_size_request(64, 64);
+        prev_draw.set_halign(gtk::Align::Center);
+        prev_draw.set_valign(gtk::Align::Center);
+        prev_draw.set_can_target(false);
         let draw_prev = prev_face.clone();
-        prev_avatar.set_draw_func(move |_, context, width, height| {
+        prev_draw.set_draw_func(move |_, context, width, height| {
             draw_avatar_content(context, width, height, draw_prev.borrow().as_ref());
         });
+        prev_avatar.set_child(Some(&prev_draw));
 
-        let next_avatar = gtk::DrawingArea::new();
-        next_avatar.set_size_request(64, 64);
-        next_avatar.set_halign(gtk::Align::Center);
-        next_avatar.set_valign(gtk::Align::Center);
+        let next_avatar = gtk::Button::new();
         next_avatar.set_widget_name("avatar-next");
         next_avatar.add_css_class("user-avatar-side");
+        next_avatar.set_valign(gtk::Align::Center);
         if let Some(next_u) = users.get(initial_next_idx) {
             next_avatar.set_tooltip_text(Some(&next_u.display_name));
         }
         next_avatar.set_cursor_from_name(Some("pointer"));
+
+        let next_draw = gtk::DrawingArea::new();
+        next_draw.set_size_request(64, 64);
+        next_draw.set_halign(gtk::Align::Center);
+        next_draw.set_valign(gtk::Align::Center);
+        next_draw.set_can_target(false);
         let draw_next = next_face.clone();
-        next_avatar.set_draw_func(move |_, context, width, height| {
+        next_draw.set_draw_func(move |_, context, width, height| {
             draw_avatar_content(context, width, height, draw_next.borrow().as_ref());
         });
+        next_avatar.set_child(Some(&next_draw));
 
         let prev_btn = gtk::Button::from_icon_name("go-previous-symbolic");
         prev_btn.set_widget_name("user-prev-btn");
@@ -1345,8 +1355,8 @@ fn build_in(
         let sel_user = selected_user.clone();
         let lbl_user = username.clone();
         let weak_avatar = avatar.downgrade();
-        let weak_prev_avatar = prev_avatar.downgrade();
-        let weak_next_avatar = next_avatar.downgrade();
+        let weak_prev_draw = prev_draw.downgrade();
+        let weak_next_draw = next_draw.downgrade();
         let weak_entry = entry.downgrade();
         let cur_idx = current_user_idx.clone();
         let cur_face = current_face.clone();
@@ -1396,10 +1406,10 @@ fn build_in(
             if let Some(avatar) = weak_avatar.upgrade() {
                 avatar.queue_draw();
             }
-            if let Some(pav) = weak_prev_avatar.upgrade() {
+            if let Some(pav) = weak_prev_draw.upgrade() {
                 pav.queue_draw();
             }
-            if let Some(nav) = weak_next_avatar.upgrade() {
+            if let Some(nav) = weak_next_draw.upgrade() {
                 nav.queue_draw();
             }
             if let Some(entry) = weak_entry.upgrade() {
@@ -1440,19 +1450,15 @@ fn build_in(
             move |_| on_next()
         });
 
-        let click_prev = gtk::GestureClick::new();
-        click_prev.connect_released({
+        prev_avatar.connect_clicked({
             let on_prev = nav_prev.clone();
-            move |_, _, _, _| on_prev()
+            move |_| on_prev()
         });
-        prev_avatar.add_controller(click_prev);
 
-        let click_next = gtk::GestureClick::new();
-        click_next.connect_released({
+        next_avatar.connect_clicked({
             let on_next = nav_next.clone();
-            move |_, _, _, _| on_next()
+            move |_| on_next()
         });
-        next_avatar.add_controller(click_next);
 
         let entry_key_ctrl = gtk::EventControllerKey::new();
         let weak_e = entry.downgrade();
@@ -1487,10 +1493,12 @@ fn build_in(
 
         form.append(&carousel_box);
         form.append(&username);
+        Some(carousel_box)
     } else {
         form.append(&avatar);
         form.append(&username);
-    }
+        None
+    };
 
     let status = gtk::Label::new(None);
     status.set_widget_name("status");
@@ -1534,11 +1542,14 @@ fn build_in(
     form.append(&status);
     form.append(&guarantee);
 
-    if settings.greeter && !sessions.is_empty() {
-        let session_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let session_box = if settings.greeter && !sessions.is_empty() {
+        let session_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         session_box.set_widget_name("session-box");
         session_box.set_halign(gtk::Align::Center);
+        session_box.set_valign(gtk::Align::End);
+        session_box.set_margin_bottom(18);
         let session_icon = gtk::Image::from_icon_name("preferences-desktop-display-symbolic");
+        session_icon.set_widget_name("session-icon");
         session_icon.set_pixel_size(16);
         session_box.append(&session_icon);
 
@@ -1564,8 +1575,11 @@ fn build_in(
             }
         });
         session_box.append(&session_dropdown);
-        form.append(&session_box);
-    }
+        overlay.add_overlay(&session_box);
+        Some(session_box)
+    } else {
+        None
+    };
     let (keyboard, controller_event) = build_keyboard(&entry, &settings, &status);
     let physical_caps = Rc::new(Cell::new(false));
     let caps_label = caps.downgrade();
@@ -1583,8 +1597,10 @@ fn build_in(
     let compact: Rc<dyn Fn(&gtk::Box)> = Rc::new({
         let clock_region = clock_region.downgrade();
         let avatar = avatar.downgrade();
+        let carousel = carousel_box_handle.as_ref().map(gtk::Box::downgrade);
         let username = username.downgrade();
         let form = form.downgrade();
+        let session_box_weak = session_box.as_ref().map(gtk::Box::downgrade);
         let content = content.downgrade();
         let padding = layout.padding;
         let scale = layout.keyboard_scale;
@@ -1609,8 +1625,14 @@ fn build_in(
             if let Some(avatar) = avatar.upgrade() {
                 avatar.set_visible(!active && avatar_visible);
             }
+            if let Some(Some(carousel)) = carousel.as_ref().map(|w| w.upgrade()) {
+                carousel.set_visible(!active && avatar_visible);
+            }
             if let Some(username) = username.upgrade() {
                 username.set_visible(!active);
+            }
+            if let Some(Some(sb)) = session_box_weak.as_ref().map(|w| w.upgrade()) {
+                sb.set_visible(!active);
             }
             if let Some(form) = form.upgrade() {
                 form.set_margin_top(if active { 0 } else { 60 });

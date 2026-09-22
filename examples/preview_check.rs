@@ -250,36 +250,51 @@ fn main() {
                 .any(|w| w.widget_name() == "user-carousel"),
             "Greeter must display user-carousel container when multiple users exist"
         );
-        assert!(
-            all_descendants
-                .iter()
-                .any(|w| w.widget_name() == "avatar-prev"),
-            "User carousel must display previous avatar preview"
+        let prev_avatar = all_descendants
+            .iter()
+            .find(|w| w.widget_name() == "avatar-prev")
+            .unwrap()
+            .clone()
+            .downcast::<gtk::Button>()
+            .expect("avatar-prev must be a clickable Button");
+        let next_avatar = all_descendants
+            .iter()
+            .find(|w| w.widget_name() == "avatar-next")
+            .unwrap()
+            .clone()
+            .downcast::<gtk::Button>()
+            .expect("avatar-next must be a clickable Button");
+        let username_label = all_descendants
+            .iter()
+            .find(|w| w.widget_name() == "username")
+            .unwrap()
+            .clone()
+            .downcast::<gtk::Label>()
+            .expect("username must be a Label");
+        let initial_name = username_label.text();
+        next_avatar.emit_clicked();
+        while glib::MainContext::default().iteration(false) {}
+        assert_ne!(
+            username_label.text(),
+            initial_name,
+            "Clicking next avatar must switch user"
         );
-        assert!(
-            all_descendants
-                .iter()
-                .any(|w| w.widget_name() == "avatar-next"),
-            "User carousel must display next avatar preview"
-        );
-        assert!(
-            all_descendants
-                .iter()
-                .any(|w| w.widget_name() == "user-prev-btn"),
-            "User carousel must display previous button"
-        );
-        assert!(
-            all_descendants
-                .iter()
-                .any(|w| w.widget_name() == "user-next-btn"),
-            "User carousel must display next button"
+        prev_avatar.emit_clicked();
+        while glib::MainContext::default().iteration(false) {}
+        assert_eq!(
+            username_label.text(),
+            initial_name,
+            "Clicking prev avatar must switch user back"
         );
     }
-    assert!(
-        all_descendants
-            .iter()
-            .any(|w| w.widget_name() == "session-box"),
-        "Greeter must display session-box container when sessions exist"
+    let session_box = all_descendants
+        .iter()
+        .find(|w| w.widget_name() == "session-box")
+        .expect("Greeter must display session-box container when sessions exist");
+    assert_eq!(
+        session_box.valign(),
+        gtk::Align::End,
+        "Session box must be placed at the bottom footer"
     );
     assert_eq!(
         greeter_view.submit.tooltip_text().as_deref(),
