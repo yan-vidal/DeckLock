@@ -360,13 +360,20 @@ where
             GreetdResponse::Success => {
                 return match client.start_session(command, &[])? {
                     GreetdResponse::Success => Ok(()),
-                    GreetdResponse::Error { description, .. } => Err(description),
+                    GreetdResponse::Error { description, .. } => {
+                        let _ = client.cancel_session();
+                        Err(description)
+                    }
                     GreetdResponse::AuthMessage { .. } => {
+                        let _ = client.cancel_session();
                         Err("Unexpected authentication prompt while starting session".into())
                     }
                 };
             }
-            GreetdResponse::Error { description, .. } => return Err(description),
+            GreetdResponse::Error { description, .. } => {
+                let _ = client.cancel_session();
+                return Err(description);
+            }
             GreetdResponse::AuthMessage {
                 auth_message_type,
                 auth_message,
@@ -607,6 +614,66 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error, "Prompt canceled");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn protocol_cancels_denied_attempt_before_another_login() {
+        use std::os::unix::net::UnixListener;
+
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("greetd.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            for (expected, reply) in [
+                (
+                    "create_session",
+                    r#"{"type":"auth_message","auth_message_type":"secret","auth_message":"Password"}"#,
+                ),
+                (
+                    "post_auth_message_response",
+                    r#"{"type":"error","error_type":"auth_error","description":"Denied"}"#,
+                ),
+                ("cancel_session", r#"{"type":"success"}"#),
+                (
+                    "create_session",
+                    r#"{"type":"auth_message","auth_message_type":"secret","auth_message":"Password"}"#,
+                ),
+                ("post_auth_message_response", r#"{"type":"success"}"#),
+                ("start_session", r#"{"type":"success"}"#),
+            ] {
+                let mut length = [0; 4];
+                stream.read_exact(&mut length).unwrap();
+                let mut body = vec![0; u32::from_ne_bytes(length) as usize];
+                stream.read_exact(&mut body).unwrap();
+                assert!(String::from_utf8(body).unwrap().contains(expected));
+                stream
+                    .write_all(&(reply.len() as u32).to_ne_bytes())
+                    .unwrap();
+                stream.write_all(reply.as_bytes()).unwrap();
+            }
+        });
+        let mut client = GreetdClient::connect_path(&socket).unwrap();
+        assert_eq!(
+            login(
+                &mut client,
+                "locktest",
+                &["/usr/bin/sway".into()],
+                Zeroizing::new("wrong".into()),
+                |_, _| unreachable!(),
+            )
+            .unwrap_err(),
+            "Denied"
+        );
+        login(
+            &mut client,
+            "locktest",
+            &["/usr/bin/sway".into()],
+            Zeroizing::new("correct".into()),
+            |_, _| unreachable!(),
+        )
+        .unwrap();
         server.join().unwrap();
     }
 
