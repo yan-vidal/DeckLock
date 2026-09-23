@@ -106,3 +106,4 @@ done
 runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
     DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" DECKLOCK_STACK_FAILLOCK="$stack_faillock" \
     python3 /var/tmp/decklock-evidence/exercise.py
+python3 "$fixture/greeter.py"
