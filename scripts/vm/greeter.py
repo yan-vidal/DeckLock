@@ -59,6 +59,7 @@ session_command.write_text(
     '#!/bin/sh\n'
     'set -eu\n'
     'printf "%s\\n" "$(id -un)" > "/var/tmp/decklock-greeter-test/session-$(id -un)"\n'
+    'printf "%s\\n" "${XDG_RUNTIME_DIR:-unset}" > "/var/tmp/decklock-greeter-test/runtime-$(id -un)"\n'
     'sleep 2\n'
 )
 session_command.chmod(0o755)
@@ -68,7 +69,7 @@ config = WORK / 'config.toml'
 run(['decklock', 'setup', 'greeter', '--target', str(config)])
 document = tomllib.loads(config.read_text())
 original = document['default_session']['command']
-assert original == 'cage -s -- decklock --greeter --keyboard', original
+assert original == 'XDG_RUNTIME_DIR=/run/user/$(id -u) cage -s -- decklock --greeter --keyboard', original
 record('packaged setup selects the native greetd/Cage greeter')
 
 greeter_config = Path(greeter.pw_dir) / '.config/decklock/config.toml'
@@ -83,7 +84,8 @@ wrapper.write_text(
     'id\n'
     'printf "runtime=%s\\n" "${XDG_RUNTIME_DIR:-unset}"\n'
     'printf "start\\n" >> /var/tmp/decklock-greeter-test/starts\n'
-    'exec env WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman '
+    'exec env XDG_RUNTIME_DIR=/run/user/$(id -u) '
+    'WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman '
     'WLR_LIBINPUT_NO_DEVICES=1 GDK_BACKEND=wayland GSK_RENDERER=cairo '
     'cage -s -- decklock --greeter --keyboard '
     f'--config {greeter_config}\n'
@@ -141,6 +143,7 @@ with (EVIDENCE / 'greetd.log').open('w') as output:
         type_password('DeckLock-test-42')
         until(lambda: (WORK / 'session-locktest').exists(), 'first user session started', daemon, 45)
         assert (WORK / 'session-locktest').read_text().strip() == 'locktest'
+        assert (WORK / 'runtime-locktest').read_text().strip() == '/run/user/' + str(pwd.getpwnam('locktest').pw_uid)
         assert tomllib.loads(state.read_text())['last_user'] == 'locktest'
         record('native greeter starts the selected Wayland session as the authenticated user')
 
@@ -166,6 +169,7 @@ with (EVIDENCE / 'greetd.log').open('w') as output:
         type_password('DeckLock-second-42')
         until(lambda: (WORK / 'session-locktest2').exists(), 'second user session started', daemon, 45)
         assert (WORK / 'session-locktest2').read_text().strip() == 'locktest2'
+        assert (WORK / 'runtime-locktest2').read_text().strip() == '/run/user/' + str(pwd.getpwnam('locktest2').pw_uid)
         assert tomllib.loads(state.read_text())['last_user'] == 'locktest2'
         record('avatar selection changes the account authenticated by real greetd/PAM')
     finally:

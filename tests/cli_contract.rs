@@ -313,7 +313,11 @@ fn setup_subcommands_exercise_cli_boundary_and_support_isolated_targets() {
     );
     assert!(target_greetd.exists());
     let content = std::fs::read_to_string(&target_greetd).unwrap();
-    assert!(content.contains("cage -s -- decklock --greeter --keyboard"));
+    assert!(
+        content.contains(
+            "XDG_RUNTIME_DIR=/run/user/$(id -u) cage -s -- decklock --greeter --keyboard"
+        )
+    );
 
     // Existing greetd policy must survive setup, and the greeter must not be
     // mistaken for a preview when its socket is unavailable.

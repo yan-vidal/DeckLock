@@ -252,7 +252,9 @@ pub fn setup_greeter(
         .ok_or_else(|| "greetd default_session must be a TOML table".to_string())?;
     session.insert(
         "command".into(),
-        toml::Value::String(format!("cage -s -- decklock --greeter{keyboard_flag}")),
+        toml::Value::String(format!(
+            "XDG_RUNTIME_DIR=/run/user/$(id -u) cage -s -- decklock --greeter{keyboard_flag}"
+        )),
     );
     session.insert("user".into(), toml::Value::String("greeter".into()));
     let content = toml::to_string_pretty(&document)
