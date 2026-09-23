@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import pwd
 import signal
+import shutil
 import subprocess
 import time
 import tomllib
@@ -78,6 +79,9 @@ wrapper = Path('/usr/local/bin/decklock-vm-greeter')
 wrapper.write_text(
     '#!/bin/sh\n'
     'set -eu\n'
+    'exec >> /var/tmp/decklock-greeter-test/cage.log 2>&1\n'
+    'id\n'
+    'printf "runtime=%s\\n" "${XDG_RUNTIME_DIR:-unset}"\n'
     'printf "start\\n" >> /var/tmp/decklock-greeter-test/starts\n'
     'exec env WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman '
     'WLR_LIBINPUT_NO_DEVICES=1 GDK_BACKEND=wayland GSK_RENDERER=cairo '
@@ -129,7 +133,7 @@ with (EVIDENCE / 'greetd.log').open('w') as output:
 
         time.sleep(2)
         type_password('wrong-fixture-password')
-        until(lambda: 'Greeter login failed:' in (EVIDENCE / 'greetd.log').read_text(errors='replace'),
+        until(lambda: 'Greeter login failed:' in (WORK / 'cage.log').read_text(errors='replace'),
               'wrong password visibly rejected', daemon, 35)
         assert not (WORK / 'session-locktest').exists(), 'Wrong password started a session'
         record('real greetd/PAM rejects a wrong password without starting a user session')
@@ -165,9 +169,12 @@ with (EVIDENCE / 'greetd.log').open('w') as output:
         assert tomllib.loads(state.read_text())['last_user'] == 'locktest2'
         record('avatar selection changes the account authenticated by real greetd/PAM')
     finally:
-        os.killpg(daemon.pid, signal.SIGTERM)
-        try:
-            daemon.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            os.killpg(daemon.pid, signal.SIGKILL)
-            daemon.wait(timeout=5)
+        if (WORK / 'cage.log').exists():
+            shutil.copyfile(WORK / 'cage.log', EVIDENCE / 'cage.log')
+        if daemon.poll() is None:
+            os.killpg(daemon.pid, signal.SIGTERM)
+            try:
+                daemon.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(daemon.pid, signal.SIGKILL)
+                daemon.wait(timeout=5)
