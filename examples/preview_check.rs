@@ -8,6 +8,7 @@ use decklock::{
 use gtk::{gio, prelude::*};
 use std::{
     cell::Cell,
+    os::unix::fs::PermissionsExt,
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -238,6 +239,43 @@ fn main() {
         4,
         "Greeter action bar must show 4 power buttons and omit switch-user"
     );
+    // A private executable proves that clicking the standalone greeter preview
+    // cannot dispatch a real power action. Never place host systemctl in PATH.
+    let fake_bin = dir.path().join("fake-bin");
+    std::fs::create_dir(&fake_bin).unwrap();
+    let fake_systemctl = fake_bin.join("systemctl");
+    std::fs::write(
+        &fake_systemctl,
+        "#!/bin/sh\nprintf called > \"$DECKLOCK_ACTION_MARKER\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake_systemctl, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let action_marker = dir.path().join("greeter_power_called");
+    let original_path = std::env::var_os("PATH");
+    // SAFETY: this standalone GTK contract is single-process and restores its
+    // environment before running the remaining checks.
+    unsafe {
+        std::env::set_var("PATH", &fake_bin);
+        std::env::set_var("DECKLOCK_ACTION_MARKER", &action_marker);
+    }
+    for button in &greeter_buttons {
+        button.emit_clicked();
+    }
+    for _ in 0..10 {
+        while glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        !action_marker.exists(),
+        "Greeter preview ran a power action"
+    );
+    // SAFETY: same single-process test, restoring the inherited search path.
+    unsafe {
+        if let Some(path) = original_path {
+            std::env::set_var("PATH", path);
+        }
+        std::env::remove_var("DECKLOCK_ACTION_MARKER");
+    }
     let all_descendants = descendants(greeter_view.window.upcast_ref());
     assert!(
         all_descendants.iter().any(|w| w.widget_name() == "avatar"),
@@ -302,6 +340,87 @@ fn main() {
     );
     greeter_view.window.destroy();
     drop(greeter_view);
+    while glib::MainContext::default().iteration(false) {}
+
+    // Exercise the GTK switch button through a fake logind. A greeter is
+    // identified by its Class property, independent of list-sessions columns.
+    let fake_loginctl = fake_bin.join("loginctl");
+    std::fs::write(
+        &fake_loginctl,
+        "#!/bin/sh\ncase \"$1\" in\n  list-sessions) printf 'c1 1000 locktest seat0 tty1\\nc2 986 greeter seat0 tty2\\n' ;;\n  show-session) if [ \"$2\" = c2 ]; then printf 'greeter\\n'; else printf 'user\\n'; fi ;;\n  activate) printf '%s' \"$2\" > \"$DECKLOCK_ACTION_MARKER\" ;;\n  *) exit 91 ;;\nesac\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake_loginctl, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let switch_marker = dir.path().join("activated_greeter");
+    let original_path = std::env::var_os("PATH");
+    // SAFETY: this standalone process restores the search path after the probe.
+    unsafe {
+        std::env::set_var("PATH", &fake_bin);
+        std::env::set_var("DECKLOCK_ACTION_MARKER", &switch_marker);
+    }
+    let switch_view = ui::build(
+        &app,
+        Rc::new(ui::Settings {
+            config: Config::default(),
+            theme: Theme::load(None).unwrap(),
+            strings: I18n::new(Some("en-US"), None).unwrap(),
+            preview: false,
+            show_keyboard: false,
+            start_idle: false,
+            username: "locktest".into(),
+            greeter: false,
+        }),
+        Rc::new(|_| {}),
+    );
+    switch_view.window.present();
+    let power = descendants(switch_view.window.upcast_ref())
+        .into_iter()
+        .find(|w| w.widget_name() == "power")
+        .unwrap();
+    let switch_button = descendants(&power)
+        .into_iter()
+        .filter_map(|w| w.downcast::<gtk::Button>().ok())
+        .next()
+        .unwrap();
+    switch_button.emit_clicked();
+    let timeout = Instant::now() + Duration::from_secs(2);
+    while !switch_marker.exists() && Instant::now() < timeout {
+        while glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(std::fs::read_to_string(&switch_marker).unwrap(), "c2");
+    std::fs::write(
+        &fake_loginctl,
+        "#!/bin/sh\ncase \"$1\" in\n  list-sessions) printf 'c2 986 greeter seat0 tty2\\n' ;;\n  show-session) printf 'greeter\\n' ;;\n  activate) exit 42 ;;\n  *) exit 91 ;;\nesac\n",
+    )
+    .unwrap();
+    switch_button.emit_clicked();
+    assert!(
+        switch_view
+            .status
+            .text()
+            .contains("Failed to activate greeter session")
+    );
+    std::fs::write(
+        &fake_loginctl,
+        "#!/bin/sh\ncase \"$1\" in\n  list-sessions) printf 'c1 1000 locktest seat0 tty1\\n' ;;\n  show-session) printf 'user\\n' ;;\n  *) exit 91 ;;\nesac\n",
+    )
+    .unwrap();
+    switch_button.emit_clicked();
+    assert!(
+        switch_view
+            .status
+            .text()
+            .contains("No active greeter session")
+    );
+    switch_view.window.destroy();
+    drop(switch_view);
+    unsafe {
+        if let Some(path) = original_path {
+            std::env::set_var("PATH", path);
+        }
+        std::env::remove_var("DECKLOCK_ACTION_MARKER");
+    }
     while glib::MainContext::default().iteration(false) {}
     let settings = Rc::new(ui::Settings {
         config: Config {

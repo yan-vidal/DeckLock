@@ -38,6 +38,8 @@ pub struct View {
     pub selected_user: Rc<RefCell<String>>,
     pub selected_session: Rc<RefCell<Vec<String>>>,
     pub selected_session_id: Rc<RefCell<String>>,
+    greeter_selection: Vec<gtk::Widget>,
+    greeter_session_available: bool,
     settings: Rc<Settings>,
     bindings: Rc<Bindings>,
     preview: bool,
@@ -96,6 +98,11 @@ pub fn rebuild_preview(view: View, app: &gtk::Application, settings: Rc<Settings
 }
 
 impl View {
+    pub fn set_greeter_selection_sensitive(&self, sensitive: bool) {
+        for widget in &self.greeter_selection {
+            widget.set_sensitive(sensitive);
+        }
+    }
     pub fn set_preview_idle(&self, idle: bool) {
         assert!(self.preview, "Idle override is only available in preview");
         self.forced_idle.set(Some(idle));
@@ -179,8 +186,11 @@ impl View {
             self.status.remove_css_class("warning");
         }
         self.entry.set_sensitive(!busy);
-        self.submit
-            .set_sensitive(!busy && !self.entry.text().is_empty());
+        self.submit.set_sensitive(
+            !busy
+                && self.greeter_session_available
+                && (self.settings.greeter || !self.entry.text().is_empty()),
+        );
         self.keyboard.set_sensitive(!busy);
         self.status.set_text(message);
     }
@@ -758,20 +768,23 @@ fn build_keyboard(
     (container, event_handler)
 }
 
-fn dispatch_switch_user(custom_command: Option<&str>) {
+fn dispatch_switch_user(custom_command: Option<&str>) -> Result<(), String> {
     if let Some(cmd) = custom_command {
-        if let Err(err) = std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
-            eprintln!("Custom switch-user action failed: {err}");
-        }
-        return;
+        std::process::Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .spawn()
+            .map_err(|e| format!("Custom switch-user action failed: {e}"))?;
+        return Ok(());
     }
 
     // Try dm-tool switch-to-greeter (LightDM)
     match std::process::Command::new("dm-tool")
         .arg("switch-to-greeter")
-        .spawn()
+        .status()
     {
-        Ok(_) => return,
+        Ok(status) if status.success() => return Ok(()),
+        Ok(status) => eprintln!("dm-tool switch-to-greeter exited with {status}"),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
         Err(err) => {
             eprintln!("dm-tool switch-to-greeter failed: {err}");
@@ -779,42 +792,48 @@ fn dispatch_switch_user(custom_command: Option<&str>) {
     }
 
     // Try gdmflexiserver (GDM)
-    match std::process::Command::new("gdmflexiserver").spawn() {
-        Ok(_) => return,
+    match std::process::Command::new("gdmflexiserver").status() {
+        Ok(status) if status.success() => return Ok(()),
+        Ok(status) => eprintln!("gdmflexiserver exited with {status}"),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
         Err(err) => {
             eprintln!("gdmflexiserver failed: {err}");
         }
     }
 
-    // Try finding an active greeter session via loginctl
+    // logind can activate an existing greeter, but cannot create a new login
+    // session. Ask for a configured command if no display manager has one.
     if let Ok(output) = std::process::Command::new("loginctl")
         .args(["list-sessions", "--no-legend", "--no-pager"])
         .output()
+        && output.status.success()
         && let Ok(text) = String::from_utf8(output.stdout)
     {
         for line in text.lines() {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 6 && parts[5] == "greeter" {
-                let session_id = parts[0];
-                if let Err(err) = std::process::Command::new("loginctl")
-                    .args(["activate", session_id])
-                    .spawn()
+            if let Some(session_id) = line.split_whitespace().next() {
+                let class = std::process::Command::new("loginctl")
+                    .args(["show-session", session_id, "--property=Class", "--value"])
+                    .output();
+                if !class
+                    .as_ref()
+                    .is_ok_and(|output| output.status.success() && output.stdout == b"greeter\n")
                 {
-                    eprintln!("Failed to activate greeter session {session_id}: {err}");
+                    continue;
                 }
-                return;
+                std::process::Command::new("loginctl")
+                    .args(["activate", session_id])
+                    .status()
+                    .map_err(|e| format!("Failed to activate greeter session {session_id}: {e}"))
+                    .and_then(|status| {
+                        status.success().then_some(()).ok_or_else(|| {
+                            format!("Failed to activate greeter session {session_id}: {status}")
+                        })
+                    })?;
+                return Ok(());
             }
         }
     }
-
-    // Fallback: loginctl switch-user
-    if let Err(err) = std::process::Command::new("loginctl")
-        .arg("switch-user")
-        .spawn()
-    {
-        eprintln!("Switch user failed: {err}. Set switch_user_command in decklock.toml if needed.");
-    }
+    Err("No active greeter session; set switch_user_command for this display manager".into())
 }
 
 pub fn build(
@@ -930,6 +949,9 @@ fn build_in(
         window.add_controller(key.clone());
         bindings.controllers.borrow_mut().push(key.upcast());
     }
+    let status = gtk::Label::new(None);
+    status.set_widget_name("status");
+    status.set_wrap(true);
     let power = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     power.set_widget_name("power");
     power.set_halign(gtk::Align::End);
@@ -998,9 +1020,12 @@ fn build_in(
             )));
         } else {
             let custom_switch_cmd = settings.config.switch_user_command.clone();
+            let action_status = status.clone();
             button.connect_clicked(move |_| match action {
                 PowerAction::SwitchUser => {
-                    dispatch_switch_user(custom_switch_cmd.as_deref());
+                    if let Err(error) = dispatch_switch_user(custom_switch_cmd.as_deref()) {
+                        action_status.set_text(&error);
+                    }
                 }
                 PowerAction::Command(command) => {
                     if let Err(err) = std::process::Command::new("systemctl").arg(command).spawn() {
@@ -1116,6 +1141,10 @@ fn build_in(
     } else {
         Vec::new()
     };
+    let session_available = !settings.greeter || !sessions.is_empty();
+    if !session_available {
+        status.set_text(&settings.strings.text("no-wayland-sessions"));
+    }
     let state = if settings.greeter {
         crate::greeter::GreeterState::load()
     } else {
@@ -1362,7 +1391,6 @@ fn build_in(
         let cur_face = current_face.clone();
         let p_face = prev_face.clone();
         let n_face = next_face.clone();
-        let sel_session_id = selected_session_id.clone();
         let prev_av_handle = prev_avatar.clone();
         let next_av_handle = next_avatar.clone();
 
@@ -1384,7 +1412,6 @@ fn build_in(
                     gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(p, 96, 96, false).ok()
                 });
                 *cur_face.borrow_mut() = new_face;
-                crate::greeter::save_last_selection(&u.username, &sel_session_id.borrow());
             }
 
             if let Some(prev_u) = users_list.get(p_idx) {
@@ -1500,9 +1527,6 @@ fn build_in(
         None
     };
 
-    let status = gtk::Label::new(None);
-    status.set_widget_name("status");
-    status.set_wrap(true);
     let guarantee = gtk::Label::new(None);
     guarantee.set_widget_name("guarantee");
     guarantee.set_wrap(true);
@@ -1522,11 +1546,15 @@ fn build_in(
     } else {
         "unlock"
     })));
-    submit.set_sensitive(false);
+    submit.set_sensitive(settings.greeter && session_available);
     let weak_submit = submit.downgrade();
+    let greeter_submit = settings.greeter;
+    let can_submit = session_available;
     entry.connect_changed(move |entry| {
         if let Some(submit) = weak_submit.upgrade() {
-            submit.set_sensitive(entry.is_sensitive() && !entry.text().is_empty());
+            submit.set_sensitive(
+                entry.is_sensitive() && can_submit && (greeter_submit || !entry.text().is_empty()),
+            );
         }
     });
     submit.set_widget_name("submit");
@@ -1669,17 +1697,22 @@ fn build_in(
         }
     });
     let preview = settings.preview;
+    let can_submit = session_available;
     let status_submit = status.clone();
     let strings = settings.clone();
     entry.connect_activate(move |entry| {
-        if !entry.is_sensitive() || entry.text().is_empty() {
+        if !can_submit || !entry.is_sensitive() || (entry.text().is_empty() && !strings.greeter) {
             return;
         }
         let password = Zeroizing::new(entry.text().to_string());
         entry.set_text("");
         entry.set_visibility(false);
         if preview {
-            status_submit.set_text(&strings.strings.text("preview-submit"));
+            status_submit.set_text(&strings.strings.text(if strings.greeter {
+                "preview-greeter-notice"
+            } else {
+                "preview-submit"
+            }));
         } else {
             on_submit(password);
         }
@@ -1853,6 +1886,12 @@ fn build_in(
         selected_user,
         selected_session,
         selected_session_id,
+        greeter_selection: carousel_box_handle
+            .iter()
+            .map(|widget| widget.clone().upcast())
+            .chain(session_box.iter().map(|widget| widget.clone().upcast()))
+            .collect(),
+        greeter_session_available: session_available,
         settings: settings.clone(),
         bindings,
         preview: settings.preview,

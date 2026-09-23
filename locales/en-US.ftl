@@ -28,6 +28,7 @@ select-user = Select user
 previous-user = Previous user
 next-user = Next user
 select-session = Desktop session
+no-wayland-sessions = No Wayland desktop session is installed.
 login = Log in
 preview-greeter-notice = Greeter preview mode. Run under greetd for system session launch.
 lock-title = DeckLock

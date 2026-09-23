@@ -218,14 +218,45 @@ pub fn setup_greeter(
         .unwrap_or_else(|| PathBuf::from("/etc/greetd/config.toml"));
 
     let keyboard_flag = if no_keyboard { "" } else { " --keyboard" };
-    let content = format!(
-        "[terminal]\n\
-         # The VT to run the greeter on.\n\
-         vt = 1\n\n\
-         [default_session]\n\
-         command = \"cage -s -- decklock --greeter{keyboard_flag}\"\n\
-         user = \"greeter\"\n"
+    let previous = if target_path.exists() {
+        fs::read_to_string(&target_path)
+            .map_err(|e| format!("Failed to read {}: {e}", target_path.display()))?
+    } else {
+        String::new()
+    };
+    let mut document: toml::Value = if previous.is_empty() {
+        toml::Value::Table(toml::map::Map::new())
+    } else {
+        toml::from_str(&previous).map_err(|e| {
+            format!(
+                "Invalid greetd configuration {}: {e}",
+                target_path.display()
+            )
+        })?
+    };
+    let root = document
+        .as_table_mut()
+        .ok_or_else(|| "greetd configuration must be a TOML table".to_string())?;
+    let terminal = root
+        .entry("terminal")
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+        .as_table_mut()
+        .ok_or_else(|| "greetd terminal must be a TOML table".to_string())?;
+    terminal
+        .entry("vt")
+        .or_insert_with(|| toml::Value::Integer(1));
+    let session = root
+        .entry("default_session")
+        .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+        .as_table_mut()
+        .ok_or_else(|| "greetd default_session must be a TOML table".to_string())?;
+    session.insert(
+        "command".into(),
+        toml::Value::String(format!("cage -s -- decklock --greeter{keyboard_flag}")),
     );
+    session.insert("user".into(), toml::Value::String("greeter".into()));
+    let content = toml::to_string_pretty(&document)
+        .map_err(|e| format!("Failed to serialize greetd configuration: {e}"))?;
 
     if dry_run {
         return Ok(format!(
@@ -254,12 +285,18 @@ pub fn setup_greeter(
             .map_err(|e| format!("Failed to create directory {}: {e}", parent.display()))?;
     }
 
-    fs::write(&target_path, content).map_err(|e| {
-        format!(
-            "Failed to write {}: {e}. (Make sure to run with sudo or appropriate permissions)",
-            target_path.display()
-        )
-    })?;
+    let parent = target_path
+        .parent()
+        .ok_or_else(|| "greetd configuration has no parent directory".to_string())?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| format!("Failed to create temporary greetd configuration: {e}"))?;
+    use std::io::Write;
+    temporary
+        .write_all(content.as_bytes())
+        .map_err(|e| format!("Failed to write temporary greetd configuration: {e}"))?;
+    temporary
+        .persist(&target_path)
+        .map_err(|e| format!("Failed to replace {}: {e}", target_path.display()))?;
 
     Ok(format!(
         "Successfully configured greetd at {}",
@@ -281,12 +318,6 @@ pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String
     let (content_to_write, was_existing) = if target_path.exists() {
         let content = fs::read_to_string(&target_path)
             .map_err(|e| format!("Failed to read {}: {e}", target_path.display()))?;
-        if content.contains("decklock --lock") {
-            return Ok(format!(
-                "Screen lock in {} is already configured for DeckLock",
-                target_path.display()
-            ));
-        }
         let mut updated_lines = Vec::new();
         let mut has_lock_cmd = false;
         for line in content.lines() {
@@ -297,9 +328,7 @@ pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String
                     has_lock_cmd = true;
                     let indent = &line[..pos];
                     let suffix = if line.ends_with('}') { " }" } else { "" };
-                    updated_lines.push(format!(
-                        "{indent}lock_cmd = pidof decklock || decklock --lock{suffix}"
-                    ));
+                    updated_lines.push(format!("{indent}lock_cmd = decklock --lock{suffix}"));
                     continue;
                 }
             }
@@ -310,33 +339,52 @@ pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String
                     let indent = &line[..pos];
                     let suffix = if line.ends_with('}') { " }" } else { "" };
                     updated_lines.push(format!(
-                        "{indent}before_sleep_cmd = pidof decklock || decklock --lock{suffix}"
+                        "{indent}before_sleep_cmd = decklock --lock{suffix}"
                     ));
                     continue;
                 }
             }
             updated_lines.push(line.to_string());
         }
+        let mut edited = updated_lines.join("\n");
+        if content.ends_with('\n') {
+            edited.push('\n');
+        }
         let updated = if has_lock_cmd {
-            let mut res = updated_lines.join("\n");
-            if content.ends_with('\n') {
-                res.push('\n');
-            }
-            res
-        } else if content.contains("gtklock") {
-            content.replace("gtklock", "decklock --lock")
+            edited
+        } else if let Some(start) = edited.find("general {") {
+            let close = edited[start..]
+                .find('}')
+                .map(|offset| start + offset)
+                .ok_or_else(|| "hypridle general block is not closed".to_string())?;
+            let before_sleep = if edited.contains("before_sleep_cmd") {
+                String::new()
+            } else {
+                "    before_sleep_cmd = decklock --lock\n".to_string()
+            };
+            edited.insert_str(
+                close,
+                &format!("    lock_cmd = decklock --lock\n{before_sleep}"),
+            );
+            edited
         } else {
             format!(
                 "# Added by decklock setup\n\
                  general {{\n\
-                     lock_cmd = pidof decklock || decklock --lock\n\
-                     before_sleep_cmd = pidof decklock || decklock --lock\n\
+                     lock_cmd = decklock --lock\n\
+                     before_sleep_cmd = decklock --lock\n\
                      after_sleep_cmd = hyprctl dispatch dpms on\n\
                      inhibit_sleep = 3\n\
                  }}\n\n{}",
                 content
             )
         };
+        if updated == content {
+            return Ok(format!(
+                "Screen lock in {} is already configured for DeckLock",
+                target_path.display()
+            ));
+        }
         (updated, true)
     } else {
         let template = include_str!("../packaging/setup/hypridle.conf").to_string();
@@ -414,7 +462,7 @@ mod tests {
 
         let out = setup_lock(Some(&hypridle_path), true).unwrap();
         assert!(out.contains("Dry-run: would"));
-        assert!(out.contains("lock_cmd = pidof decklock || decklock --lock"));
+        assert!(out.contains("lock_cmd = decklock --lock"));
         assert!(!hypridle_path.exists());
     }
 
@@ -451,14 +499,14 @@ mod tests {
         let out = setup_lock(Some(&hypridle_path), false).unwrap();
         assert!(out.contains("Successfully configured hypridle"));
         let content = fs::read_to_string(&hypridle_path).unwrap();
-        assert!(content.contains("lock_cmd = pidof decklock || decklock --lock"));
+        assert!(content.contains("lock_cmd = decklock --lock"));
 
         // Replacing existing locker (e.g. gtklock)
         fs::write(&hypridle_path, "general { lock_cmd = gtklock }\n").unwrap();
         let out = setup_lock(Some(&hypridle_path), false).unwrap();
         assert!(out.contains("Successfully configured hypridle"));
         let content = fs::read_to_string(&hypridle_path).unwrap();
-        assert!(content.contains("lock_cmd = pidof decklock || decklock --lock"));
+        assert!(content.contains("lock_cmd = decklock --lock"));
     }
 
     #[test]

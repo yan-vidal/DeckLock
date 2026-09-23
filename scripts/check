@@ -44,6 +44,10 @@ with tempfile.TemporaryDirectory(prefix='decklock-check-') as temporary:
         env.pop(key,None)
     for key,folder in [('HOME','home'),('XDG_CONFIG_HOME','config'),('XDG_DATA_HOME','data'),('XDG_CACHE_HOME','cache'),('XDG_RUNTIME_DIR','runtime')]:
         path=temp/folder;path.mkdir(mode=0o700);env[key]=str(path)
+    sessions=temp/'share'/'wayland-sessions'
+    sessions.mkdir(parents=True)
+    (sessions/'00-decklock-check.desktop').write_text('[Desktop Entry]\nName=Isolated session\nExec=/usr/bin/true\nType=Application\n')
+    env['XDG_DATA_DIRS']=str(temp/'share')+':/usr/share'
     env.update(CARGO_HOME=os.environ.get('CARGO_HOME',str(original_home/'.cargo')),
                RUSTUP_HOME=os.environ.get('RUSTUP_HOME',str(original_home/'.rustup')),
                LANG='C.UTF-8',LC_ALL='C.UTF-8',TZ='UTC',GTK_A11Y='none',GSK_RENDERER='cairo',
