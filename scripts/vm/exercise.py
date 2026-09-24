@@ -218,9 +218,45 @@ try:
             type_x11(value)
             subprocess.run(['xdotool', 'key', 'Return'], env=x11_env, check=True, timeout=10 * SLOW)
 
+        # On X11 the lock is the keyboard and pointer grabs, and DeckLock refuses
+        # every password until it holds both. A fixed delay before typing lost the
+        # keys on an emulated guest, so this asks the server as another client
+        # would: a grab someone else holds is refused with AlreadyGrabbed. A grab
+        # this probe does get is released at once.
+        import ctypes
+        import ctypes.util
+        xlib = ctypes.CDLL(ctypes.util.find_library('X11'))
+        xlib.XOpenDisplay.restype = ctypes.c_void_p
+        xlib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        xlib.XDefaultRootWindow.restype = ctypes.c_ulong
+        xlib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        xlib.XGrabKeyboard.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int,
+                                       ctypes.c_int, ctypes.c_ulong]
+        xlib.XGrabPointer.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_uint,
+                                      ctypes.c_int, ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
+        for name in ['XUngrabKeyboard', 'XUngrabPointer']:
+            getattr(xlib, name).argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        xlib.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        GRAB_SUCCESS, ALREADY_GRABBED, GRAB_ASYNC = 0, 1, 1
+
+        def x11_grabs_held():
+            display = xlib.XOpenDisplay(b':99')
+            assert display, 'Could not open Xvfb :99 to probe the grabs'
+            try:
+                root = xlib.XDefaultRootWindow(display)
+                keyboard = xlib.XGrabKeyboard(display, root, 0, GRAB_ASYNC, GRAB_ASYNC, 0)
+                pointer = xlib.XGrabPointer(display, root, 0, 0, GRAB_ASYNC, GRAB_ASYNC, 0, 0, 0)
+                if keyboard == GRAB_SUCCESS:
+                    xlib.XUngrabKeyboard(display, 0)
+                if pointer == GRAB_SUCCESS:
+                    xlib.XUngrabPointer(display, 0)
+                return keyboard == ALREADY_GRABBED and pointer == ALREADY_GRABBED
+            finally:
+                xlib.XCloseDisplay(display)
+
         (EVIDENCE / 'config-x11.toml').write_text('locale = "en-US"\npam_service = "decklock-vm-test"\nbackground_pool = []\nidle_pool = []\nidle_enabled = false\n')
         xclient = spawn(['decklock', '--lock', '--config', str(EVIDENCE / 'config-x11.toml')], 'lock-x11.log', full_env=x11_env)
-        time.sleep(1.0 * SLOW)
+        until(x11_grabs_held, 'X11 locker holds the keyboard and pointer', child=xclient)
 
         # 1. Real PAM denial on X11
         submit_x11('wrong-fixture-password')
@@ -237,9 +273,10 @@ try:
 
         # 3. SIGTERM on X11 releases the session (asserting the reduced guarantee)
         xclient2 = spawn(['decklock', '--lock', '--config', str(EVIDENCE / 'config-x11.toml')], 'lock-x11-sigterm.log', full_env=x11_env)
-        time.sleep(1.0 * SLOW)
+        until(x11_grabs_held, 'second X11 locker holds the keyboard and pointer', child=xclient2)
         xclient2.send_signal(signal.SIGTERM)
         assert xclient2.wait(timeout=10 * SLOW) == -signal.SIGTERM
+        until(lambda: not x11_grabs_held(), 'grabs released once the X11 locker is killed', seconds=5)
         record('SIGTERM under X11 releases the session as Guarantees declares')
 
         xvfb.terminate()

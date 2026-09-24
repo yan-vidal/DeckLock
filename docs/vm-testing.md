@@ -89,7 +89,12 @@ fixture's faillock `unlock_time` scales with it (96 s instead of 12 s): typing
 the correct password took about 12 s in the emulated guest, so an unscaled
 lockout ran out before PAM saw it. That still expires before the UI's
 whole-minute estimate reaches zero. Polling intervals are not scaled, and the
-assertions are the same ones the x86_64 guests run. Without `--allow-emulation` the runner still
+assertions are the same ones the x86_64 guests run. The X11 part waits until
+the locker holds the keyboard and pointer grabs, probed as another client would
+(a grab someone else holds is refused), rather than for a fixed delay: DeckLock
+refuses passwords until it holds both, and typing after a fixed second (eight
+under emulation) lost the keys there. The same probe checks the grabs are
+released when that locker is killed. Without `--allow-emulation` the runner still
 refuses a guest it cannot accelerate. The report records the accelerator and
 the factor. Fedora has no aarch64 target yet; its arm64 package is covered by
 the package contract only. Emulation proves the arm64 build under a real kernel,
