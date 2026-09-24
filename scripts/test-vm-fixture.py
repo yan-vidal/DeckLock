@@ -7,8 +7,10 @@ with exit 2 and no recorded reason. What can be pinned here is the decision that
 made it abort, and the evidence that would have explained it, with cloud-init
 replaced by a stub that exits the way the real one does.
 """
+import ast
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -17,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 HELPER = ROOT / "scripts/vm/cloud-init-ready.sh"
 SETUP = ROOT / "scripts/vm/setup.sh"
 GREETER = ROOT / "scripts/vm/greeter.py"
+COMPOSITOR = ROOT / "scripts/vm/compositor.py"
 
 
 def run_with_stub(exit_code, output="status: done"):
@@ -69,10 +72,33 @@ def main():
         compile(GREETER.read_text(), str(GREETER), 'exec')
     except SyntaxError as error:
         failures.append(f"greeter VM fixture does not parse: {error}")
+    # The compositor list is read without running the guest-only script.
+    known = set()
+    try:
+        tree = ast.parse(COMPOSITOR.read_text(), str(COMPOSITOR))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == 'COMPOSITORS' for t in node.targets):
+                known = set(ast.literal_eval(node.value))
+    except SyntaxError as error:
+        failures.append(f"compositor VM fixture does not parse: {error}")
+    if not known:
+        failures.append("compositor.py names no compositor to exercise")
+    if 'compositor.py "$compositor"' not in setup or 'for compositor in $EXTRA_COMPOSITORS' not in setup:
+        failures.append("setup.sh does not exercise each manifest's further compositors")
     for target in ('arch', 'fedora', 'ubuntu'):
         manifest = (ROOT / f'scripts/vm/distros/{target}.env').read_text()
         if 'greetd cage' not in manifest:
             failures.append(f"{target} VM does not install greetd and Cage")
+        fields = dict(re.findall(r"^([A-Z_]+)='([^']*)'", manifest, re.MULTILINE))
+        extra = fields.get('EXTRA_COMPOSITORS', '').split()
+        if not extra:
+            failures.append(f"{target} VM exercises no compositor besides Sway")
+        for name in extra:
+            if name not in known:
+                failures.append(f"{target} VM names {name}, which compositor.py cannot start")
+            if name not in fields.get('HARNESS_PACKAGES', '').split():
+                failures.append(f"{target} VM exercises {name} without installing it")
 
     if failures:
         for failure in failures:

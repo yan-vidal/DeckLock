@@ -66,6 +66,8 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | Greeter arrow keys | `examples/greeter_keys_check.rs`, X11 gate | Left/Right from an empty password entry select accounts through GTK's own key dispatch, wrap at both ends, keep entry focus, and still move the cursor while a password is being typed |
 | Greeter setup command | `tests/cli_contract.rs` | The command `setup greeter` writes starts when run as greetd runs it (`sh -c "exec <command>"`), with a fake Cage |
 | Real greetd login | `scripts/vm/greeter.py`, run by each distribution VM | Packaged setup command, greetd as a system service, logind runtime directories for the greeter and user sessions, real greetd and PAM rejection/acceptance, Cage Wayland greeter, chosen session running as the authenticated user, and a second account selected by arrow key |
+| Lock boundary on further compositors | `scripts/vm/compositor.py`, run by each distribution VM for its `EXTRA_COMPOSITORS` (labwc) | Input reaching an ordinary client before lock, compositor lock confirmation, real PAM denial with no input leak, one protocol unlock, input restored, and a killed locker leaving the compositor locked. PAM policy cases stay on Sway only |
+| aarch64 packages | `package-fedora-aarch64` and `package-ubuntu-aarch64` jobs on `ubuntu-24.04-arm` | The same release build, `cli_contract` and `session_invariants` tests and package contract as x86_64. No VM gate, so those packages stay unpublished candidates |
 | Package boundary | `scripts/test-package.py`, Arch package CI | Archive paths/checksums, executable identity, original media, settings launcher and actual packaged CLI |
 
 Counts are not a coverage target. Add a contract test when a behavior can break;
@@ -130,10 +132,12 @@ validation on a real Xorg session, on the list below.
 
 ## Manual validation still required
 
-The VM exercises real PAM and Sway with controlled guest policies, plus greetd
-and Cage login on Arch, Fedora and Ubuntu. Other PAM
-stacks, suspend/hibernate integration, other compositors, controller recovery/haptics, accessibility,
-real-device ergonomics and visual quality need explicit UAT. For the X11 backend,
+The VM exercises real PAM and Sway with controlled guest policies, the lock
+boundary on labwc, plus greetd and Cage login on Arch, Fedora and Ubuntu. Other
+PAM stacks, suspend/hibernate integration, compositors other than Sway and labwc
+(Hyprland, niri, river, Wayfire, COSMIC), real GPUs and multi-monitor setups,
+aarch64 hardware, controller recovery/haptics, accessibility, real-device
+ergonomics and visual quality need explicit UAT. For the X11 backend,
 add a real Xorg session: authentication through PAM, monitor power-down and wake,
 VT switching, several monitors and hotplug, and window managers other than xfwm4. Use a recoverable
 test environment for session-lock/PAM work. Never use an active desktop or actual

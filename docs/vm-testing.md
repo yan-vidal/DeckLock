@@ -3,6 +3,13 @@
 The guest uses that distribution's installed package, unmodified Sway and real
 Linux-PAM modules. It complements the small mock protocol and unit tests; it does
 not replace them or establish compatibility with every compositor and PAM policy.
+Each manifest's `EXTRA_COMPOSITORS` (labwc on every target) then repeats the lock
+boundary through `vm/compositor.py`: input isolation, a real PAM denial, one
+unlock, input restored and a killed locker leaving the session locked. Faillock,
+account policy and X11 stay on Sway, because they do not depend on the
+compositor. Only compositors that start headless with the pixman renderer can
+run in a guest without a GPU. Wayfire and Hyprland need a DRM render node, niri
+and COSMIC have no headless mode, and river is not packaged on Ubuntu 26.04.
 After the locker assertions, the same candidate runs as a greetd greeter inside
 headless Cage. greetd runs as a transient system service, as the distributions'
 `greetd.service` does: started from the SSH login it would sit inside that

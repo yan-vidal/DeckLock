@@ -298,3 +298,18 @@ plus X11 guarantee limits merged (PR #33). Phase D (other Unix systems: FreeBSD,
 NetBSD, #19) closed as not planned by user decision to keep focus on Linux desktop sessions.
 Next: address testing gaps (real PAM on X11 in VM; additional Wayland compositors in VM) and
 packaging for x86_64 and ARM architectures.
+
+2026-09-24 greetd greeter delivered (#36; PRs #38-#44): `decklock --greeter` runs
+under greetd and Cage with an avatar carousel, a session selector and saved
+selection; `decklock setup greeter` writes the plain `cage -s -- decklock
+--greeter` command, because greetd runs it as `sh -c "exec <command>"`. Arrow keys
+select accounts from an empty password field (capture-phase controller; X11 gate
+`examples/greeter_keys_check`). Each distribution VM exercises real greetd/PAM
+login, with greetd started as a transient system service so logind registers the
+greeter and user sessions.
+Reach follow-up: each VM also repeats the lock boundary on labwc
+(`scripts/vm/compositor.py`); Hyprland, niri, river, Wayfire and COSMIC stay
+protocol-only (GPU render node, no headless mode, or not packaged on Ubuntu
+26.04). CI builds and tests aarch64 Fedora and Ubuntu candidate packages on
+`ubuntu-24.04-arm`; they are not published and no aarch64 VM gate exists.
+Still open: Debian (#25), GPU compositors in VM, aarch64 VM, device UAT.

@@ -79,6 +79,34 @@ jobs:
       label: Ubuntu
       image: ubuntu:26.04@sha256:513c074113a871b51a8d16ab445c88779d6452d937a164fb5cc479f32668a41d
 
+  # aarch64 candidates: the same recipes, tests and package contract on an
+  # arm64 runner. Arch has no official aarch64 image, and no VM gate runs
+  # these packages (hosted arm64 runners offer no KVM), so they are never
+  # published.
+  package-fedora-aarch64:
+    name: Package (Fedora aarch64)
+    needs: check
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group'
+    uses: ./.github/workflows/build-package.yml
+    with:
+      target: fedora
+      label: Fedora aarch64
+      runner: ubuntu-24.04-arm
+      artifact_suffix: -aarch64
+      image: fedora:43@sha256:a651ddf48ea28a06ed4e1e6519f51c9f47e7a5a138722ade87369b8fbb7e5b42
+
+  package-ubuntu-aarch64:
+    name: Package (Ubuntu aarch64)
+    needs: check
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group'
+    uses: ./.github/workflows/build-package.yml
+    with:
+      target: ubuntu
+      label: Ubuntu aarch64
+      runner: ubuntu-24.04-arm
+      artifact_suffix: -aarch64
+      image: ubuntu:26.04@sha256:513c074113a871b51a8d16ab445c88779d6452d937a164fb5cc479f32668a41d
+
   vm:
     name: Real Wayland and PAM
     needs: package
