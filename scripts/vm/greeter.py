@@ -10,6 +10,9 @@ import tomllib
 
 EVIDENCE = Path('/var/tmp/decklock-evidence')
 WORK = Path('/var/tmp/decklock-greeter-test')
+# Emulated guests (aarch64 without KVM) run several times slower; test-vm.py
+# passes the factor, and every bounded wait below scales with it. 1 under KVM.
+SLOW = float(os.environ.get('DECKLOCK_VM_SLOWDOWN', '1'))
 UNIT = 'decklock-vm-greetd.service'
 assert Path('/etc/decklock-test-vm').read_text().strip() == 'disposable-qemu-fixture'
 assert os.geteuid() == 0, 'Only the disposable guest root may start greetd'
@@ -17,7 +20,7 @@ assert subprocess.check_output(['systemd-detect-virt'], text=True).strip() in ('
 
 
 def run(command, **kwargs):
-    return subprocess.run(command, check=True, timeout=30, **kwargs)
+    return subprocess.run(command, check=True, timeout=30 * SLOW, **kwargs)
 
 
 def greetd_running():
@@ -25,7 +28,7 @@ def greetd_running():
 
 
 def until(condition, label, seconds=45):
-    deadline = time.monotonic() + seconds
+    deadline = time.monotonic() + seconds * SLOW
     while time.monotonic() < deadline:
         if not greetd_running():
             raise AssertionError(f'{label}: greetd exited; see greetd.log')
@@ -62,8 +65,11 @@ session_command = Path('/usr/local/bin/decklock-vm-session')
 session_command.write_text(
     '#!/bin/sh\n'
     'set -eu\n'
-    'printf "%s\\n" "$(id -un)" > "/var/tmp/decklock-greeter-test/session-$(id -un)"\n'
-    'printf "%s\\n" "${XDG_RUNTIME_DIR:-unset}" > "/var/tmp/decklock-greeter-test/runtime-$(id -un)"\n'
+    # The test waits for session-<user>, then reads runtime-<user>: write the
+    # runtime marker first, and each one whole through a rename.
+    'dir=/var/tmp/decklock-greeter-test; me=$(id -un)\n'
+    'printf "%s\\n" "${XDG_RUNTIME_DIR:-unset}" > "$dir/.runtime-$me" && mv "$dir/.runtime-$me" "$dir/runtime-$me"\n'
+    'printf "%s\\n" "$me" > "$dir/.session-$me" && mv "$dir/.session-$me" "$dir/session-$me"\n'
     'sleep 2\n'
 )
 session_command.chmod(0o755)
@@ -142,7 +148,7 @@ try:
              f'WAYLAND_DISPLAY={socket.name}',
              'wtype', '-s', '250', '-k', 'Return'], env=greeter_env)
 
-    time.sleep(2)
+    time.sleep(2 * SLOW)
     type_password('wrong-fixture-password')
     until(lambda: 'Greeter login failed:' in (WORK / 'cage.log').read_text(errors='replace'),
           'wrong password visibly rejected', 35)
@@ -163,7 +169,7 @@ try:
         lambda: next((path for path in runtime.glob('wayland-*')
                       if path.is_socket() and path.stat().st_ino != first_socket_inode), None),
         'new Cage Wayland socket ready after logout', 45)
-    time.sleep(2)
+    time.sleep(2 * SLOW)
     # The saved selection is locktest. The installed image may contain
     # another regular account, so derive a bounded number of avatar steps
     # from the guest's passwd order rather than assuming two accounts.

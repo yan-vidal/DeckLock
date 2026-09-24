@@ -14,11 +14,13 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -42,8 +44,19 @@ DISTROS = {
         'sha256': '4908fb59ccd4e87ae4e8e973b7ef56f535448eacb24a87fd787270c0048987bc',
         'base': 'https://cloud-images.ubuntu.com/releases/26.04/release/',
         'suffix': '.deb',
+        # The dated serial the x86_64 pin above also resolves to today; release/
+        # moves when Canonical publishes a new serial, a serial directory does not.
+        'aarch64': {
+            'image': 'ubuntu-26.04-server-cloudimg-arm64.img',
+            'sha256': '8dc812bc6356d0abf825d8029f25f1b71f02cb103e1d0cc5c17fbb2572322972',
+            'base': 'https://cloud-images.ubuntu.com/releases/resolute/release-20260918/',
+        },
     },
 }
+# UEFI firmware for the aarch64 virt machine, as Debian/Ubuntu, Arch and Fedora
+# install it.
+AARCH64_FIRMWARE = ['/usr/share/qemu-efi-aarch64/QEMU_EFI.fd', '/usr/share/AAVMF/AAVMF_CODE.fd',
+                    '/usr/share/edk2/aarch64/QEMU_EFI.fd']
 # qemu-img 2.x is still on some PATHs ahead of the system copy, for instance from
 # a bundled Android SDK. Refuse it rather than creating an overlay with a tool
 # that old and failing later in a way that looks like a guest problem.
@@ -91,20 +104,34 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--package', type=Path, required=True, help='Candidate package built by CI')
     parser.add_argument('--target', choices=sorted(DISTROS), default='arch')
+    parser.add_argument('--arch', choices=['x86_64', 'aarch64'], default=platform.machine(),
+                        help='Guest architecture; KVM needs it to match the host')
+    parser.add_argument('--allow-emulation', action='store_true',
+                        help='Without usable KVM, emulate the guest (TCG) with scaled waits. '
+                             'For disposable CI runners only, never a shared machine')
     parser.add_argument('--logs', type=Path, default=ROOT / 'target/vm-logs')
     args = parser.parse_args()
     distro = DISTROS[args.target]
+    if args.arch != 'x86_64':
+        if args.arch not in distro:
+            raise SystemExit(f'No pinned {args.arch} image for {args.target}')
+        distro = distro | distro[args.arch]
+    kvm = args.arch == platform.machine() and os.access('/dev/kvm', os.R_OK | os.W_OK)
+    if not kvm and not args.allow_emulation:
+        raise SystemExit('KVM required: refusing slow software emulation on the shared machine')
+    # An emulated guest runs several times slower than one under KVM. Every wait
+    # inside the guest and on this side scales by this estimate, never below 1.
+    slowdown = 1 if kvm else 8
+    qemu = f'qemu-system-{args.arch}'
     package = args.package.resolve(strict=True)
     if not package.name.endswith(distro['suffix']):
         raise SystemExit(f'{args.target} expects a {distro["suffix"]} candidate, got {package.name}')
     logs = args.logs.resolve()
     logs.mkdir(parents=True, exist_ok=True)
-    for name in ['qemu-system-x86_64', 'genisoimage', 'curl', 'ssh', 'scp', 'ssh-keygen']:
+    for name in [qemu, 'genisoimage', 'curl', 'ssh', 'scp', 'ssh-keygen']:
         if not shutil.which(name):
             raise SystemExit(f'Missing dependency: {name}')
     image_tool = qemu_img()
-    if not os.access('/dev/kvm', os.R_OK | os.W_OK):
-        raise SystemExit('KVM required: refusing slow software emulation on the shared machine')
     if available_mib() < 3072:
         raise SystemExit('Need at least 3072 MiB available before starting the 2048 MiB VM')
     cache = ROOT / '.deps/vm-cache'
@@ -121,9 +148,10 @@ def main():
     if digest(base) != distro['sha256']:
         raise SystemExit('Cached image SHA256 mismatch')
     report = {'test_source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
-              'target': args.target, 'image': distro['image'], 'image_sha256': distro['sha256'],
+              'target': args.target, 'arch': args.arch, 'image': distro['image'], 'image_sha256': distro['sha256'],
               'package_sha256': digest(package), 'package': package.name,
-              'memory_mib': 2048, 'cpus': 2, 'status': 'running'}
+              'memory_mib': 2048, 'cpus': 2 if kvm else 4, 'accelerator': 'kvm' if kvm else 'tcg',
+              'slowdown': slowdown, 'status': 'running'}
     (logs / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
     # The copy-on-write overlay grows with every guest write, and a package
     # install writes hundreds of MiB. /tmp is tmpfs by default on Arch and Fedora,
@@ -143,10 +171,22 @@ def main():
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
-        command = ['qemu-system-x86_64', '-name', 'decklock-isolated-test', '-enable-kvm', '-cpu', 'host',
-                   '-m', '2048', '-smp', '2', '-display', 'none', '-monitor', 'none', '-no-reboot',
-                   '-drive', f'file={work}/disk.qcow2,if=virtio,format=qcow2',
-                   '-drive', f'file={work}/seed.iso,media=cdrom,readonly=on',
+        accel = ['-enable-kvm'] if kvm else ['-accel', 'tcg,thread=multi']
+        if args.arch == 'x86_64':
+            machine = ['-cpu', 'host' if kvm else 'max']
+            seed = ['-drive', f'file={work}/seed.iso,media=cdrom,readonly=on']
+        else:
+            # The virt machine has no IDE for a CD-ROM; cloud-init finds the seed
+            # by its cidata label on any block device.
+            firmware = next((path for path in AARCH64_FIRMWARE if Path(path).exists()), None)
+            if firmware is None:
+                raise SystemExit('Missing dependency: aarch64 UEFI firmware (qemu-efi-aarch64)')
+            machine = ['-machine', 'virt,gic-version=' + ('host' if kvm else '3'),
+                       '-cpu', 'host' if kvm else 'max', '-bios', firmware]
+            seed = ['-drive', f'file={work}/seed.iso,if=virtio,format=raw,readonly=on']
+        command = [qemu, '-name', 'decklock-isolated-test', *accel, *machine,
+                   '-m', '2048', '-smp', str(report['cpus']), '-display', 'none', '-monitor', 'none', '-no-reboot',
+                   '-drive', f'file={work}/disk.qcow2,if=virtio,format=qcow2', *seed,
                    '-netdev', f'user,id=net0,hostfwd=tcp:127.0.0.1:{port}-:22',
                    '-device', 'virtio-net-pci,netdev=net0', '-device', 'virtio-rng-pci',
                    '-serial', f'file:{logs}/serial.log']
@@ -172,24 +212,26 @@ def main():
             thread = threading.Thread(target=guard, args=(vm,), daemon=True)
             thread.start()
             try:
-                print(f'VM started: pid={vm.pid}, KVM, 2048 MiB, 2 CPUs. Logs: {logs}', flush=True)
-                deadline = time.monotonic() + 240
+                print(f"VM started: pid={vm.pid}, {report['accelerator'].upper()}, 2048 MiB, {report['cpus']} CPUs, "
+                      f'waits x{slowdown}. Logs: {logs}', flush=True)
+                deadline = time.monotonic() + 240 * slowdown
                 while True:
                     if vm.poll() is not None:
                         raise RuntimeError('VM exited before SSH; see serial.log/qemu.log')
-                    ready = subprocess.run([*ssh, 'test -f /etc/decklock-test-vm'], capture_output=True, timeout=8)
+                    ready = subprocess.run([*ssh, 'test -f /etc/decklock-test-vm'], capture_output=True, timeout=8 * slowdown)
                     if ready.returncode == 0:
                         break
                     if time.monotonic() > deadline:
                         raise TimeoutError('VM boot/SSH deadline exceeded')
                     time.sleep(2)
-                subprocess.run([*ssh, 'mkdir -p /root/decklock-fixture /var/tmp/decklock-evidence'], check=True, timeout=15)
+                subprocess.run([*ssh, 'mkdir -p /root/decklock-fixture /var/tmp/decklock-evidence'], check=True, timeout=15 * slowdown)
                 fixture = sorted(p for p in (ROOT / 'scripts/vm').iterdir() if p.suffix in {'.py', '.sh'})
                 fixture.append(ROOT / 'scripts/vm/distros' / f'{args.target}.env')
-                subprocess.run(['scp', *ssh_options, '-P', str(port), str(package), *map(str, fixture), 'root@127.0.0.1:/root/decklock-fixture/'], check=True, timeout=60)
+                subprocess.run(['scp', *ssh_options, '-P', str(port), str(package), *map(str, fixture), 'root@127.0.0.1:/root/decklock-fixture/'], check=True, timeout=60 * slowdown)
                 print('Guest ready; installing dependencies and exercising the candidate.', flush=True)
                 with (logs / 'guest.log').open('w') as guest_log:
-                    result = subprocess.run([*ssh, f'bash /root/decklock-fixture/setup.sh {args.target}'], stdout=guest_log, stderr=subprocess.STDOUT, timeout=1200)
+                    result = subprocess.run([*ssh, f'DECKLOCK_VM_SLOWDOWN={slowdown} bash /root/decklock-fixture/setup.sh {args.target}'],
+                                            stdout=guest_log, stderr=subprocess.STDOUT, timeout=1200 * slowdown)
                 if result.returncode:
                     raise RuntimeError(f'Guest test failed ({result.returncode}); see guest.log')
                 report['status'] = 'passed'
@@ -200,7 +242,7 @@ def main():
             finally:
                 if vm.poll() is None:
                     try:
-                        transfer = subprocess.run(['scp', *ssh_options, '-P', str(port), '-r', 'root@127.0.0.1:/var/tmp/decklock-evidence', str(logs)], timeout=30, check=False)
+                        transfer = subprocess.run(['scp', *ssh_options, '-P', str(port), '-r', 'root@127.0.0.1:/var/tmp/decklock-evidence', str(logs)], timeout=30 * slowdown, check=False)
                         if transfer.returncode:
                             report['evidence_error'] = f'Guest evidence transfer failed ({transfer.returncode})'
                     except subprocess.TimeoutExpired:
@@ -216,9 +258,16 @@ def main():
                     vm.wait()
                 thread.join(timeout=5)
                 (logs / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
+                # The job log is often the only evidence a reviewer can read, so a
+                # failure names its assertion there instead of only in guest.log.
+                guest = logs / 'guest.log'
+                if report['status'] != 'passed' and guest.exists():
+                    tail = guest.read_text(errors='replace').splitlines()[-80:]
+                    print('--- guest.log (last 80 lines) ---', *tail, '--- end guest.log ---',
+                          sep='\n', file=sys.stderr, flush=True)
     if report['status'] != 'passed':
         raise SystemExit('FAIL: VM evidence incomplete')
-    print(f'PASS: real Sway/PAM package VM on {args.target}', flush=True)
+    print(f'PASS: real Sway/PAM package VM on {args.target} {args.arch}', flush=True)
 
 
 if __name__ == '__main__':

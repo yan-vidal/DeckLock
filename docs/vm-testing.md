@@ -3,13 +3,28 @@
 The guest uses that distribution's installed package, unmodified Sway and real
 Linux-PAM modules. It complements the small mock protocol and unit tests; it does
 not replace them or establish compatibility with every compositor and PAM policy.
-Each manifest's `EXTRA_COMPOSITORS` (labwc on every target) then repeats the lock
-boundary through `vm/compositor.py`: input isolation, a real PAM denial, one
-unlock, input restored and a killed locker leaving the session locked. Faillock,
-account policy and X11 stay on Sway, because they do not depend on the
-compositor. Only compositors that start headless with the pixman renderer can
-run in a guest without a GPU. Wayfire and Hyprland need a DRM render node, niri
-and COSMIC have no headless mode, and river is not packaged on Ubuntu 26.04.
+Each manifest's `EXTRA_COMPOSITORS` (labwc and Wayfire on every target) then
+repeats the lock boundary through `vm/compositor.py`: input isolation, a real PAM
+denial, one unlock, input restored and a killed locker leaving the session
+locked. Faillock, account policy and X11 stay on Sway, because they do not depend
+on the compositor.
+
+The guest has no GPU. labwc runs headless with wlroots' pixman renderer. Wayfire
+renders only with GLES, and wlroots requires a DRM render node for it, which the
+emulated display card lacks. Provisioning loads `vgem`, a kernel DRM device with
+no hardware behind it, before the package sync (a kernel upgrade would otherwise
+remove the running kernel's modules). Wayfire then runs with
+`WLR_RENDER_DRM_DEVICE` on vgem's render node, Mesa keeps buffers in memory
+(`GBM_ALWAYS_SOFTWARE`) and draws them with llvmpipe, and
+`WLR_RENDERER_ALLOW_SOFTWARE` lets wlroots accept that. The test user joins the
+`render` and `video` groups, which Mesa needs to open vgem's nodes. This proves
+the lock boundary on Wayfire's code, not on real GPU drivers.
+
+Hyprland was tried the same way, in its headless-only mode, and does not start:
+its Aquamarine backend opens a seat and needs a GBM allocator from a real GPU
+even for headless outputs ("no allocator available"). niri and COSMIC have no
+headless mode, and river is not packaged on Ubuntu 26.04. These stay
+protocol-only.
 After the locker assertions, the same candidate runs as a greetd greeter inside
 headless Cage. greetd runs as a transient system service, as the distributions'
 `greetd.service` does: started from the SSH login it would sit inside that
@@ -63,6 +78,29 @@ available host memory and terminates only its own VM if available memory stays
 below 768 MiB or full memory pressure exceeds 5% for three consecutive 3-second samples. KVM is required; it never
 silently falls back to CPU-heavy software emulation. Boot, SSH, provisioning and
 test waits are bounded. No application compilation takes place inside the VM.
+
+`--arch aarch64` runs the Ubuntu arm64 cloud image (pinned by SHA256 like the
+others) on QEMU's `virt` machine with UEFI firmware from `qemu-efi-aarch64`. The
+hosted arm64 runners expose no `/dev/kvm`, so CI passes `--allow-emulation`: the
+guest runs under TCG with 4 virtual CPUs, and the runner hands the guest a
+slowdown factor of 8 that multiplies every host timeout and every bounded wait
+in the guest scripts (deadlines, subprocess timeouts, settle delays). The
+fixture's faillock `unlock_time` scales with it (96 s instead of 12 s): typing
+the correct password took about 12 s in the emulated guest, so an unscaled
+lockout ran out before PAM saw it. That still expires before the UI's
+whole-minute estimate reaches zero. Polling intervals are not scaled, and the
+assertions are the same ones the x86_64 guests run. The X11 part waits until
+the locker holds the keyboard grab, probed as another client would (a grab
+someone else holds is refused), rather than for a fixed delay: DeckLock refuses
+passwords until it holds its grabs, and typing after a fixed second (eight under
+emulation) lost the keys there. DeckLock takes the pointer and marks itself
+locked in the same step as the keyboard, and probing the pointer too could make
+that step fail, so only the keyboard is probed. The same probe checks the grab
+is released when that locker is killed. Without `--allow-emulation` the runner still
+refuses a guest it cannot accelerate. The report records the accelerator and
+the factor. Fedora has no aarch64 target yet; its arm64 package is covered by
+the package contract only. Emulation proves the arm64 build under a real kernel,
+PAM and compositors, not behavior on real ARM hardware.
 
 An official Arch cloud image is pinned by version and SHA256. The disk is a
 fresh copy-on-write overlay and cloud-init installs a one-run SSH key. QEMU uses

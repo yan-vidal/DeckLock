@@ -80,9 +80,8 @@ jobs:
       image: ubuntu:26.04@sha256:513c074113a871b51a8d16ab445c88779d6452d937a164fb5cc479f32668a41d
 
   # aarch64 candidates: the same recipes, tests and package contract on an
-  # arm64 runner. Arch has no official aarch64 image, and no VM gate runs
-  # these packages (hosted arm64 runners offer no KVM), so they are never
-  # published.
+  # arm64 runner. Arch has no official aarch64 image. The Ubuntu one also goes
+  # through the VM gate below; neither is published yet.
   package-fedora-aarch64:
     name: Package (Fedora aarch64)
     needs: check
@@ -199,6 +198,42 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: vm-evidence-ubuntu
+          path: target/vm-logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The same guest suite on the aarch64 candidate. Hosted arm64 runners expose
+  # no /dev/kvm, so the guest is emulated (TCG) and its waits are scaled; the
+  # x86_64 jobs above keep requiring KVM.
+  vm-ubuntu-aarch64:
+    name: Real Wayland and PAM (Ubuntu aarch64)
+    needs: package-ubuntu-aarch64
+    runs-on: ubuntu-24.04-arm
+    # Above test-vm.py's own scaled bounds (boot 32 min, guest 160 min), so a
+    # stuck guest still ends in its log rather than a cancelled job. Measured:
+    # a passing run takes about 100 min, 10 of them booting.
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: VM dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-arm qemu-efi-aarch64 qemu-utils genisoimage openssh-client
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ubuntu-package-aarch64
+          path: dist
+      - name: Verify candidate and run disposable VM
+        run: |
+          (cd dist && sha256sum --check SHA256SUMS)
+          python3 scripts/test-vm.py --target ubuntu --arch aarch64 --allow-emulation --package dist/*.deb
+      - name: VM evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vm-evidence-ubuntu-aarch64
           path: target/vm-logs/
           if-no-files-found: warn
           retention-days: 14

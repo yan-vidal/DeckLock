@@ -1,0 +1,49 @@
+name: Debian dependency watch
+# Issue #25: a Debian package needs gtk4-layer-shell >= 1.2 from a Debian
+# release or its backports. Bundling the library was rejected, so this job only
+# reports whether an official suite can serve it yet. It builds and publishes
+# nothing; it fails, and so notifies, once a suite carries 1.2 or newer.
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/debian-watch.yml']
+permissions:
+  contents: read
+jobs:
+  watch:
+    name: gtk4-layer-shell in Debian
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The current Debian 13 image only supplies apt and the archive keyring;
+    # which suites are queried is set below, not by the image.
+    container:
+      image: debian:trixie
+    steps:
+      - name: Query Debian suites
+        run: |
+          set -eu
+          cat > /etc/apt/sources.list.d/watch.sources <<'EOF'
+          Types: deb
+          URIs: http://deb.debian.org/debian
+          Suites: trixie-backports stable stable-backports
+          Components: main
+          Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+          EOF
+          apt-get update -q
+          echo "Versions per suite (the floor is 1.2, from the binary's symbol versions):"
+          apt-cache madison libgtk4-layer-shell0 | tee madison.txt
+          usable=
+          while IFS='|' read -r _ version suite; do
+            version=$(echo "$version" | xargs)
+            if dpkg --compare-versions "$version" ge 1.2; then
+              usable="$usable $version ($(echo "$suite" | xargs))"
+            fi
+          done < madison.txt
+          if [ -n "$usable" ]; then
+            echo "::error::gtk4-layer-shell >= 1.2 is available:$usable. Issue #25 can proceed."
+            exit 1
+          fi
+          echo "No Debian release or backport carries gtk4-layer-shell >= 1.2 yet; #25 stays blocked."

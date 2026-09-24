@@ -6,6 +6,9 @@ set -euo pipefail
 [[ $EUID == 0 ]]
 fixture=/root/decklock-fixture
 target="${1:?Pass the distribution target, matching a distros/<target>.env manifest}"
+# Scales the guest scripts' bounded waits; test-vm.py sets it for an emulated guest.
+slowdown="${DECKLOCK_VM_SLOWDOWN:-1}"
+export DECKLOCK_VM_SLOWDOWN="$slowdown"
 [[ -f $fixture/$target.env ]]
 # Data only: package manager commands, package names, PAM files to record.
 # Everything below is shared by every distribution.
@@ -30,6 +33,9 @@ collect_evidence() {
 }
 trap collect_evidence EXIT
 bash "$fixture/cloud-init-ready.sh" /var/tmp/cloud-init-status.txt
+# Load before syncing packages: an upgrade can replace the running kernel's
+# module directory (pacman -Syu does), after which modprobe finds nothing.
+modprobe vgem
 [[ -z $PRE_SYNC ]] || $PRE_SYNC
 # shellcheck disable=SC2086
 $SYNC_AND_INSTALL $HARNESS_PACKAGES
@@ -56,11 +62,14 @@ sha256sum /usr/bin/decklock > /var/tmp/decklock-evidence/binary.sha256
 cp /usr/share/doc/decklock/BUILD-INFO.json /var/tmp/decklock-evidence/
 # Fixture services only, never included in the application package. pam_faillock
 # and pam_unix exist on every target, so the policy itself needs no variation.
-cat > /etc/pam.d/decklock-vm-test <<'PAM'
-auth required pam_faillock.so preauth deny=2 unlock_time=12 fail_interval=900
+# The lockout is PAM's real time, so an emulated guest needs it longer: typing
+# the correct password alone can take 12 s there. exercise.py scales the same.
+unlock=$((12 * slowdown))
+cat > /etc/pam.d/decklock-vm-test <<PAM
+auth required pam_faillock.so preauth deny=2 unlock_time=$unlock fail_interval=900
 auth [success=1 default=bad] pam_unix.so
-auth [default=die] pam_faillock.so authfail deny=2 unlock_time=12 fail_interval=900
-auth sufficient pam_faillock.so authsucc deny=2 unlock_time=12 fail_interval=900
+auth [default=die] pam_faillock.so authfail deny=2 unlock_time=$unlock fail_interval=900
+auth sufficient pam_faillock.so authsucc deny=2 unlock_time=$unlock fail_interval=900
 account required pam_unix.so
 PAM
 cat > /etc/pam.d/decklock-vm-account <<'PAM'
@@ -105,13 +114,18 @@ done
 [[ -S $runtime/bus ]]
 runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
     DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" DECKLOCK_STACK_FAILLOCK="$stack_faillock" \
-    python3 /var/tmp/decklock-evidence/exercise.py
+    DECKLOCK_VM_SLOWDOWN="$slowdown" python3 /var/tmp/decklock-evidence/exercise.py
+# GLES compositors get the vgem render node loaded above (see compositor.py).
+# Mesa renders there through vgem's primary node too, so the user needs both
+# render and video; runuser applies the new supplementary groups. Sway above
+# ran without them.
+usermod -aG render,video locktest
 # Each further compositor repeats the lock boundary; PAM policy stays Sway's.
 # A fresh tally keeps every run independent of the attempts made before it.
 for compositor in $EXTRA_COMPOSITORS; do
     faillock --user locktest --reset
     runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
-        DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" DECKLOCK_VM_SLOWDOWN="$slowdown" \
         python3 /var/tmp/decklock-evidence/compositor.py "$compositor"
 done
 python3 "$fixture/greeter.py"
