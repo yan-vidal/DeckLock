@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import signal
@@ -43,8 +44,19 @@ DISTROS = {
         'sha256': '4908fb59ccd4e87ae4e8e973b7ef56f535448eacb24a87fd787270c0048987bc',
         'base': 'https://cloud-images.ubuntu.com/releases/26.04/release/',
         'suffix': '.deb',
+        # The dated serial the x86_64 pin above also resolves to today; release/
+        # moves when Canonical publishes a new serial, a serial directory does not.
+        'aarch64': {
+            'image': 'ubuntu-26.04-server-cloudimg-arm64.img',
+            'sha256': '8dc812bc6356d0abf825d8029f25f1b71f02cb103e1d0cc5c17fbb2572322972',
+            'base': 'https://cloud-images.ubuntu.com/releases/resolute/release-20260918/',
+        },
     },
 }
+# UEFI firmware for the aarch64 virt machine, as Debian/Ubuntu, Arch and Fedora
+# install it.
+AARCH64_FIRMWARE = ['/usr/share/qemu-efi-aarch64/QEMU_EFI.fd', '/usr/share/AAVMF/AAVMF_CODE.fd',
+                    '/usr/share/edk2/aarch64/QEMU_EFI.fd']
 # qemu-img 2.x is still on some PATHs ahead of the system copy, for instance from
 # a bundled Android SDK. Refuse it rather than creating an overlay with a tool
 # that old and failing later in a way that looks like a guest problem.
@@ -92,15 +104,24 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--package', type=Path, required=True, help='Candidate package built by CI')
     parser.add_argument('--target', choices=sorted(DISTROS), default='arch')
+    parser.add_argument('--arch', choices=['x86_64', 'aarch64'], default=platform.machine(),
+                        help='Guest architecture; KVM needs it to match the host')
     parser.add_argument('--logs', type=Path, default=ROOT / 'target/vm-logs')
     args = parser.parse_args()
     distro = DISTROS[args.target]
+    if args.arch != 'x86_64':
+        if args.arch not in distro:
+            raise SystemExit(f'No pinned {args.arch} image for {args.target}')
+        distro = distro | distro[args.arch]
+    if args.arch != platform.machine():
+        raise SystemExit(f'KVM runs a {platform.machine()} guest on this host, not {args.arch}')
+    qemu = f'qemu-system-{args.arch}'
     package = args.package.resolve(strict=True)
     if not package.name.endswith(distro['suffix']):
         raise SystemExit(f'{args.target} expects a {distro["suffix"]} candidate, got {package.name}')
     logs = args.logs.resolve()
     logs.mkdir(parents=True, exist_ok=True)
-    for name in ['qemu-system-x86_64', 'genisoimage', 'curl', 'ssh', 'scp', 'ssh-keygen']:
+    for name in [qemu, 'genisoimage', 'curl', 'ssh', 'scp', 'ssh-keygen']:
         if not shutil.which(name):
             raise SystemExit(f'Missing dependency: {name}')
     image_tool = qemu_img()
@@ -122,7 +143,7 @@ def main():
     if digest(base) != distro['sha256']:
         raise SystemExit('Cached image SHA256 mismatch')
     report = {'test_source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
-              'target': args.target, 'image': distro['image'], 'image_sha256': distro['sha256'],
+              'target': args.target, 'arch': args.arch, 'image': distro['image'], 'image_sha256': distro['sha256'],
               'package_sha256': digest(package), 'package': package.name,
               'memory_mib': 2048, 'cpus': 2, 'status': 'running'}
     (logs / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
@@ -144,10 +165,20 @@ def main():
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
-        command = ['qemu-system-x86_64', '-name', 'decklock-isolated-test', '-enable-kvm', '-cpu', 'host',
+        if args.arch == 'x86_64':
+            machine = ['-cpu', 'host']
+            seed = ['-drive', f'file={work}/seed.iso,media=cdrom,readonly=on']
+        else:
+            # The virt machine has no IDE for a CD-ROM; cloud-init finds the seed
+            # by its cidata label on any block device.
+            firmware = next((path for path in AARCH64_FIRMWARE if Path(path).exists()), None)
+            if firmware is None:
+                raise SystemExit('Missing dependency: aarch64 UEFI firmware (qemu-efi-aarch64)')
+            machine = ['-machine', 'virt,gic-version=host', '-cpu', 'host', '-bios', firmware]
+            seed = ['-drive', f'file={work}/seed.iso,if=virtio,format=raw,readonly=on']
+        command = [qemu, '-name', 'decklock-isolated-test', '-enable-kvm', *machine,
                    '-m', '2048', '-smp', '2', '-display', 'none', '-monitor', 'none', '-no-reboot',
-                   '-drive', f'file={work}/disk.qcow2,if=virtio,format=qcow2',
-                   '-drive', f'file={work}/seed.iso,media=cdrom,readonly=on',
+                   '-drive', f'file={work}/disk.qcow2,if=virtio,format=qcow2', *seed,
                    '-netdev', f'user,id=net0,hostfwd=tcp:127.0.0.1:{port}-:22',
                    '-device', 'virtio-net-pci,netdev=net0', '-device', 'virtio-rng-pci',
                    '-serial', f'file:{logs}/serial.log']
@@ -226,7 +257,7 @@ def main():
                           sep='\n', file=sys.stderr, flush=True)
     if report['status'] != 'passed':
         raise SystemExit('FAIL: VM evidence incomplete')
-    print(f'PASS: real Sway/PAM package VM on {args.target}', flush=True)
+    print(f'PASS: real Sway/PAM package VM on {args.target} {args.arch}', flush=True)
 
 
 if __name__ == '__main__':
