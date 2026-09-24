@@ -106,9 +106,11 @@ done
 runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
     DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" DECKLOCK_STACK_FAILLOCK="$stack_faillock" \
     python3 /var/tmp/decklock-evidence/exercise.py
-# Software GLES opens the emulated display card, which belongs to the video
-# group; runuser applies the new supplementary group. Sway above ran without it.
-usermod -aG video locktest
+# GLES compositors get a vgem render node (see compositor.py). Render nodes
+# belong to the render group; runuser applies the new supplementary group.
+# Sway above ran without either.
+modprobe vgem
+usermod -aG render locktest
 # Each further compositor repeats the lock boundary; PAM policy stays Sway's.
 # A fresh tally keeps every run independent of the attempts made before it.
 for compositor in $EXTRA_COMPOSITORS; do

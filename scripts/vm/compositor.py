@@ -19,9 +19,10 @@ EVIDENCE = Path('/var/tmp/decklock-evidence')
 assert Path('/etc/decklock-test-vm').read_text().strip() == 'disposable-qemu-fixture'
 assert os.getuid() != 0, 'Run the locker as an ordinary guest user'
 # The guest has no GPU. labwc renders with pixman. Wayfire renders only with
-# GLES, so it gets Mesa's software rasterizer on the emulated display card:
-# kms_swrast allocates dumb buffers there and llvmpipe draws into them, which
-# wlroots accepts only when software rendering is explicitly allowed.
+# GLES, and wlroots insists on a DRM render node for it, which the emulated
+# display card lacks. setup.sh loads vgem, a render node with no hardware
+# behind it; Mesa keeps buffers in memory there and draws them with llvmpipe,
+# which wlroots accepts only when software rendering is explicitly allowed.
 SOFTWARE_GLES = 'software-gles'
 COMPOSITORS = {
     'labwc': {'command': ['labwc'], 'renderer': 'pixman'},
@@ -139,10 +140,12 @@ try:
     spec = COMPOSITORS[NAME]
     extra = {}
     if spec['renderer'] == SOFTWARE_GLES:
-        cards = sorted(Path('/dev/dri').glob('card*'))
-        assert cards, 'No emulated display card for software GLES'
-        extra = {'WLR_RENDERER': 'gles2', 'WLR_RENDER_DRM_DEVICE': str(cards[0]),
-                 'WLR_RENDERER_ALLOW_SOFTWARE': '1', 'MESA_LOADER_DRIVER_OVERRIDE': 'kms_swrast'}
+        nodes = [Path('/dev/dri') / node.name for node in sorted(Path('/sys/class/drm').glob('renderD*'))
+                 if (node / 'device/driver').resolve().name == 'vgem']
+        assert nodes, 'No vgem render node for software GLES; setup.sh loads vgem'
+        extra = {'WLR_RENDERER': 'gles2', 'WLR_RENDER_DRM_DEVICE': str(nodes[0]),
+                 'WLR_RENDERER_ALLOW_SOFTWARE': '1', 'GBM_ALWAYS_SOFTWARE': '1',
+                 'LIBGL_ALWAYS_SOFTWARE': '1'}
     if 'config' in spec:
         (OUT / spec['config'][0]).write_text(spec['config'][1])
     compositor = spawn(spec['command'], 'compositor.log', extra)
