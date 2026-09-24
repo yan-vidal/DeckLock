@@ -316,8 +316,8 @@ DeckLock targets modern Linux desktop sessions. Because session locking interact
 | Environment | Status | Security Guarantee | Validation |
 |---|---|---|---|
 | **Sway** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Automated disposable VM (Arch, Fedora 43, Ubuntu 26.04) with real PAM, lockout and account policy |
-| **Labwc** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Automated disposable VM (Arch, Fedora 43, Ubuntu 26.04): input isolation, real PAM denial and unlock, input restored, killed locker stays locked |
-| **Hyprland, niri, river, Wayfire, COSMIC** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Protocol compliance only; same Wayland backend, not run in the VM (Hyprland and Wayfire need a GPU render node, niri and COSMIC have no headless mode, river is not packaged on Ubuntu 26.04) |
+| **Labwc, Wayfire** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Automated disposable VM (Arch, Fedora 43, Ubuntu 26.04): input isolation, real PAM denial and unlock, input restored, killed locker stays locked. Wayfire renders there with software GLES, not a real GPU |
+| **Hyprland, niri, river, COSMIC** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Protocol compliance only; same Wayland backend, not run in the VM (Hyprland's Aquamarine backend needs a real GPU allocator, niri and COSMIC have no headless mode, river is not packaged on Ubuntu 26.04) |
 | **X11 sessions** | ⚠️ Experimental (`--features x11`) | **Reduced** (keystrokes not isolated by protocol; screen unlocks if process dies) | Isolated gate (`Xvfb` + `xfwm4` + intruder probe); accelerated video via GLX/EGL |
 | **GNOME & KDE Plasma** | ❌ Not supported | N/A | Refuses to lock safely (both draw their own internal lock screen) |
 
@@ -329,7 +329,7 @@ DeckLock targets modern Linux desktop sessions. Because session locking interact
 | **Fedora 43+** | ✅ `.rpm` | ✅ `/etc/pam.d/decklock` | ✅ Real PAM | Stock install requires `authselect` to enable faillock counting |
 | **Ubuntu 26.04+** | ✅ `.deb` | ✅ `/etc/pam.d/decklock` | ✅ Real PAM | Packages `gtk4-layer-shell >= 1.3` |
 | **Ubuntu 24.04** | ❌ No | — | — | Missing `gtk4-layer-shell` in distribution repositories |
-| **Debian 13** | ❌ Blocked | — | — | Ships `gtk4-layer-shell 1.0.4` (below 1.2 requirement) |
+| **Debian 13** | ❌ Blocked | — | — | Ships `gtk4-layer-shell 1.0.4` (below 1.2 requirement); a weekly CI job reports when a Debian release or backport carries 1.2 |
 | **Other Linux** | ⚙️ Build from source | Manual setup | — | Requires GTK 4.22+, GStreamer 1.28+, Linux-PAM, `gtk4-layer-shell >= 1.2` |
 | **BSD (FreeBSD / OpenBSD)** | ❌ Out of scope | — | — | Different auth/power stacks (BSD Auth, OpenPAM without faillock, no systemd) |
 

@@ -317,8 +317,8 @@ O DeckLock tem como foco sessões desktop Linux modernas. Como o bloqueio de ses
 | Ambiente | Status | Garantia de Segurança | Validação |
 |---|---|---|---|
 | **Sway** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | VM descartável automatizada (Arch, Fedora 43, Ubuntu 26.04) com PAM real, bloqueio por falhas e política de conta |
-| **Labwc** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | VM descartável automatizada (Arch, Fedora 43, Ubuntu 26.04): isolamento de entrada, recusa e desbloqueio pelo PAM real, entrada restaurada, bloqueador encerrado mantém a sessão bloqueada |
-| **Hyprland, niri, river, Wayfire, COSMIC** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | Apenas conformidade com o protocolo; mesmo backend Wayland, sem execução na VM (Hyprland e Wayfire precisam de um render node de GPU, niri e COSMIC não têm modo headless, river não é empacotado no Ubuntu 26.04) |
+| **Labwc, Wayfire** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | VM descartável automatizada (Arch, Fedora 43, Ubuntu 26.04): isolamento de entrada, recusa e desbloqueio pelo PAM real, entrada restaurada, bloqueador encerrado mantém a sessão bloqueada. O Wayfire renderiza lá com GLES por software, não com uma GPU real |
+| **Hyprland, niri, river, COSMIC** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | Apenas conformidade com o protocolo; mesmo backend Wayland, sem execução na VM (o backend Aquamarine do Hyprland precisa do alocador de uma GPU real, niri e COSMIC não têm modo headless, river não é empacotado no Ubuntu 26.04) |
 | **Sessões X11** | ⚠️ Experimental (`--features x11`) | **Reduzida** (teclas não são isoladas pelo protocolo; tela desbloqueia se o processo morrer) | Gate isolado (`Xvfb` + `xfwm4` + teste de invasão); vídeo acelerado via GLX/EGL |
 | **GNOME e KDE Plasma** | ❌ Não suportado | N/A | Recusa bloqueio com segurança (ambos desenham a própria tela de bloqueio interna) |
 
@@ -330,7 +330,7 @@ O DeckLock tem como foco sessões desktop Linux modernas. Como o bloqueio de ses
 | **Fedora 43+** | ✅ `.rpm` | ✅ `/etc/pam.d/decklock` | ✅ PAM real | Instalação padrão requer `authselect` para ativar contagem de faillock |
 | **Ubuntu 26.04+** | ✅ `.deb` | ✅ `/etc/pam.d/decklock` | ✅ PAM real | Empacota `gtk4-layer-shell >= 1.3` |
 | **Ubuntu 24.04** | ❌ Não | — | — | Não possui `gtk4-layer-shell` nos repositórios oficiais |
-| **Debian 13** | ❌ Bloqueado | — | — | Empacota `gtk4-layer-shell 1.0.4` (abaixo da versão 1.2 exigida) |
+| **Debian 13** | ❌ Bloqueado | — | — | Empacota `gtk4-layer-shell 1.0.4` (abaixo da versão 1.2 exigida); um job semanal do CI avisa quando uma versão ou backport do Debian trouxer a 1.2 |
 | **Outro Linux** | ⚙️ Compilação via código-fonte | Configuração manual | — | Requer GTK 4.22+, GStreamer 1.28+, Linux-PAM, `gtk4-layer-shell >= 1.2` |
 | **BSD (FreeBSD / OpenBSD)** | ❌ Fora de escopo | — | — | Pilhas de autenticação/energia diferentes (BSD Auth, OpenPAM sem faillock, sem systemd) |
 
