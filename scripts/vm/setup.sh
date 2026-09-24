@@ -113,9 +113,10 @@ runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
     DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" DECKLOCK_STACK_FAILLOCK="$stack_faillock" \
     DECKLOCK_VM_SLOWDOWN="$slowdown" python3 /var/tmp/decklock-evidence/exercise.py
 # GLES compositors get the vgem render node loaded above (see compositor.py).
-# Render nodes belong to the render group; runuser applies the new
-# supplementary group. Sway above ran without it.
-usermod -aG render locktest
+# Mesa renders there through vgem's primary node too, so the user needs both
+# render and video; runuser applies the new supplementary groups. Sway above
+# ran without them.
+usermod -aG render,video locktest
 # Each further compositor repeats the lock boundary; PAM policy stays Sway's.
 # A fresh tally keeps every run independent of the attempts made before it.
 for compositor in $EXTRA_COMPOSITORS; do

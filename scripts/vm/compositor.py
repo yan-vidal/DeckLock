@@ -149,8 +149,7 @@ try:
         nodes = [Path('/dev/dri') / name for name, device in found.items() if device == 'vgem']
         assert nodes, f'No vgem render node for software GLES (setup.sh loads vgem): {found}'
         extra = {'WLR_RENDERER': 'gles2', 'WLR_RENDER_DRM_DEVICE': str(nodes[0]),
-                 'WLR_RENDERER_ALLOW_SOFTWARE': '1', 'GBM_ALWAYS_SOFTWARE': '1',
-                 'LIBGL_ALWAYS_SOFTWARE': '1'}
+                 'WLR_RENDERER_ALLOW_SOFTWARE': '1', 'GBM_ALWAYS_SOFTWARE': '1'}
     if 'config' in spec:
         (OUT / spec['config'][0]).write_text(spec['config'][1])
     compositor = spawn(spec['command'], 'compositor.log', extra)
