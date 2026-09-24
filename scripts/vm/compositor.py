@@ -16,6 +16,9 @@ import sys
 import time
 
 EVIDENCE = Path('/var/tmp/decklock-evidence')
+# Emulated guests (aarch64 without KVM) run several times slower; test-vm.py
+# passes the factor, and every bounded wait below scales with it. 1 under KVM.
+SLOW = float(os.environ.get('DECKLOCK_VM_SLOWDOWN', '1'))
 assert Path('/etc/decklock-test-vm').read_text().strip() == 'disposable-qemu-fixture'
 assert os.getuid() != 0, 'Run the locker as an ordinary guest user'
 # The guest has no GPU. labwc renders with pixman. Wayfire renders only with
@@ -63,13 +66,13 @@ def spawn(command, name, extra=None):
 
 
 def run(command):
-    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=15)
+    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=15 * SLOW)
     assert result.returncode == 0, (command, result.returncode, result.stdout, result.stderr)
     return result.stdout
 
 
 def until(condition, message, seconds=15, child=None):
-    deadline = time.monotonic() + seconds
+    deadline = time.monotonic() + seconds * SLOW
     while time.monotonic() < deadline:
         if child is not None and child.poll() is not None:
             raise AssertionError(f'{NAME}: {message}: child exited {child.returncode}')
@@ -122,7 +125,7 @@ def start_lock(name, compositor):
     until(lambda: '.locked(' in text(name), 'compositor confirmed lock', child=child)
     until(lambda: '.get_lock_surface(' in text(name), 'lock surface created', child=child)
     assert compositor.poll() is None, f'{NAME} exited while locking'
-    time.sleep(0.5)
+    time.sleep(0.5 * SLOW)
     return child
 
 
@@ -154,7 +157,7 @@ try:
     (OUT / 'config.toml').write_text('locale = "en-US"\nbackground_pool = []\nidle_pool = []\nidle_enabled = false\n')
     probe = spawn(['python3', str(EVIDENCE / 'probe.py')], 'probe.log')
     until(lambda: (OUT / 'probe-mapped').exists(), 'probe mapped', child=probe)
-    time.sleep(0.5)
+    time.sleep(0.5 * SLOW)
     type_keys('before')
     until(lambda: keys() == 6, 'probe receives input before lock', child=compositor)
     assert list(map(int, text('probe-keys').splitlines())) == list(map(ord, 'before'))
@@ -183,9 +186,9 @@ try:
     client = start_lock('sigterm.log', compositor)
     count = keys()
     client.send_signal(signal.SIGTERM)
-    assert client.wait(timeout=10) == -signal.SIGTERM
+    assert client.wait(timeout=10 * SLOW) == -signal.SIGTERM
     type_keys('blocked')
-    time.sleep(0.3)
+    time.sleep(0.3 * SLOW)
     assert keys() == count, 'SIGTERM exposed the underlying client'
     assert compositor.poll() is None, f'{NAME} exited after the locker was killed'
     record(f'SIGTERM leaves {NAME} locked and input isolated')

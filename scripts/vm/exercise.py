@@ -8,6 +8,9 @@ import subprocess
 import time
 
 EVIDENCE = Path('/var/tmp/decklock-evidence')
+# Emulated guests (aarch64 without KVM) run several times slower; test-vm.py
+# passes the factor, and every bounded wait below scales with it. 1 under KVM.
+SLOW = float(os.environ.get('DECKLOCK_VM_SLOWDOWN', '1'))
 assert Path('/etc/decklock-test-vm').read_text().strip() == 'disposable-qemu-fixture'
 assert os.getuid() != 0, 'Run the locker as an ordinary guest user'
 os.chdir(EVIDENCE)
@@ -36,13 +39,13 @@ def spawn(command, name, extra=None, full_env=None):
 
 
 def run(command):
-    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=15)
+    result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=15 * SLOW)
     assert result.returncode == 0, (command, result.returncode, result.stdout, result.stderr)
     return result.stdout
 
 
 def until(condition, message, seconds=15, child=None):
-    deadline = time.monotonic() + seconds
+    deadline = time.monotonic() + seconds * SLOW
     while time.monotonic() < deadline:
         if child is not None and child.poll() is not None:
             raise AssertionError(f'{message}: child exited {child.returncode}')
@@ -94,7 +97,7 @@ def start_lock(name):
                   {'WAYLAND_DEBUG': 'client'})
     until(lambda: '.locked(' in text(name), 'compositor confirmed lock', child=child)
     until(lambda: '.get_lock_surface(' in text(name), 'lock surface created', child=child)
-    time.sleep(0.5)
+    time.sleep(0.5 * SLOW)
     return child
 
 
@@ -189,9 +192,9 @@ try:
 
     count = len(text('probe-keys').splitlines())
     client.send_signal(signal.SIGTERM)
-    assert client.wait(timeout=10) == -signal.SIGTERM
+    assert client.wait(timeout=10 * SLOW) == -signal.SIGTERM
     type_keys('blocked')
-    time.sleep(0.3)
+    time.sleep(0.3 * SLOW)
     assert len(text('probe-keys').splitlines()) == count, 'SIGTERM exposed the underlying client'
     record('SIGTERM leaves real compositor locked and input isolated')
 
@@ -207,16 +210,16 @@ try:
         until(lambda: Path('/tmp/.X11-unix/X99').exists(), 'Xvfb :99 socket ready', child=xvfb)
 
         def type_x11(value):
-            subprocess.run(['xdotool', 'type', '--delay', '40', value], env=x11_env, check=True, timeout=10)
+            subprocess.run(['xdotool', 'type', '--delay', '40', value], env=x11_env, check=True, timeout=10 * SLOW)
 
         def submit_x11(value):
-            subprocess.run(['xdotool', 'key', 'ctrl+a', 'BackSpace'], env=x11_env, check=True, timeout=10)
+            subprocess.run(['xdotool', 'key', 'ctrl+a', 'BackSpace'], env=x11_env, check=True, timeout=10 * SLOW)
             type_x11(value)
-            subprocess.run(['xdotool', 'key', 'Return'], env=x11_env, check=True, timeout=10)
+            subprocess.run(['xdotool', 'key', 'Return'], env=x11_env, check=True, timeout=10 * SLOW)
 
         (EVIDENCE / 'config-x11.toml').write_text('locale = "en-US"\npam_service = "decklock-vm-test"\nbackground_pool = []\nidle_pool = []\nidle_enabled = false\n')
         xclient = spawn(['decklock', '--lock', '--config', str(EVIDENCE / 'config-x11.toml')], 'lock-x11.log', full_env=x11_env)
-        time.sleep(1.0)
+        time.sleep(1.0 * SLOW)
 
         # 1. Real PAM denial on X11
         submit_x11('wrong-fixture-password')
@@ -233,9 +236,9 @@ try:
 
         # 3. SIGTERM on X11 releases the session (asserting the reduced guarantee)
         xclient2 = spawn(['decklock', '--lock', '--config', str(EVIDENCE / 'config-x11.toml')], 'lock-x11-sigterm.log', full_env=x11_env)
-        time.sleep(1.0)
+        time.sleep(1.0 * SLOW)
         xclient2.send_signal(signal.SIGTERM)
-        assert xclient2.wait(timeout=10) == -signal.SIGTERM
+        assert xclient2.wait(timeout=10 * SLOW) == -signal.SIGTERM
         record('SIGTERM under X11 releases the session as Guarantees declares')
 
         xvfb.terminate()

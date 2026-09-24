@@ -10,6 +10,9 @@ import tomllib
 
 EVIDENCE = Path('/var/tmp/decklock-evidence')
 WORK = Path('/var/tmp/decklock-greeter-test')
+# Emulated guests (aarch64 without KVM) run several times slower; test-vm.py
+# passes the factor, and every bounded wait below scales with it. 1 under KVM.
+SLOW = float(os.environ.get('DECKLOCK_VM_SLOWDOWN', '1'))
 UNIT = 'decklock-vm-greetd.service'
 assert Path('/etc/decklock-test-vm').read_text().strip() == 'disposable-qemu-fixture'
 assert os.geteuid() == 0, 'Only the disposable guest root may start greetd'
@@ -17,7 +20,7 @@ assert subprocess.check_output(['systemd-detect-virt'], text=True).strip() in ('
 
 
 def run(command, **kwargs):
-    return subprocess.run(command, check=True, timeout=30, **kwargs)
+    return subprocess.run(command, check=True, timeout=30 * SLOW, **kwargs)
 
 
 def greetd_running():
@@ -25,7 +28,7 @@ def greetd_running():
 
 
 def until(condition, label, seconds=45):
-    deadline = time.monotonic() + seconds
+    deadline = time.monotonic() + seconds * SLOW
     while time.monotonic() < deadline:
         if not greetd_running():
             raise AssertionError(f'{label}: greetd exited; see greetd.log')
@@ -142,7 +145,7 @@ try:
              f'WAYLAND_DISPLAY={socket.name}',
              'wtype', '-s', '250', '-k', 'Return'], env=greeter_env)
 
-    time.sleep(2)
+    time.sleep(2 * SLOW)
     type_password('wrong-fixture-password')
     until(lambda: 'Greeter login failed:' in (WORK / 'cage.log').read_text(errors='replace'),
           'wrong password visibly rejected', 35)
@@ -163,7 +166,7 @@ try:
         lambda: next((path for path in runtime.glob('wayland-*')
                       if path.is_socket() and path.stat().st_ino != first_socket_inode), None),
         'new Cage Wayland socket ready after logout', 45)
-    time.sleep(2)
+    time.sleep(2 * SLOW)
     # The saved selection is locktest. The installed image may contain
     # another regular account, so derive a bounded number of avatar steps
     # from the guest's passwd order rather than assuming two accounts.
