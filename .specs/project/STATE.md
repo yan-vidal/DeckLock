@@ -328,5 +328,5 @@ Fedora arm64 VM, publishing arm64 packages, real ARM hardware, device UAT.
 0.3.2 release PR: version bump; `release.yml` also publishes the Ubuntu arm64
 package, which has its own (emulated) VM gate in the checks the release reruns.
 Fedora arm64 stays unpublished until it has a VM target: its Cloud image could
-not be pinned from the agent's environment. Changelog stays Unreleased until the
-user approves publishing and the date is set.
+not be pinned from the agent's environment. The user approved publishing on 2026-09-24;
+the changelog carries that date and `v0.3.2` is tagged after merge.
