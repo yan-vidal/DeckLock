@@ -143,9 +143,11 @@ try:
     spec = COMPOSITORS[NAME]
     extra = {}
     if spec['renderer'] == SOFTWARE_GLES:
-        nodes = [Path('/dev/dri') / node.name for node in sorted(Path('/sys/class/drm').glob('renderD*'))
-                 if (node / 'device/driver').resolve().name == 'vgem']
-        assert nodes, 'No vgem render node for software GLES; setup.sh loads vgem'
+        # vgem is a bare platform device named vgem, with no driver bound to it.
+        found = {node.name: (node / 'device').resolve().name
+                 for node in sorted(Path('/sys/class/drm').glob('renderD*'))}
+        nodes = [Path('/dev/dri') / name for name, device in found.items() if device == 'vgem']
+        assert nodes, f'No vgem render node for software GLES (setup.sh loads vgem): {found}'
         extra = {'WLR_RENDERER': 'gles2', 'WLR_RENDER_DRM_DEVICE': str(nodes[0]),
                  'WLR_RENDERER_ALLOW_SOFTWARE': '1', 'GBM_ALWAYS_SOFTWARE': '1',
                  'LIBGL_ALWAYS_SOFTWARE': '1'}
