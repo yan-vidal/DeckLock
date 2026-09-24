@@ -11,6 +11,15 @@ use std::{
 };
 use zeroize::Zeroizing;
 
+enum GreeterEvent {
+    Prompt { kind: String, message: String },
+    Finished(Result<(), String>),
+}
+
+fn preview_mode(args: &Args, greetd_sock: Option<&str>) -> bool {
+    args.preview || (!args.lock && (!args.greeter || greetd_sock.is_none()))
+}
+
 #[derive(Parser)]
 #[command(
     version,
@@ -111,6 +120,8 @@ fn main() {
 }
 
 fn run(args: Args) -> Result<(), String> {
+    let greetd_sock = std::env::var("GREETD_SOCK").ok().filter(|s| !s.is_empty());
+    let is_preview = preview_mode(&args, greetd_sock.as_deref());
     if let Some(Command::Config { action }) = args.command {
         if args.preview
             || args.settings
@@ -251,7 +262,6 @@ fn run(args: Args) -> Result<(), String> {
     } else {
         auth::current_username()?
     };
-    let is_preview = !args.lock && !args.greeter;
     let settings = Rc::new(ui::Settings {
         config,
         theme,
@@ -305,19 +315,36 @@ fn run(args: Args) -> Result<(), String> {
         });
     }
     let is_greeter = args.greeter;
-    let greetd_sock = std::env::var("GREETD_SOCK").ok();
     let (tx, rx) = mpsc::channel();
+    let (greeter_tx, greeter_rx) = mpsc::channel::<GreeterEvent>();
+    let greeter_answer = Rc::new(RefCell::new(None::<mpsc::Sender<Zeroizing<String>>>));
+    let greeter_active = Rc::new(Cell::new(false));
     let submit: Rc<dyn Fn(Zeroizing<String>)> = {
         let session = session.clone();
         let settings = settings.clone();
         let views = Rc::downgrade(&views);
         let greetd_sock = greetd_sock.clone();
+        let greeter_answer = greeter_answer.clone();
+        let greeter_active = greeter_active.clone();
         Rc::new(move |password| {
             if is_greeter {
+                if let Some(answer) = greeter_answer.borrow().as_ref() {
+                    if let Some(views) = views.upgrade() {
+                        for view in views.borrow().iter() {
+                            view.busy(true, &settings.strings.text("authenticating"));
+                        }
+                    }
+                    let _ = answer.send(password);
+                    return;
+                }
+                if greeter_active.replace(true) {
+                    return;
+                }
                 let (user, session_cmd, session_id) = if let Some(views) = views.upgrade() {
                     let v = views.borrow();
                     if let Some(view) = v.first() {
                         view.busy(true, &settings.strings.text("authenticating"));
+                        view.set_greeter_selection_sensitive(false);
                         (
                             view.selected_user.borrow().clone(),
                             view.selected_session.borrow().clone(),
@@ -330,50 +357,39 @@ fn run(args: Args) -> Result<(), String> {
                     (settings.username.clone(), Vec::new(), String::new())
                 };
 
-                let tx = tx.clone();
+                let (answer_tx, answer_rx) = mpsc::channel::<Zeroizing<String>>();
+                *greeter_answer.borrow_mut() = Some(answer_tx);
+                let events = greeter_tx.clone();
                 let sock = greetd_sock.clone();
                 std::thread::spawn(move || {
-                    if let Some(sock_path) = sock {
-                        let res = (|| -> Result<(), String> {
-                            let mut client =
-                                decklock::greeter::GreetdClient::connect_path(&sock_path)?;
-                            let resp = client.create_session(&user)?;
-                            match resp {
-                                decklock::greeter::GreetdResponse::AuthMessage { .. } => {
-                                    let auth_resp = client.post_auth_response(&password)?;
-                                    match auth_resp {
-                                        decklock::greeter::GreetdResponse::Success => {
-                                            decklock::greeter::save_last_selection(
-                                                &user,
-                                                &session_id,
-                                            );
-                                            client.start_session(&session_cmd, &[])?;
-                                            Ok(())
-                                        }
-                                        decklock::greeter::GreetdResponse::Error {
-                                            description,
-                                            ..
-                                        } => Err(description),
-                                        _ => Err("Unexpected response from greetd".into()),
-                                    }
+                    let result = (|| -> Result<(), String> {
+                        let sock_path = sock.ok_or("GREETD_SOCK is not available")?;
+                        let mut client = decklock::greeter::GreetdClient::connect_path(&sock_path)?;
+                        decklock::greeter::login(
+                            &mut client,
+                            &user,
+                            &session_cmd,
+                            password,
+                            |kind, message| {
+                                events
+                                    .send(GreeterEvent::Prompt {
+                                        kind: kind.to_string(),
+                                        message: message.to_string(),
+                                    })
+                                    .map_err(|_| "Greeter window closed".to_string())?;
+                                if matches!(kind, "info" | "error") {
+                                    return Ok(None);
                                 }
-                                decklock::greeter::GreetdResponse::Success => {
-                                    decklock::greeter::save_last_selection(&user, &session_id);
-                                    client.start_session(&session_cmd, &[])?;
-                                    Ok(())
-                                }
-                                decklock::greeter::GreetdResponse::Error {
-                                    description, ..
-                                } => Err(description),
-                            }
-                        })();
-                        let _ = tx.send((1, Ok(res.is_ok()), faillock::Advice::default()));
-                    } else {
-                        // Greeter standalone / preview mode: simulated feedback and state save
+                                answer_rx
+                                    .recv_timeout(Duration::from_secs(90))
+                                    .map(Some)
+                                    .map_err(|_| "Authentication prompt timed out".to_string())
+                            },
+                        )?;
                         decklock::greeter::save_last_selection(&user, &session_id);
-                        std::thread::sleep(Duration::from_millis(200));
-                        let _ = tx.send((1, Ok(true), faillock::Advice::default()));
-                    }
+                        Ok(())
+                    })();
+                    let _ = events.send(GreeterEvent::Finished(result));
                 });
                 return;
             }
@@ -415,35 +431,52 @@ fn run(args: Args) -> Result<(), String> {
     let result_views = views.clone();
     let result_session = session.clone();
     let result_lock = lock.clone();
-    let greeter_notice = settings.strings.text("preview-greeter-notice");
     let greeter_failed = settings.strings.text("authentication-failed");
+    let password_placeholder = settings.strings.text("password");
+    let result_greeter_answer = greeter_answer.clone();
+    let result_greeter_active = greeter_active.clone();
     glib::timeout_add_local(Duration::from_millis(50), move || {
         if app_weak.upgrade().is_none() {
             return glib::ControlFlow::Break;
         }
-        for (attempt, result, advice) in rx.try_iter() {
-            let ok = result.unwrap_or(false);
-            if is_greeter {
-                if ok {
-                    if greetd_sock.is_some() {
+        for event in greeter_rx.try_iter() {
+            match event {
+                GreeterEvent::Prompt { kind, message } => {
+                    for view in result_views.borrow().iter() {
+                        if matches!(kind.as_str(), "info" | "error") {
+                            view.status.set_text(&message);
+                        } else {
+                            view.busy(false, &message);
+                            view.entry.set_visibility(kind == "visible");
+                            view.entry.set_placeholder_text(Some(&message));
+                            view.entry.grab_focus();
+                        }
+                    }
+                }
+                GreeterEvent::Finished(result) => {
+                    result_greeter_answer.borrow_mut().take();
+                    result_greeter_active.set(false);
+                    if result.is_ok() {
                         if let Some(app) = app_weak.upgrade() {
                             app.quit();
                         }
                     } else {
+                        if let Err(error) = result {
+                            eprintln!("Greeter login failed: {error}");
+                        }
                         for view in result_views.borrow().iter() {
-                            view.busy(false, "");
-                            view.status.set_text(&greeter_notice);
+                            view.busy(false, &greeter_failed);
+                            view.entry.set_visibility(false);
+                            view.entry.set_placeholder_text(Some(&password_placeholder));
+                            view.set_greeter_selection_sensitive(true);
+                            view.entry.grab_focus();
                         }
                     }
-                } else {
-                    for view in result_views.borrow().iter() {
-                        view.busy(false, "");
-                        view.status.set_text(&greeter_failed);
-                        view.entry.grab_focus();
-                    }
                 }
-                continue;
             }
+        }
+        for (attempt, result, advice) in rx.try_iter() {
+            let ok = result.unwrap_or(false);
             if result_session.borrow_mut().complete_auth(attempt, ok) {
                 if let Some(lock) = &result_lock {
                     lock.unlock();
@@ -514,6 +547,14 @@ fn run(args: Args) -> Result<(), String> {
 #[cfg(test)]
 mod cli_tests {
     use super::*;
+    #[test]
+    fn greeter_without_greetd_socket_is_preview_even_when_no_preview_flag_is_given() {
+        let args = Args::try_parse_from(["decklock", "--greeter"]).unwrap();
+        assert!(preview_mode(&args, None));
+        assert!(!preview_mode(&args, Some("/run/greetd.sock")));
+        let args = Args::try_parse_from(["decklock", "--greeter", "--preview"]).unwrap();
+        assert!(preview_mode(&args, Some("/run/greetd.sock")));
+    }
     #[test]
     fn config_path_is_accepted_before_and_after_subcommands() {
         for argv in [

@@ -38,6 +38,8 @@ pub struct View {
     pub selected_user: Rc<RefCell<String>>,
     pub selected_session: Rc<RefCell<Vec<String>>>,
     pub selected_session_id: Rc<RefCell<String>>,
+    greeter_selection: Vec<gtk::Widget>,
+    greeter_session_available: bool,
     settings: Rc<Settings>,
     bindings: Rc<Bindings>,
     preview: bool,
@@ -88,7 +90,7 @@ pub fn rebuild_preview(view: View, app: &gtk::Application, settings: Rc<Settings
     let shown = gtk::prelude::EntryExt::is_visible(&view.entry);
     view.bindings.clear();
     drop(view);
-    let view = build_in(app, settings, Rc::new(|_| {}), Some(window));
+    let view = build_in(app, settings, Rc::new(|_| {}), Some(window), None);
     view.entry.set_text(&text);
     view.entry.set_visibility(shown);
     view.keyboard.set_visible(keyboard);
@@ -96,6 +98,11 @@ pub fn rebuild_preview(view: View, app: &gtk::Application, settings: Rc<Settings
 }
 
 impl View {
+    pub fn set_greeter_selection_sensitive(&self, sensitive: bool) {
+        for widget in &self.greeter_selection {
+            widget.set_sensitive(sensitive);
+        }
+    }
     pub fn set_preview_idle(&self, idle: bool) {
         assert!(self.preview, "Idle override is only available in preview");
         self.forced_idle.set(Some(idle));
@@ -179,8 +186,11 @@ impl View {
             self.status.remove_css_class("warning");
         }
         self.entry.set_sensitive(!busy);
-        self.submit
-            .set_sensitive(!busy && !self.entry.text().is_empty());
+        self.submit.set_sensitive(
+            !busy
+                && self.greeter_session_available
+                && (self.settings.greeter || !self.entry.text().is_empty()),
+        );
         self.keyboard.set_sensitive(!busy);
         self.status.set_text(message);
     }
@@ -758,20 +768,23 @@ fn build_keyboard(
     (container, event_handler)
 }
 
-fn dispatch_switch_user(custom_command: Option<&str>) {
+fn dispatch_switch_user(custom_command: Option<&str>) -> Result<(), String> {
     if let Some(cmd) = custom_command {
-        if let Err(err) = std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
-            eprintln!("Custom switch-user action failed: {err}");
-        }
-        return;
+        std::process::Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .spawn()
+            .map_err(|e| format!("Custom switch-user action failed: {e}"))?;
+        return Ok(());
     }
 
     // Try dm-tool switch-to-greeter (LightDM)
     match std::process::Command::new("dm-tool")
         .arg("switch-to-greeter")
-        .spawn()
+        .status()
     {
-        Ok(_) => return,
+        Ok(status) if status.success() => return Ok(()),
+        Ok(status) => eprintln!("dm-tool switch-to-greeter exited with {status}"),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
         Err(err) => {
             eprintln!("dm-tool switch-to-greeter failed: {err}");
@@ -779,42 +792,48 @@ fn dispatch_switch_user(custom_command: Option<&str>) {
     }
 
     // Try gdmflexiserver (GDM)
-    match std::process::Command::new("gdmflexiserver").spawn() {
-        Ok(_) => return,
+    match std::process::Command::new("gdmflexiserver").status() {
+        Ok(status) if status.success() => return Ok(()),
+        Ok(status) => eprintln!("gdmflexiserver exited with {status}"),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
         Err(err) => {
             eprintln!("gdmflexiserver failed: {err}");
         }
     }
 
-    // Try finding an active greeter session via loginctl
+    // logind can activate an existing greeter, but cannot create a new login
+    // session. Ask for a configured command if no display manager has one.
     if let Ok(output) = std::process::Command::new("loginctl")
         .args(["list-sessions", "--no-legend", "--no-pager"])
         .output()
+        && output.status.success()
         && let Ok(text) = String::from_utf8(output.stdout)
     {
         for line in text.lines() {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 6 && parts[5] == "greeter" {
-                let session_id = parts[0];
-                if let Err(err) = std::process::Command::new("loginctl")
-                    .args(["activate", session_id])
-                    .spawn()
+            if let Some(session_id) = line.split_whitespace().next() {
+                let class = std::process::Command::new("loginctl")
+                    .args(["show-session", session_id, "--property=Class", "--value"])
+                    .output();
+                if !class
+                    .as_ref()
+                    .is_ok_and(|output| output.status.success() && output.stdout == b"greeter\n")
                 {
-                    eprintln!("Failed to activate greeter session {session_id}: {err}");
+                    continue;
                 }
-                return;
+                std::process::Command::new("loginctl")
+                    .args(["activate", session_id])
+                    .status()
+                    .map_err(|e| format!("Failed to activate greeter session {session_id}: {e}"))
+                    .and_then(|status| {
+                        status.success().then_some(()).ok_or_else(|| {
+                            format!("Failed to activate greeter session {session_id}: {status}")
+                        })
+                    })?;
+                return Ok(());
             }
         }
     }
-
-    // Fallback: loginctl switch-user
-    if let Err(err) = std::process::Command::new("loginctl")
-        .arg("switch-user")
-        .spawn()
-    {
-        eprintln!("Switch user failed: {err}. Set switch_user_command in decklock.toml if needed.");
-    }
+    Err("No active greeter session; set switch_user_command for this display manager".into())
 }
 
 pub fn build(
@@ -822,7 +841,19 @@ pub fn build(
     settings: Rc<Settings>,
     on_submit: Rc<dyn Fn(Zeroizing<String>)>,
 ) -> View {
-    build_in(app, settings, on_submit, None)
+    build_in(app, settings, on_submit, None, None)
+}
+
+/// Greeter view over a given account list instead of the system's, so GTK
+/// contracts use fixed accounts rather than the host's /etc/passwd.
+pub fn build_greeter_with_users(
+    app: &gtk::Application,
+    settings: Rc<Settings>,
+    users: Vec<crate::greeter::UserEntry>,
+    on_submit: Rc<dyn Fn(Zeroizing<String>)>,
+) -> View {
+    assert!(settings.greeter, "Only a greeter view lists accounts");
+    build_in(app, settings, on_submit, None, Some(users))
 }
 
 fn build_in(
@@ -830,6 +861,7 @@ fn build_in(
     settings: Rc<Settings>,
     on_submit: Rc<dyn Fn(Zeroizing<String>)>,
     existing: Option<gtk::ApplicationWindow>,
+    users: Option<Vec<crate::greeter::UserEntry>>,
 ) -> View {
     crate::branding::install();
     let window = existing.unwrap_or_else(|| {
@@ -930,6 +962,9 @@ fn build_in(
         window.add_controller(key.clone());
         bindings.controllers.borrow_mut().push(key.upcast());
     }
+    let status = gtk::Label::new(None);
+    status.set_widget_name("status");
+    status.set_wrap(true);
     let power = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     power.set_widget_name("power");
     power.set_halign(gtk::Align::End);
@@ -998,9 +1033,12 @@ fn build_in(
             )));
         } else {
             let custom_switch_cmd = settings.config.switch_user_command.clone();
+            let action_status = status.clone();
             button.connect_clicked(move |_| match action {
                 PowerAction::SwitchUser => {
-                    dispatch_switch_user(custom_switch_cmd.as_deref());
+                    if let Err(error) = dispatch_switch_user(custom_switch_cmd.as_deref()) {
+                        action_status.set_text(&error);
+                    }
                 }
                 PowerAction::Command(command) => {
                     if let Err(err) = std::process::Command::new("systemctl").arg(command).spawn() {
@@ -1107,7 +1145,7 @@ fn build_in(
     let selected_session_id = Rc::new(RefCell::new(String::new()));
 
     let users = if settings.greeter {
-        crate::greeter::list_system_users()
+        users.unwrap_or_else(crate::greeter::list_system_users)
     } else {
         Vec::new()
     };
@@ -1116,6 +1154,10 @@ fn build_in(
     } else {
         Vec::new()
     };
+    let session_available = !settings.greeter || !sessions.is_empty();
+    if !session_available {
+        status.set_text(&settings.strings.text("no-wayland-sessions"));
+    }
     let state = if settings.greeter {
         crate::greeter::GreeterState::load()
     } else {
@@ -1275,7 +1317,7 @@ fn build_in(
         Some(&settings.strings.text("virtual-keyboard")),
     );
 
-    if settings.greeter && users.len() > 1 {
+    let carousel_box_handle = if settings.greeter && users.len() > 1 {
         let n_users = users.len();
         let initial_prev_idx = if initial_user_idx == 0 {
             n_users - 1
@@ -1297,35 +1339,45 @@ fn build_in(
         let next_face = Rc::new(RefCell::new(load_face(initial_next_idx, 64)));
         let current_user_idx = Rc::new(std::cell::Cell::new(initial_user_idx));
 
-        let prev_avatar = gtk::DrawingArea::new();
-        prev_avatar.set_size_request(64, 64);
-        prev_avatar.set_halign(gtk::Align::Center);
-        prev_avatar.set_valign(gtk::Align::Center);
+        let prev_avatar = gtk::Button::new();
         prev_avatar.set_widget_name("avatar-prev");
         prev_avatar.add_css_class("user-avatar-side");
+        prev_avatar.set_valign(gtk::Align::Center);
         if let Some(prev_u) = users.get(initial_prev_idx) {
             prev_avatar.set_tooltip_text(Some(&prev_u.display_name));
         }
         prev_avatar.set_cursor_from_name(Some("pointer"));
+
+        let prev_draw = gtk::DrawingArea::new();
+        prev_draw.set_size_request(64, 64);
+        prev_draw.set_halign(gtk::Align::Center);
+        prev_draw.set_valign(gtk::Align::Center);
+        prev_draw.set_can_target(false);
         let draw_prev = prev_face.clone();
-        prev_avatar.set_draw_func(move |_, context, width, height| {
+        prev_draw.set_draw_func(move |_, context, width, height| {
             draw_avatar_content(context, width, height, draw_prev.borrow().as_ref());
         });
+        prev_avatar.set_child(Some(&prev_draw));
 
-        let next_avatar = gtk::DrawingArea::new();
-        next_avatar.set_size_request(64, 64);
-        next_avatar.set_halign(gtk::Align::Center);
-        next_avatar.set_valign(gtk::Align::Center);
+        let next_avatar = gtk::Button::new();
         next_avatar.set_widget_name("avatar-next");
         next_avatar.add_css_class("user-avatar-side");
+        next_avatar.set_valign(gtk::Align::Center);
         if let Some(next_u) = users.get(initial_next_idx) {
             next_avatar.set_tooltip_text(Some(&next_u.display_name));
         }
         next_avatar.set_cursor_from_name(Some("pointer"));
+
+        let next_draw = gtk::DrawingArea::new();
+        next_draw.set_size_request(64, 64);
+        next_draw.set_halign(gtk::Align::Center);
+        next_draw.set_valign(gtk::Align::Center);
+        next_draw.set_can_target(false);
         let draw_next = next_face.clone();
-        next_avatar.set_draw_func(move |_, context, width, height| {
+        next_draw.set_draw_func(move |_, context, width, height| {
             draw_avatar_content(context, width, height, draw_next.borrow().as_ref());
         });
+        next_avatar.set_child(Some(&next_draw));
 
         let prev_btn = gtk::Button::from_icon_name("go-previous-symbolic");
         prev_btn.set_widget_name("user-prev-btn");
@@ -1345,14 +1397,13 @@ fn build_in(
         let sel_user = selected_user.clone();
         let lbl_user = username.clone();
         let weak_avatar = avatar.downgrade();
-        let weak_prev_avatar = prev_avatar.downgrade();
-        let weak_next_avatar = next_avatar.downgrade();
+        let weak_prev_draw = prev_draw.downgrade();
+        let weak_next_draw = next_draw.downgrade();
         let weak_entry = entry.downgrade();
         let cur_idx = current_user_idx.clone();
         let cur_face = current_face.clone();
         let p_face = prev_face.clone();
         let n_face = next_face.clone();
-        let sel_session_id = selected_session_id.clone();
         let prev_av_handle = prev_avatar.clone();
         let next_av_handle = next_avatar.clone();
 
@@ -1374,7 +1425,6 @@ fn build_in(
                     gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(p, 96, 96, false).ok()
                 });
                 *cur_face.borrow_mut() = new_face;
-                crate::greeter::save_last_selection(&u.username, &sel_session_id.borrow());
             }
 
             if let Some(prev_u) = users_list.get(p_idx) {
@@ -1396,10 +1446,10 @@ fn build_in(
             if let Some(avatar) = weak_avatar.upgrade() {
                 avatar.queue_draw();
             }
-            if let Some(pav) = weak_prev_avatar.upgrade() {
+            if let Some(pav) = weak_prev_draw.upgrade() {
                 pav.queue_draw();
             }
-            if let Some(nav) = weak_next_avatar.upgrade() {
+            if let Some(nav) = weak_next_draw.upgrade() {
                 nav.queue_draw();
             }
             if let Some(entry) = weak_entry.upgrade() {
@@ -1440,21 +1490,20 @@ fn build_in(
             move |_| on_next()
         });
 
-        let click_prev = gtk::GestureClick::new();
-        click_prev.connect_released({
+        prev_avatar.connect_clicked({
             let on_prev = nav_prev.clone();
-            move |_, _, _, _| on_prev()
+            move |_| on_prev()
         });
-        prev_avatar.add_controller(click_prev);
 
-        let click_next = gtk::GestureClick::new();
-        click_next.connect_released({
+        next_avatar.connect_clicked({
             let on_next = nav_next.clone();
-            move |_, _, _, _| on_next()
+            move |_| on_next()
         });
-        next_avatar.add_controller(click_next);
 
         let entry_key_ctrl = gtk::EventControllerKey::new();
+        // The entry's text child moves the cursor on arrows and consumes them
+        // in the bubble phase, so account selection must see them first.
+        entry_key_ctrl.set_propagation_phase(gtk::PropagationPhase::Capture);
         let weak_e = entry.downgrade();
         entry_key_ctrl.connect_key_pressed({
             let on_prev = nav_prev.clone();
@@ -1487,14 +1536,13 @@ fn build_in(
 
         form.append(&carousel_box);
         form.append(&username);
+        Some(carousel_box)
     } else {
         form.append(&avatar);
         form.append(&username);
-    }
+        None
+    };
 
-    let status = gtk::Label::new(None);
-    status.set_widget_name("status");
-    status.set_wrap(true);
     let guarantee = gtk::Label::new(None);
     guarantee.set_widget_name("guarantee");
     guarantee.set_wrap(true);
@@ -1514,11 +1562,15 @@ fn build_in(
     } else {
         "unlock"
     })));
-    submit.set_sensitive(false);
+    submit.set_sensitive(settings.greeter && session_available);
     let weak_submit = submit.downgrade();
+    let greeter_submit = settings.greeter;
+    let can_submit = session_available;
     entry.connect_changed(move |entry| {
         if let Some(submit) = weak_submit.upgrade() {
-            submit.set_sensitive(entry.is_sensitive() && !entry.text().is_empty());
+            submit.set_sensitive(
+                entry.is_sensitive() && can_submit && (greeter_submit || !entry.text().is_empty()),
+            );
         }
     });
     submit.set_widget_name("submit");
@@ -1534,11 +1586,14 @@ fn build_in(
     form.append(&status);
     form.append(&guarantee);
 
-    if settings.greeter && !sessions.is_empty() {
-        let session_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let session_box = if settings.greeter && !sessions.is_empty() {
+        let session_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         session_box.set_widget_name("session-box");
         session_box.set_halign(gtk::Align::Center);
+        session_box.set_valign(gtk::Align::End);
+        session_box.set_margin_bottom(18);
         let session_icon = gtk::Image::from_icon_name("preferences-desktop-display-symbolic");
+        session_icon.set_widget_name("session-icon");
         session_icon.set_pixel_size(16);
         session_box.append(&session_icon);
 
@@ -1564,8 +1619,11 @@ fn build_in(
             }
         });
         session_box.append(&session_dropdown);
-        form.append(&session_box);
-    }
+        overlay.add_overlay(&session_box);
+        Some(session_box)
+    } else {
+        None
+    };
     let (keyboard, controller_event) = build_keyboard(&entry, &settings, &status);
     let physical_caps = Rc::new(Cell::new(false));
     let caps_label = caps.downgrade();
@@ -1583,8 +1641,10 @@ fn build_in(
     let compact: Rc<dyn Fn(&gtk::Box)> = Rc::new({
         let clock_region = clock_region.downgrade();
         let avatar = avatar.downgrade();
+        let carousel = carousel_box_handle.as_ref().map(gtk::Box::downgrade);
         let username = username.downgrade();
         let form = form.downgrade();
+        let session_box_weak = session_box.as_ref().map(gtk::Box::downgrade);
         let content = content.downgrade();
         let padding = layout.padding;
         let scale = layout.keyboard_scale;
@@ -1609,8 +1669,14 @@ fn build_in(
             if let Some(avatar) = avatar.upgrade() {
                 avatar.set_visible(!active && avatar_visible);
             }
+            if let Some(Some(carousel)) = carousel.as_ref().map(|w| w.upgrade()) {
+                carousel.set_visible(!active && avatar_visible);
+            }
             if let Some(username) = username.upgrade() {
                 username.set_visible(!active);
+            }
+            if let Some(Some(sb)) = session_box_weak.as_ref().map(|w| w.upgrade()) {
+                sb.set_visible(!active);
             }
             if let Some(form) = form.upgrade() {
                 form.set_margin_top(if active { 0 } else { 60 });
@@ -1647,17 +1713,22 @@ fn build_in(
         }
     });
     let preview = settings.preview;
+    let can_submit = session_available;
     let status_submit = status.clone();
     let strings = settings.clone();
     entry.connect_activate(move |entry| {
-        if !entry.is_sensitive() || entry.text().is_empty() {
+        if !can_submit || !entry.is_sensitive() || (entry.text().is_empty() && !strings.greeter) {
             return;
         }
         let password = Zeroizing::new(entry.text().to_string());
         entry.set_text("");
         entry.set_visibility(false);
         if preview {
-            status_submit.set_text(&strings.strings.text("preview-submit"));
+            status_submit.set_text(&strings.strings.text(if strings.greeter {
+                "preview-greeter-notice"
+            } else {
+                "preview-submit"
+            }));
         } else {
             on_submit(password);
         }
@@ -1831,6 +1902,12 @@ fn build_in(
         selected_user,
         selected_session,
         selected_session_id,
+        greeter_selection: carousel_box_handle
+            .iter()
+            .map(|widget| widget.clone().upcast())
+            .chain(session_box.iter().map(|widget| widget.clone().upcast()))
+            .collect(),
+        greeter_session_available: session_available,
         settings: settings.clone(),
         bindings,
         preview: settings.preview,

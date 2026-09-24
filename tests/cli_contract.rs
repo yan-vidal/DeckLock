@@ -1,5 +1,6 @@
 //! Exercise the shipped command interface, not only its internal parser/helpers.
 use std::{
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     time::{Duration, Instant},
@@ -313,7 +314,66 @@ fn setup_subcommands_exercise_cli_boundary_and_support_isolated_targets() {
     );
     assert!(target_greetd.exists());
     let content = std::fs::read_to_string(&target_greetd).unwrap();
-    assert!(content.contains("cage -s -- decklock --greeter --keyboard"));
+    let document: toml::Value = toml::from_str(&content).unwrap();
+    let command = document["default_session"]["command"].as_str().unwrap();
+    // greetd starts the greeter as `/bin/sh -c "exec <command>"`. A fake Cage
+    // proves the written command is runnable that way, with its arguments.
+    let fake_bin = cli.home.path().join("fake-greetd-bin");
+    std::fs::create_dir(&fake_bin).unwrap();
+    let fake_cage = fake_bin.join("cage");
+    std::fs::write(
+        &fake_cage,
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DECKLOCK_FAKE_CAGE\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake_cage, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let cage_args = cli.home.path().join("cage-args");
+    let started = Command::new("/bin/sh")
+        .args(["-c", &format!("exec {command}")])
+        .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+        .env("DECKLOCK_FAKE_CAGE", &cage_args)
+        .output()
+        .unwrap();
+    assert!(
+        started.status.success(),
+        "greetd could not start the written command: {}",
+        String::from_utf8_lossy(&started.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&cage_args).unwrap(),
+        "-s\n--\ndecklock\n--greeter\n--keyboard\n"
+    );
+    assert_eq!(command, "cage -s -- decklock --greeter --keyboard");
+
+    // Existing greetd policy must survive setup, and the greeter must not be
+    // mistaken for a preview when its socket is unavailable.
+    std::fs::write(
+        &target_greetd,
+        "[terminal]\nvt = 7\n[general]\nservice = \"custom-greetd\"\n[default_session]\ncommand = \"agreety\"\nuser = \"greeter\"\n",
+    )
+    .unwrap();
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target_greetd.to_str().unwrap(),
+        ],
+        true,
+    );
+    let content = std::fs::read_to_string(&target_greetd).unwrap();
+    let document: toml::Value = toml::from_str(&content).unwrap();
+    assert_eq!(document["terminal"]["vt"].as_integer(), Some(7));
+    assert_eq!(
+        document["general"]["service"].as_str(),
+        Some("custom-greetd")
+    );
+    assert!(
+        document["default_session"]["command"]
+            .as_str()
+            .unwrap()
+            .contains("decklock --greeter")
+    );
 
     let target_hypridle = cli.home.path().join("hypridle-test.conf");
     cli.run(
@@ -327,5 +387,59 @@ fn setup_subcommands_exercise_cli_boundary_and_support_isolated_targets() {
     );
     assert!(target_hypridle.exists());
     let lock_content = std::fs::read_to_string(&target_hypridle).unwrap();
-    assert!(lock_content.contains("lock_cmd = pidof decklock || decklock --lock"));
+    assert!(lock_content.contains("lock_cmd = decklock --lock"));
+    assert!(!lock_content.contains("pidof decklock"));
+
+    // Upgrade the command emitted by the previous setup version: a running
+    // settings or preview process must not suppress a future screen lock.
+    std::fs::write(
+        &target_hypridle,
+        "general {\n    lock_cmd = pidof decklock || decklock --lock\n    before_sleep_cmd = pidof decklock || decklock --lock\n}\n",
+    )
+    .unwrap();
+    cli.run(
+        &[
+            "setup",
+            "lock",
+            "--target",
+            target_hypridle.to_str().unwrap(),
+        ],
+        true,
+    );
+    let upgraded = std::fs::read_to_string(&target_hypridle).unwrap();
+    assert!(!upgraded.contains("pidof decklock"));
+    assert!(upgraded.contains("lock_cmd = decklock --lock"));
+
+    std::fs::write(&target_hypridle, "general {\n    inhibit_sleep = 1\n}\n").unwrap();
+    cli.run(
+        &[
+            "setup",
+            "lock",
+            "--target",
+            target_hypridle.to_str().unwrap(),
+        ],
+        true,
+    );
+    let completed = std::fs::read_to_string(&target_hypridle).unwrap();
+    assert_eq!(completed.matches("general {").count(), 1);
+    assert!(completed.contains("inhibit_sleep = 1"));
+    assert!(completed.contains("lock_cmd = decklock --lock"));
+
+    std::fs::write(
+        &target_hypridle,
+        "# Example: decklock --lock\ngeneral {\n    lock_cmd = gtklock\n    inhibit_sleep = 1\n}\n",
+    )
+    .unwrap();
+    cli.run(
+        &[
+            "setup",
+            "lock",
+            "--target",
+            target_hypridle.to_str().unwrap(),
+        ],
+        true,
+    );
+    let completed = std::fs::read_to_string(&target_hypridle).unwrap();
+    assert!(completed.contains("lock_cmd = decklock --lock"));
+    assert!(completed.contains("inhibit_sleep = 1"));
 }

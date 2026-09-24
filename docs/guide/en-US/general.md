@@ -65,7 +65,7 @@ DeckLock does not do this for you. Counting failures and locking accounts is the
 
 Use the physical or virtual keyboard. Shift changes case, double Shift latches Caps Lock, and Alt exposes alternate characters. The eye beside the password toggles its visibility. Optional sc-controller integration uses its external daemon and the embedded keyboard.
 
-User switching delegates to your display manager or `loginctl` (customizable via `switch_user_command`). Suspend, hibernate, restart and shutdown delegate to systemctl. They depend on your system's support, permissions and configuration; DeckLock does not configure hibernation for you. These actions are disabled in preview.
+User switching delegates to LightDM, GDM, an existing greeter session that `loginctl` can activate, or `switch_user_command`. A single greetd instance cannot create a simultaneous greeter session. Suspend, hibernate, restart and shutdown delegate to systemctl. They depend on your system's support, permissions and configuration; DeckLock does not configure hibernation for you. These actions are disabled in preview.
 
 ## Themes, media and command line
 

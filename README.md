@@ -252,7 +252,7 @@ The visual editor's live preview follows that editor's unsaved controls.
 
 ## Login and screen lock automation (`decklock setup`)
 
-DeckLock can serve as your unified login greeter (`greetd`), user-switching screen, and compositor screen locker (`hypridle`), keeping the exact same theme and on-screen keyboard everywhere.
+DeckLock can serve as a greetd login greeter and compositor screen locker (`hypridle`) with the same UI and on-screen keyboard. The greeter runs as the separate `greeter` account, so it reads that account's configuration by default. To use a shared theme, put its configuration and media in a location readable by `greeter` and add `--config /path/to/shared-config.toml` to greetd's command. `--greeter` without a greetd socket is a safe preview: it cannot log in or run power actions.
 
 Inspect your system's current integration:
 
@@ -272,7 +272,7 @@ Configure `hypridle` to lock using DeckLock:
 decklock setup lock
 ```
 
-Reference configuration templates are installed under `/usr/share/decklock/setup/` (`greetd.toml`, `hypridle.conf`, `decklock.service`). Use `--dry-run` to preview file changes without writing to disk.
+Reference configuration templates are installed under `/usr/share/decklock/setup/` (`greetd.toml`, `hypridle.conf`, `decklock.service`). Use `--dry-run` to preview file changes without writing to disk. Setup preserves other greetd TOML options and backs up the existing file. Only installed Wayland desktop sessions are offered for greetd login; it does not launch an X session from Cage's bare VT.
 
 ## Keyboard and power controls
 
@@ -293,7 +293,7 @@ The settings preview never captures a controller. Normal controller preview need
 explicit `--controller` or `--controller-socket`. Existing `deck-osk --toggle`
 shortcuts remain compatible. Capture is released when the keyboard closes.
 
-Power and session buttons support fast user switching (`switch_user_command`, `dm-tool`, `gdmflexiserver`, or `loginctl`) as well as `systemctl suspend`, `hibernate`, `reboot` and `poweroff`.
+Power and session buttons use `switch_user_command`, LightDM, GDM or activation of an existing logind greeter session for user switching, as well as `systemctl suspend`, `hibernate`, `reboot` and `poweroff`. A single greetd instance starts its greeter again after its current user session ends; it does not create a concurrent greeter for fast switching. Configure a separate supported display-manager action if that behavior is needed.
 Permissions and working sleep/hibernate behavior belong to the host system.
 Preview buttons only show tooltips. Plugins are not implemented; media playback
 uses installed GStreamer codecs.

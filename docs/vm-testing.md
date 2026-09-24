@@ -3,6 +3,15 @@
 The guest uses that distribution's installed package, unmodified Sway and real
 Linux-PAM modules. It complements the small mock protocol and unit tests; it does
 not replace them or establish compatibility with every compositor and PAM policy.
+After the locker assertions, the same candidate runs as a greetd greeter inside
+headless Cage. greetd runs as a transient system service, as the distributions'
+`greetd.service` does: started from the SSH login it would sit inside that
+logind session, and pam_systemd would register neither the greeter nor the user
+sessions or give them `XDG_RUNTIME_DIR`. The fixture checks that runtime
+directory, a denied password, an accepted login, the selected Wayland session
+running as the authenticated account, a return to the greeter after logout, and
+login as a second account chosen with the arrow keys. The guest uses public test
+credentials and its own Wayland socket.
 
 One target per distribution, each with its own pinned cloud image and its own
 candidate package:
@@ -106,8 +115,10 @@ audit denials, the failure-counting policy read from the stack, and cloud-init's
 own status and log. A guest whose cloud-init finishes with a recoverable error
 (exit 2, still "done") is provisioned and tested like any other; only a
 cloud-init that failed outright makes the guest unusable, and both outcomes are
-recorded rather than inferred. The temporary
-VM disk and SSH key are deleted after shutdown, including failures. They live
+recorded rather than inferred. VM evidence also includes greetd's log,
+selected-session markers and `greeter-assertions.txt`; a missing greeter
+assertion fails that target's VM job. The temporary VM disk and SSH key are
+deleted after shutdown, including failures. They live
 under `.deps/vm-cache` rather than `/tmp`: the copy-on-write overlay grows with
 every guest write, and `/tmp` is tmpfs by default on Arch and Fedora, where that
 growth would be host memory rather than disk. Logs may contain the public test

@@ -31,9 +31,9 @@ The X11 lock gate additionally needs `xfwm4` as the window manager, `xset` from
 `xorg-xset`/`x11-xserver-utils`, and the Xtst, Xi and Xss client libraries used by
 its helper. Missing tools fail the gate; none of the required suites silently skip.
 
-The optional `x11` feature is off by default and is not built into the published
-packages. `scripts/check` lints and builds it anyway, into `target/x11` so the
-package contract keeps checking a feature-free binary.
+The optional `x11` feature is off for a plain local build; distribution package
+jobs build with it enabled. `scripts/check` also lints and builds that feature
+into `target/x11`. The VM's X11/PAM assertions exercise the packaged binary.
 
 The gate creates private HOME, XDG config/data/cache/runtime directories and clears
 the inherited desktop sockets. Cargo/Rustup caches remain usable. Logs and exit
@@ -62,6 +62,10 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | Video path on X11 | `examples/x11_video_check.rs`, run by both gates | Frames keep arriving on an X11 display, through the software path without the `x11` feature and the accelerated one with it |
 | Reduced-guarantee notice | `examples/guarantee_check.rs` | Catalog text, silence when a backend keeps its guarantees, and a theme that cannot hide it |
 | Guest provisioning fixture | `scripts/test-vm-fixture.py` | The readiness decision made before a guest is tested, and the cloud-init status recorded with it, checked against a stubbed cloud-init |
+| Greeter IPC and preview | `src/greeter.rs` protocol tests, `examples/preview_check.rs` | Several greetd prompts, denied session start, JSON parsing, no power actions in greeter preview, and activation of an existing greeter |
+| Greeter arrow keys | `examples/greeter_keys_check.rs`, X11 gate | Left/Right from an empty password entry select accounts through GTK's own key dispatch, wrap at both ends, keep entry focus, and still move the cursor while a password is being typed |
+| Greeter setup command | `tests/cli_contract.rs` | The command `setup greeter` writes starts when run as greetd runs it (`sh -c "exec <command>"`), with a fake Cage |
+| Real greetd login | `scripts/vm/greeter.py`, run by each distribution VM | Packaged setup command, greetd as a system service, logind runtime directories for the greeter and user sessions, real greetd and PAM rejection/acceptance, Cage Wayland greeter, chosen session running as the authenticated user, and a second account selected by arrow key |
 | Package boundary | `scripts/test-package.py`, Arch package CI | Archive paths/checksums, executable identity, original media, settings launcher and actual packaged CLI |
 
 Counts are not a coverage target. Add a contract test when a behavior can break;
@@ -126,7 +130,8 @@ validation on a real Xorg session, on the list below.
 
 ## Manual validation still required
 
-The VM exercises real PAM and Sway with controlled guest policies. Other PAM
+The VM exercises real PAM and Sway with controlled guest policies, plus greetd
+and Cage login on Arch, Fedora and Ubuntu. Other PAM
 stacks, suspend/hibernate integration, other compositors, controller recovery/haptics, accessibility,
 real-device ergonomics and visual quality need explicit UAT. For the X11 backend,
 add a real Xorg session: authentication through PAM, monitor power-down and wake,

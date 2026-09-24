@@ -16,6 +16,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 HELPER = ROOT / "scripts/vm/cloud-init-ready.sh"
 SETUP = ROOT / "scripts/vm/setup.sh"
+GREETER = ROOT / "scripts/vm/greeter.py"
 
 
 def run_with_stub(exit_code, output="status: done"):
@@ -62,6 +63,16 @@ def main():
         failures.append("setup.sh does not use the fixture readiness check")
     if any(line.strip().startswith("cloud-init status") for line in setup.splitlines()):
         failures.append("setup.sh still waits on cloud-init directly, bypassing the check")
+    if 'python3 "$fixture/greeter.py"' not in setup:
+        failures.append("setup.sh does not exercise the packaged greetd login")
+    try:
+        compile(GREETER.read_text(), str(GREETER), 'exec')
+    except SyntaxError as error:
+        failures.append(f"greeter VM fixture does not parse: {error}")
+    for target in ('arch', 'fedora', 'ubuntu'):
+        manifest = (ROOT / f'scripts/vm/distros/{target}.env').read_text()
+        if 'greetd cage' not in manifest:
+            failures.append(f"{target} VM does not install greetd and Cage")
 
     if failures:
         for failure in failures:

@@ -32,10 +32,16 @@ zeroize = "1.8"
 unicode-normalization = "0.1"
 
 tempfile = "3"
+serde_json = "1.0.150"
 
 # Needs the X11 backend's dependency; `cargo build --examples` skips it otherwise.
 [[example]]
 name = "x11_intruder"
+required-features = ["x11"]
+
+# XTest input through GTK dispatch comes from the X11 backend's dependency too.
+[[example]]
+name = "greeter_keys_check"
 required-features = ["x11"]
 
 

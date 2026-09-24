@@ -253,7 +253,7 @@ carregá-lo. O preview ao vivo da interface acompanha os controles não salvos d
 
 ## Automação de login e bloqueio de tela (`decklock setup`)
 
-O DeckLock pode atuar como interface unificada de login (`greetd`), troca de usuário e bloqueio de sessão do compositor (`hypridle`), mantendo o mesmo tema e o teclado virtual na tela em todas elas.
+O DeckLock pode atuar como greeter de login do `greetd` e bloqueador de sessão do compositor (`hypridle`), com a mesma interface e teclado virtual. O greeter roda na conta separada `greeter` e, por padrão, lê a configuração dessa conta. Para compartilhar um tema, coloque a configuração e as mídias num local legível por `greeter` e acrescente `--config /caminho/para/config-compartilhada.toml` ao comando do greetd. `--greeter` sem socket do greetd é uma prévia segura: não faz login nem executa ações de energia.
 
 Inspecione o estado atual de integração do sistema:
 
@@ -273,7 +273,7 @@ Configure o `hypridle` para realizar o bloqueio com o DeckLock:
 decklock setup lock
 ```
 
-Modelos de configuração de referência ficam instalados em `/usr/share/decklock/setup/` (`greetd.toml`, `hypridle.conf`, `decklock.service`). Use `--dry-run` para visualizar o que seria escrito sem alterar os arquivos no disco.
+Modelos de configuração de referência ficam instalados em `/usr/share/decklock/setup/` (`greetd.toml`, `hypridle.conf`, `decklock.service`). Use `--dry-run` para visualizar o que seria escrito sem alterar os arquivos no disco. O setup preserva outras opções TOML do greetd e cria backup do arquivo existente. No login via greetd, o seletor oferece apenas sessões Wayland instaladas; ele não inicia uma sessão X a partir do VT do Cage.
 
 ## Teclado e energia
 
@@ -294,7 +294,7 @@ O preview das configurações nunca captura um controle. No preview normal, a
 integração exige `--controller` ou `--controller-socket` explícito. Atalhos antigos
 `deck-osk --toggle` continuam compatíveis. Fechar o teclado libera a captura.
 
-Os botões de energia e sessão suportam troca rápida de usuário (`switch_user_command`, `dm-tool`, `gdmflexiserver` ou `loginctl`), além de `systemctl suspend`, `hibernate`, `reboot` e `poweroff`.
+Os botões de energia e sessão usam `switch_user_command`, LightDM, GDM ou a ativação de uma sessão de greeter já existente no logind para trocar de usuário, além de `systemctl suspend`, `hibernate`, `reboot` e `poweroff`. Uma instância única do greetd só reinicia seu greeter depois que a sessão atual termina; ela não cria outro greeter simultâneo para troca rápida. Para isso, configure uma ação compatível do gerenciador de login.
 As permissões e o funcionamento da suspensão/hibernação dependem do sistema.
 No preview, os botões só mostram dicas. Plugins ainda não estão implementados;
 a reprodução depende dos codecs GStreamer instalados.
