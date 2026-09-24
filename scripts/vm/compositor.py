@@ -36,6 +36,17 @@ COMPOSITORS = {
         # the guest user's home.
         'config': ('wayfire.ini', '[core]\nplugins = session-lock\nxwayland = false\n'),
     },
+    # Hyprland renders through Aquamarine rather than wlroots: its headless-only
+    # mode starts with no monitor, so one is created once its socket is up.
+    'hyprland': {
+        'command': ['Hyprland', '--config', 'hyprland.conf'],
+        'renderer': SOFTWARE_GLES,
+        'env': {'HYPRLAND_HEADLESS_ONLY': '1'},
+        'config': ('hyprland.conf', 'monitor = , 1280x720@60, 0x0, 1\n'
+                   'animations {\n    enabled = false\n}\n'
+                   'misc {\n    disable_hyprland_logo = true\n    disable_splash_rendering = true\n}\n'),
+        'after_start': ['hyprctl', '--instance', '0', 'output', 'create', 'headless'],
+    },
 }
 NAME = sys.argv[1] if len(sys.argv) == 2 else ''
 assert NAME in COMPOSITORS, f'Usage: compositor.py {{{",".join(COMPOSITORS)}}}'
@@ -145,16 +156,22 @@ try:
     if spec['renderer'] == SOFTWARE_GLES:
         # vgem is a bare platform device named vgem, with no driver bound to it.
         found = {node.name: (node / 'device').resolve().name
-                 for node in sorted(Path('/sys/class/drm').glob('renderD*'))}
-        nodes = [Path('/dev/dri') / name for name, device in found.items() if device == 'vgem']
-        assert nodes, f'No vgem render node for software GLES (setup.sh loads vgem): {found}'
-        extra = {'WLR_RENDERER': 'gles2', 'WLR_RENDER_DRM_DEVICE': str(nodes[0]),
-                 'WLR_RENDERER_ALLOW_SOFTWARE': '1', 'GBM_ALWAYS_SOFTWARE': '1'}
+                 for node in sorted(Path('/sys/class/drm').glob('*')) if node.name.startswith(('card', 'renderD'))}
+        vgem = sorted(name for name, device in found.items() if device == 'vgem' and '-' not in name)
+        render = [Path('/dev/dri') / name for name in vgem if name.startswith('renderD')]
+        card = [Path('/dev/dri') / name for name in vgem if name.startswith('card')]
+        assert render and card, f'No vgem DRM nodes for software GLES (setup.sh loads vgem): {found}'
+        extra = {'WLR_RENDERER': 'gles2', 'WLR_RENDER_DRM_DEVICE': str(render[0]),
+                 'WLR_RENDERER_ALLOW_SOFTWARE': '1', 'GBM_ALWAYS_SOFTWARE': '1',
+                 'AQ_DRM_DEVICES': str(card[0])}
+    extra |= spec.get('env', {})
     if 'config' in spec:
         (OUT / spec['config'][0]).write_text(spec['config'][1])
     compositor = spawn(spec['command'], 'compositor.log', extra)
     until(lambda: sockets() - existing, 'Wayland socket ready', child=compositor)
     env['WAYLAND_DISPLAY'] = sorted(sockets() - existing)[0]
+    if 'after_start' in spec:
+        run(spec['after_start'])
     (OUT / 'config.toml').write_text('locale = "en-US"\nbackground_pool = []\nidle_pool = []\nidle_enabled = false\n')
     probe = spawn(['python3', str(EVIDENCE / 'probe.py')], 'probe.log')
     until(lambda: (OUT / 'probe-mapped').exists(), 'probe mapped', child=probe)
