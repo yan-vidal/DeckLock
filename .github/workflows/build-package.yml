@@ -18,12 +18,24 @@ on:
           required check and blocks every pull request, so keep Arch's spelling.
         required: true
         type: string
+      runner:
+        description: >
+          Hosted runner, which sets the architecture. The pinned images are
+          multi-architecture indexes, so the same digest serves both.
+        required: false
+        default: ubuntu-24.04
+        type: string
+      artifact_suffix:
+        description: Appended to the artifact name, so builds for two architectures do not collide
+        required: false
+        default: ''
+        type: string
 permissions:
   contents: read
 jobs:
   build:
     name: ${{ inputs.label }} package contract
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 30
     container:
       image: ${{ inputs.image }}
@@ -62,7 +74,7 @@ jobs:
           runuser -u builder -- scripts/ci-build-package "${{ inputs.target }}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ${{ inputs.target }}-package
+          name: ${{ inputs.target }}-package${{ inputs.artifact_suffix }}
           path: |
             dist/*.pkg.tar.zst
             dist/*.rpm
