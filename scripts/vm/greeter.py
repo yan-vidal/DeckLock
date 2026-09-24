@@ -3,7 +3,6 @@
 import os
 from pathlib import Path
 import pwd
-import signal
 import shutil
 import subprocess
 import time
@@ -11,6 +10,7 @@ import tomllib
 
 EVIDENCE = Path('/var/tmp/decklock-evidence')
 WORK = Path('/var/tmp/decklock-greeter-test')
+UNIT = 'decklock-vm-greetd.service'
 assert Path('/etc/decklock-test-vm').read_text().strip() == 'disposable-qemu-fixture'
 assert os.geteuid() == 0, 'Only the disposable guest root may start greetd'
 assert subprocess.check_output(['systemd-detect-virt'], text=True).strip() in ('kvm', 'qemu')
@@ -20,11 +20,15 @@ def run(command, **kwargs):
     return subprocess.run(command, check=True, timeout=30, **kwargs)
 
 
-def until(condition, label, daemon, seconds=45):
+def greetd_running():
+    return subprocess.run(['systemctl', 'is-active', '--quiet', UNIT]).returncode == 0
+
+
+def until(condition, label, seconds=45):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
-        if daemon.poll() is not None:
-            raise AssertionError(f'{label}: greetd exited {daemon.returncode}; see greetd.log')
+        if not greetd_running():
+            raise AssertionError(f'{label}: greetd exited; see greetd.log')
         result = condition()
         if result:
             return result
@@ -69,7 +73,7 @@ config = WORK / 'config.toml'
 run(['decklock', 'setup', 'greeter', '--target', str(config)])
 document = tomllib.loads(config.read_text())
 original = document['default_session']['command']
-assert original == 'XDG_RUNTIME_DIR=/run/user/$(id -u) cage -s -- decklock --greeter --keyboard', original
+assert original == 'cage -s -- decklock --greeter --keyboard', original
 record('packaged setup selects the native greetd/Cage greeter')
 
 greeter_config = Path(greeter.pw_dir) / '.config/decklock/config.toml'
@@ -84,8 +88,7 @@ wrapper.write_text(
     'id\n'
     'printf "runtime=%s\\n" "${XDG_RUNTIME_DIR:-unset}"\n'
     'printf "start\\n" >> /var/tmp/decklock-greeter-test/starts\n'
-    'exec env XDG_RUNTIME_DIR=/run/user/$(id -u) '
-    'WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman '
+    'exec env WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman '
     'WLR_LIBINPUT_NO_DEVICES=1 GDK_BACKEND=wayland GSK_RENDERER=cairo '
     'cage -s -- decklock --greeter --keyboard '
     f'--config {greeter_config}\n'
@@ -105,80 +108,85 @@ run(['loginctl', 'enable-linger', 'greeter'])
 run(['systemctl', 'stop', 'greetd.service'])
 run(['systemctl', 'stop', 'getty@tty2.service'])
 runtime = Path('/run/user') / str(greeter.pw_uid)
-with (EVIDENCE / 'greetd.log').open('w') as output:
-    daemon = subprocess.Popen(
-        ['greetd', '--config', str(active_config)], stdout=output, stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
-    try:
-        def greeter_socket():
-            if not (WORK / 'starts').exists():
-                return None
-            return next((path for path in runtime.glob('wayland-*') if path.is_socket()), None)
+# greetd must run as a system service, as the distributions' greetd.service
+# does. Started from this SSH login it would sit inside that logind session:
+# pam_systemd then refuses to register the greeter and user sessions ("already
+# running in a session"), and neither receives XDG_RUNTIME_DIR.
+subprocess.run(['systemctl', 'reset-failed', UNIT], capture_output=True)
+run(['systemd-run', '--unit', UNIT, '--collect', '-p', 'IgnoreSIGPIPE=no', '-p', 'SendSIGHUP=yes',
+     '-p', 'KeyringMode=shared', 'greetd', '--config', str(active_config)])
+try:
+    def greeter_socket():
+        if not (WORK / 'starts').exists():
+            return None
+        return next((path for path in runtime.glob('wayland-*') if path.is_socket()), None)
 
-        socket = until(greeter_socket, 'Cage Wayland socket ready', daemon, 60)
-        first_socket_inode = socket.stat().st_ino
-        def type_password(value):
-            greeter_env = os.environ.copy()
-            greeter_env.update(
-                HOME=greeter.pw_dir, XDG_RUNTIME_DIR=str(runtime),
-                WAYLAND_DISPLAY=socket.name,
-            )
-            run(['runuser', '-u', 'greeter', '--', 'env',
-                 f'HOME={greeter.pw_dir}', f'XDG_RUNTIME_DIR={runtime}',
-                 f'WAYLAND_DISPLAY={socket.name}',
-                 'wtype', '-s', '250', '-d', '30', value], env=greeter_env)
-            run(['runuser', '-u', 'greeter', '--', 'env',
-                 f'HOME={greeter.pw_dir}', f'XDG_RUNTIME_DIR={runtime}',
-                 f'WAYLAND_DISPLAY={socket.name}',
-                 'wtype', '-s', '250', '-k', 'Return'], env=greeter_env)
+    socket = until(greeter_socket, 'Cage Wayland socket ready', 60)
+    first_socket_inode = socket.stat().st_ino
+    greeter_runtime = f'runtime={runtime}'
+    assert greeter_runtime in (WORK / 'cage.log').read_text(errors='replace').splitlines(), \
+        'greetd did not give the greeter its logind runtime directory; see cage.log'
+    record('greetd gives the packaged greeter command its logind runtime directory')
+    def type_password(value):
+        greeter_env = os.environ.copy()
+        greeter_env.update(
+            HOME=greeter.pw_dir, XDG_RUNTIME_DIR=str(runtime),
+            WAYLAND_DISPLAY=socket.name,
+        )
+        run(['runuser', '-u', 'greeter', '--', 'env',
+             f'HOME={greeter.pw_dir}', f'XDG_RUNTIME_DIR={runtime}',
+             f'WAYLAND_DISPLAY={socket.name}',
+             'wtype', '-s', '250', '-d', '30', value], env=greeter_env)
+        run(['runuser', '-u', 'greeter', '--', 'env',
+             f'HOME={greeter.pw_dir}', f'XDG_RUNTIME_DIR={runtime}',
+             f'WAYLAND_DISPLAY={socket.name}',
+             'wtype', '-s', '250', '-k', 'Return'], env=greeter_env)
 
-        time.sleep(2)
-        type_password('wrong-fixture-password')
-        until(lambda: 'Greeter login failed:' in (WORK / 'cage.log').read_text(errors='replace'),
-              'wrong password visibly rejected', daemon, 35)
-        assert not (WORK / 'session-locktest').exists(), 'Wrong password started a session'
-        record('real greetd/PAM rejects a wrong password without starting a user session')
+    time.sleep(2)
+    type_password('wrong-fixture-password')
+    until(lambda: 'Greeter login failed:' in (WORK / 'cage.log').read_text(errors='replace'),
+          'wrong password visibly rejected', 35)
+    assert not (WORK / 'session-locktest').exists(), 'Wrong password started a session'
+    record('real greetd/PAM rejects a wrong password without starting a user session')
 
-        type_password('DeckLock-test-42')
-        until(lambda: (WORK / 'session-locktest').exists(), 'first user session started', daemon, 45)
-        assert (WORK / 'session-locktest').read_text().strip() == 'locktest'
-        assert (WORK / 'runtime-locktest').read_text().strip() == '/run/user/' + str(pwd.getpwnam('locktest').pw_uid)
-        assert tomllib.loads(state.read_text())['last_user'] == 'locktest'
-        record('native greeter starts the selected Wayland session as the authenticated user')
+    type_password('DeckLock-test-42')
+    until(lambda: (WORK / 'session-locktest').exists(), 'first user session started', 45)
+    assert (WORK / 'session-locktest').read_text().strip() == 'locktest'
+    assert (WORK / 'runtime-locktest').read_text().strip() == '/run/user/' + str(pwd.getpwnam('locktest').pw_uid), \
+        'user session lacks its logind runtime directory'
+    assert tomllib.loads(state.read_text())['last_user'] == 'locktest'
+    record('native greeter starts the selected Wayland session as the authenticated user')
 
-        until(lambda: (WORK / 'starts').read_text().count('start') >= 2,
-              'greeter restarted after logout', daemon, 45)
-        socket = until(
-            lambda: next((path for path in runtime.glob('wayland-*')
-                          if path.is_socket() and path.stat().st_ino != first_socket_inode), None),
-            'new Cage Wayland socket ready after logout', daemon, 45)
-        time.sleep(2)
-        # The saved selection is locktest. The installed image may contain
-        # another regular account, so derive a bounded number of avatar steps
-        # from the guest's passwd order rather than assuming two accounts.
-        users = [entry.pw_name for entry in pwd.getpwall()
-                 if 1000 <= entry.pw_uid < 60000
-                 and not entry.pw_shell.endswith(('nologin', 'false'))]
-        steps = (users.index('locktest2') - users.index('locktest')) % len(users)
-        assert steps > 0
-        for _ in range(steps):
-            run(['runuser', '-u', 'greeter', '--', 'env',
-                 f'HOME={greeter.pw_dir}', f'XDG_RUNTIME_DIR={runtime}',
-                 f'WAYLAND_DISPLAY={socket.name}', 'wtype', '-s', '250', '-k', 'Right'])
-        type_password('DeckLock-second-42')
-        until(lambda: (WORK / 'session-locktest2').exists(), 'second user session started', daemon, 45)
-        assert (WORK / 'session-locktest2').read_text().strip() == 'locktest2'
-        assert (WORK / 'runtime-locktest2').read_text().strip() == '/run/user/' + str(pwd.getpwnam('locktest2').pw_uid)
-        assert tomllib.loads(state.read_text())['last_user'] == 'locktest2'
-        record('avatar selection changes the account authenticated by real greetd/PAM')
-    finally:
-        if (WORK / 'cage.log').exists():
-            shutil.copyfile(WORK / 'cage.log', EVIDENCE / 'cage.log')
-        if daemon.poll() is None:
-            os.killpg(daemon.pid, signal.SIGTERM)
-            try:
-                daemon.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                os.killpg(daemon.pid, signal.SIGKILL)
-                daemon.wait(timeout=5)
+    until(lambda: (WORK / 'starts').read_text().count('start') >= 2,
+          'greeter restarted after logout', 45)
+    socket = until(
+        lambda: next((path for path in runtime.glob('wayland-*')
+                      if path.is_socket() and path.stat().st_ino != first_socket_inode), None),
+        'new Cage Wayland socket ready after logout', 45)
+    time.sleep(2)
+    # The saved selection is locktest. The installed image may contain
+    # another regular account, so derive a bounded number of avatar steps
+    # from the guest's passwd order rather than assuming two accounts.
+    users = [entry.pw_name for entry in pwd.getpwall()
+             if 1000 <= entry.pw_uid < 60000
+             and not entry.pw_shell.endswith(('nologin', 'false'))]
+    steps = (users.index('locktest2') - users.index('locktest')) % len(users)
+    assert steps > 0
+    for _ in range(steps):
+        run(['runuser', '-u', 'greeter', '--', 'env',
+             f'HOME={greeter.pw_dir}', f'XDG_RUNTIME_DIR={runtime}',
+             f'WAYLAND_DISPLAY={socket.name}', 'wtype', '-s', '250', '-k', 'Right'])
+    type_password('DeckLock-second-42')
+    until(lambda: (WORK / 'session-locktest2').exists(), 'second user session started', 45)
+    assert (WORK / 'session-locktest2').read_text().strip() == 'locktest2'
+    assert (WORK / 'runtime-locktest2').read_text().strip() == '/run/user/' + str(pwd.getpwnam('locktest2').pw_uid), \
+        'user session lacks its logind runtime directory'
+    assert tomllib.loads(state.read_text())['last_user'] == 'locktest2'
+    record('avatar selection changes the account authenticated by real greetd/PAM')
+finally:
+    if (WORK / 'cage.log').exists():
+        shutil.copyfile(WORK / 'cage.log', EVIDENCE / 'cage.log')
+    subprocess.run(['systemctl', 'stop', UNIT], capture_output=True, timeout=45)
+    with (EVIDENCE / 'greetd.log').open('w') as output:
+        subprocess.run(['journalctl', '--no-pager', '-o', 'short-monotonic', '-u', UNIT],
+                       stdout=output, stderr=subprocess.STDOUT, timeout=30)

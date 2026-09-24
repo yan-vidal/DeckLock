@@ -250,11 +250,11 @@ pub fn setup_greeter(
         .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
         .as_table_mut()
         .ok_or_else(|| "greetd default_session must be a TOML table".to_string())?;
+    // greetd runs this as `sh -c "exec <command>"`, where a leading VAR=value
+    // is taken as the program name. pam_systemd supplies XDG_RUNTIME_DIR.
     session.insert(
         "command".into(),
-        toml::Value::String(format!(
-            "XDG_RUNTIME_DIR=/run/user/$(id -u) cage -s -- decklock --greeter{keyboard_flag}"
-        )),
+        toml::Value::String(format!("cage -s -- decklock --greeter{keyboard_flag}")),
     );
     session.insert("user".into(), toml::Value::String("greeter".into()));
     let content = toml::to_string_pretty(&document)

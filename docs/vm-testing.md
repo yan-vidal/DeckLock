@@ -4,10 +4,14 @@ The guest uses that distribution's installed package, unmodified Sway and real
 Linux-PAM modules. It complements the small mock protocol and unit tests; it does
 not replace them or establish compatibility with every compositor and PAM policy.
 After the locker assertions, the same candidate runs as a greetd greeter inside
-headless Cage. The fixture checks a denied password, an accepted login, the
-selected Wayland session running as the authenticated account, a return to the
-greeter after logout, and login as a second account chosen by the avatar. The
-guest uses public test credentials and its own Wayland socket.
+headless Cage. greetd runs as a transient system service, as the distributions'
+`greetd.service` does: started from the SSH login it would sit inside that
+logind session, and pam_systemd would register neither the greeter nor the user
+sessions or give them `XDG_RUNTIME_DIR`. The fixture checks that runtime
+directory, a denied password, an accepted login, the selected Wayland session
+running as the authenticated account, a return to the greeter after logout, and
+login as a second account chosen with the arrow keys. The guest uses public test
+credentials and its own Wayland socket.
 
 One target per distribution, each with its own pinned cloud image and its own
 candidate package:

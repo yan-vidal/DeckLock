@@ -39,6 +39,11 @@ serde_json = "1.0.150"
 name = "x11_intruder"
 required-features = ["x11"]
 
+# XTest input through GTK dispatch comes from the X11 backend's dependency too.
+[[example]]
+name = "greeter_keys_check"
+required-features = ["x11"]
+
 
 [build-dependencies]
 pkg-config = "0.3"

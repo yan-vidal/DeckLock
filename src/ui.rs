@@ -90,7 +90,7 @@ pub fn rebuild_preview(view: View, app: &gtk::Application, settings: Rc<Settings
     let shown = gtk::prelude::EntryExt::is_visible(&view.entry);
     view.bindings.clear();
     drop(view);
-    let view = build_in(app, settings, Rc::new(|_| {}), Some(window));
+    let view = build_in(app, settings, Rc::new(|_| {}), Some(window), None);
     view.entry.set_text(&text);
     view.entry.set_visibility(shown);
     view.keyboard.set_visible(keyboard);
@@ -841,7 +841,19 @@ pub fn build(
     settings: Rc<Settings>,
     on_submit: Rc<dyn Fn(Zeroizing<String>)>,
 ) -> View {
-    build_in(app, settings, on_submit, None)
+    build_in(app, settings, on_submit, None, None)
+}
+
+/// Greeter view over a given account list instead of the system's, so GTK
+/// contracts use fixed accounts rather than the host's /etc/passwd.
+pub fn build_greeter_with_users(
+    app: &gtk::Application,
+    settings: Rc<Settings>,
+    users: Vec<crate::greeter::UserEntry>,
+    on_submit: Rc<dyn Fn(Zeroizing<String>)>,
+) -> View {
+    assert!(settings.greeter, "Only a greeter view lists accounts");
+    build_in(app, settings, on_submit, None, Some(users))
 }
 
 fn build_in(
@@ -849,6 +861,7 @@ fn build_in(
     settings: Rc<Settings>,
     on_submit: Rc<dyn Fn(Zeroizing<String>)>,
     existing: Option<gtk::ApplicationWindow>,
+    users: Option<Vec<crate::greeter::UserEntry>>,
 ) -> View {
     crate::branding::install();
     let window = existing.unwrap_or_else(|| {
@@ -1132,7 +1145,7 @@ fn build_in(
     let selected_session_id = Rc::new(RefCell::new(String::new()));
 
     let users = if settings.greeter {
-        crate::greeter::list_system_users()
+        users.unwrap_or_else(crate::greeter::list_system_users)
     } else {
         Vec::new()
     };
@@ -1488,6 +1501,9 @@ fn build_in(
         });
 
         let entry_key_ctrl = gtk::EventControllerKey::new();
+        // The entry's text child moves the cursor on arrows and consumes them
+        // in the bubble phase, so account selection must see them first.
+        entry_key_ctrl.set_propagation_phase(gtk::PropagationPhase::Capture);
         let weak_e = entry.downgrade();
         entry_key_ctrl.connect_key_pressed({
             let on_prev = nav_prev.clone();

@@ -64,7 +64,8 @@ with tempfile.TemporaryDirectory(prefix='decklock-check-') as temporary:
     if args.all:
         step('isolated-gtk',['xvfb-run','-a','-s','-screen 0 1280x800x24 -nolisten tcp','dbus-run-session','--',sys.executable,'scripts/test-gui-isolated.py'],env,240)
         step('wayland-protocol',[sys.executable,'scripts/test-lock-isolated.py'],env,60)
-        step('build-x11',[cargo,'build','--locked','--offline','--features','x11','--target-dir','target/x11','--bin','decklock','--example','x11_intruder','--example','x11_video_check'],env)
+        step('build-x11',[cargo,'build','--locked','--offline','--features','x11','--target-dir','target/x11','--bin','decklock','--example','x11_intruder','--example','x11_video_check','--example','greeter_keys_check'],env)
         step('x11-lock',[sys.executable,'scripts/test-lock-x11.py'],env,240)
+        step('greeter-keys',['xvfb-run','-a','-s','-screen 0 1280x800x24 -nolisten tcp','dbus-run-session','--','target/x11/debug/examples/greeter_keys_check'],env,120)
         step('x11-video',['xvfb-run','-a','-s','-screen 0 1280x800x24 -nolisten tcp','dbus-run-session','--','target/x11/debug/examples/x11_video_check','assets/media/videos/osaka_dotombori.mp4','accelerated'],env,180)
 print(f'PASS: {len(results)} gates. Evidence: {logs}',flush=True)

@@ -1,5 +1,6 @@
 //! Exercise the shipped command interface, not only its internal parser/helpers.
 use std::{
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     time::{Duration, Instant},
@@ -313,11 +314,36 @@ fn setup_subcommands_exercise_cli_boundary_and_support_isolated_targets() {
     );
     assert!(target_greetd.exists());
     let content = std::fs::read_to_string(&target_greetd).unwrap();
+    let document: toml::Value = toml::from_str(&content).unwrap();
+    let command = document["default_session"]["command"].as_str().unwrap();
+    // greetd starts the greeter as `/bin/sh -c "exec <command>"`. A fake Cage
+    // proves the written command is runnable that way, with its arguments.
+    let fake_bin = cli.home.path().join("fake-greetd-bin");
+    std::fs::create_dir(&fake_bin).unwrap();
+    let fake_cage = fake_bin.join("cage");
+    std::fs::write(
+        &fake_cage,
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DECKLOCK_FAKE_CAGE\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake_cage, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let cage_args = cli.home.path().join("cage-args");
+    let started = Command::new("/bin/sh")
+        .args(["-c", &format!("exec {command}")])
+        .env("PATH", format!("{}:/usr/bin:/bin", fake_bin.display()))
+        .env("DECKLOCK_FAKE_CAGE", &cage_args)
+        .output()
+        .unwrap();
     assert!(
-        content.contains(
-            "XDG_RUNTIME_DIR=/run/user/$(id -u) cage -s -- decklock --greeter --keyboard"
-        )
+        started.status.success(),
+        "greetd could not start the written command: {}",
+        String::from_utf8_lossy(&started.stderr)
     );
+    assert_eq!(
+        std::fs::read_to_string(&cage_args).unwrap(),
+        "-s\n--\ndecklock\n--greeter\n--keyboard\n"
+    );
+    assert_eq!(command, "cage -s -- decklock --greeter --keyboard");
 
     // Existing greetd policy must survive setup, and the greeter must not be
     // mistaken for a preview when its socket is unavailable.
