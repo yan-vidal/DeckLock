@@ -65,8 +65,11 @@ session_command = Path('/usr/local/bin/decklock-vm-session')
 session_command.write_text(
     '#!/bin/sh\n'
     'set -eu\n'
-    'printf "%s\\n" "$(id -un)" > "/var/tmp/decklock-greeter-test/session-$(id -un)"\n'
-    'printf "%s\\n" "${XDG_RUNTIME_DIR:-unset}" > "/var/tmp/decklock-greeter-test/runtime-$(id -un)"\n'
+    # The test waits for session-<user>, then reads runtime-<user>: write the
+    # runtime marker first, and each one whole through a rename.
+    'dir=/var/tmp/decklock-greeter-test; me=$(id -un)\n'
+    'printf "%s\\n" "${XDG_RUNTIME_DIR:-unset}" > "$dir/.runtime-$me" && mv "$dir/.runtime-$me" "$dir/runtime-$me"\n'
+    'printf "%s\\n" "$me" > "$dir/.session-$me" && mv "$dir/.session-$me" "$dir/session-$me"\n'
     'sleep 2\n'
 )
 session_command.chmod(0o755)
