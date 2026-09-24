@@ -187,9 +187,16 @@ def run():
             recovered = until(lambda: session.intruder("stack", xid, 1) == "on_top=1 samples=1 other_top=0",
                               seconds=2, alive=locker, message="the lock screen back on top")
             check(recovered, "The lock screen stayed under a window that covered it")
+            # xfwm4 answers one new window with more than one restack of its frame
+            # (measured: a second one about 70 ms after the lock is back on top),
+            # and each costs the lock one reaction, slower on a loaded machine.
+            # Counting from the first recovery made that timing the test's outcome.
+            # Instead the lock must hold the top for 0.5 s within 3 s, and from
+            # then on keep it in every sample, not 19 of 20 as before.
+            until(lambda: session.intruder("stack", xid, 10) == "on_top=10 samples=10 other_top=0",
+                  seconds=3, alive=locker, message="the lock screen to hold the top once xfwm4 settles")
             stack = session.intruder("stack", xid, 20)
-            samples = dict(pair.split("=") for pair in stack.split())
-            check(int(samples["on_top"]) >= 19, f"The lock screen did not stay on top: {stack}")
+            check(stack == "on_top=20 samples=20 other_top=0", f"The lock screen did not stay on top: {stack}")
             covered = coverer.communicate(timeout=30)[0]
             check("mapped=" in covered, f"The covering window never appeared: {covered}")
 
