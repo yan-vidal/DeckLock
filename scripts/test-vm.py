@@ -19,6 +19,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -216,6 +217,13 @@ def main():
                     vm.wait()
                 thread.join(timeout=5)
                 (logs / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
+                # The job log is often the only evidence a reviewer can read, so a
+                # failure names its assertion there instead of only in guest.log.
+                guest = logs / 'guest.log'
+                if report['status'] != 'passed' and guest.exists():
+                    tail = guest.read_text(errors='replace').splitlines()[-80:]
+                    print('--- guest.log (last 80 lines) ---', *tail, '--- end guest.log ---',
+                          sep='\n', file=sys.stderr, flush=True)
     if report['status'] != 'passed':
         raise SystemExit('FAIL: VM evidence incomplete')
     print(f'PASS: real Sway/PAM package VM on {args.target}', flush=True)
