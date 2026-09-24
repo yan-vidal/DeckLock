@@ -315,8 +315,9 @@ DeckLock targets modern Linux desktop sessions. Because session locking interact
 
 | Environment | Status | Security Guarantee | Validation |
 |---|---|---|---|
-| **Sway** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Automated disposable VM (Arch, Fedora 43, Ubuntu 26.04) with real PAM |
-| **Hyprland, niri, river, Wayfire, Labwc, COSMIC** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Protocol compliance; same Wayland backend |
+| **Sway** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Automated disposable VM (Arch, Fedora 43, Ubuntu 26.04) with real PAM, lockout and account policy |
+| **Labwc** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Automated disposable VM (Arch, Fedora 43, Ubuntu 26.04): input isolation, real PAM denial and unlock, input restored, killed locker stays locked |
+| **Hyprland, niri, river, Wayfire, COSMIC** | ✅ Supported | **Full** (`ext-session-lock-v1`) | Protocol compliance only; same Wayland backend, not run in the VM (Hyprland and Wayfire need a GPU render node, niri and COSMIC have no headless mode, river is not packaged on Ubuntu 26.04) |
 | **X11 sessions** | ⚠️ Experimental (`--features x11`) | **Reduced** (keystrokes not isolated by protocol; screen unlocks if process dies) | Isolated gate (`Xvfb` + `xfwm4` + intruder probe); accelerated video via GLX/EGL |
 | **GNOME & KDE Plasma** | ❌ Not supported | N/A | Refuses to lock safely (both draw their own internal lock screen) |
 
@@ -337,7 +338,7 @@ DeckLock targets modern Linux desktop sessions. Because session locking interact
 | Architecture | Status | Package Availability |
 |---|---|---|
 | **x86_64** (AMD64) | ✅ Supported | Published packages (`.pkg.tar.zst`, `.rpm`, `.deb`, `.tar.gz`) |
-| **aarch64** (ARM64) | 🚧 Supported | Source build and release packaging recipes ready |
+| **aarch64** (ARM64) | 🚧 Candidate | CI builds, tests and runs the package contract on Fedora and Ubuntu arm64; not published, and no VM gate yet (hosted arm64 runners have no KVM) |
 
 **What about X11?** An X11 backend is included in candidate release packages (`--features x11`). X11 gives a weaker lock than Wayland, and the lock screen says so while it is up: any other program in the session can read what you type, and if DeckLock stops, the screen unlocks. Prefer Wayland where you have it; DeckLock never uses X11 in a session that has `ext-session-lock-v1`. Video backgrounds take the accelerated GL path on X11 when built with this feature.
 

@@ -316,8 +316,9 @@ O DeckLock tem como foco sessões desktop Linux modernas. Como o bloqueio de ses
 
 | Ambiente | Status | Garantia de Segurança | Validação |
 |---|---|---|---|
-| **Sway** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | VM descartável automatizada (Arch, Fedora 43, Ubuntu 26.04) com PAM real |
-| **Hyprland, niri, river, Wayfire, Labwc, COSMIC** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | Conformidade com o protocolo; mesmo backend Wayland |
+| **Sway** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | VM descartável automatizada (Arch, Fedora 43, Ubuntu 26.04) com PAM real, bloqueio por falhas e política de conta |
+| **Labwc** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | VM descartável automatizada (Arch, Fedora 43, Ubuntu 26.04): isolamento de entrada, recusa e desbloqueio pelo PAM real, entrada restaurada, bloqueador encerrado mantém a sessão bloqueada |
+| **Hyprland, niri, river, Wayfire, COSMIC** | ✅ Suportado | **Total** (`ext-session-lock-v1`) | Apenas conformidade com o protocolo; mesmo backend Wayland, sem execução na VM (Hyprland e Wayfire precisam de um render node de GPU, niri e COSMIC não têm modo headless, river não é empacotado no Ubuntu 26.04) |
 | **Sessões X11** | ⚠️ Experimental (`--features x11`) | **Reduzida** (teclas não são isoladas pelo protocolo; tela desbloqueia se o processo morrer) | Gate isolado (`Xvfb` + `xfwm4` + teste de invasão); vídeo acelerado via GLX/EGL |
 | **GNOME e KDE Plasma** | ❌ Não suportado | N/A | Recusa bloqueio com segurança (ambos desenham a própria tela de bloqueio interna) |
 
@@ -338,7 +339,7 @@ O DeckLock tem como foco sessões desktop Linux modernas. Como o bloqueio de ses
 | Arquitetura | Status | Disponibilidade de Pacotes |
 |---|---|---|
 | **x86_64** (AMD64) | ✅ Suportado | Pacotes publicados (`.pkg.tar.zst`, `.rpm`, `.deb`, `.tar.gz`) |
-| **aarch64** (ARM64) | 🚧 Suportado | Compilação via código-fonte e receitas de empacotamento prontas |
+| **aarch64** (ARM64) | 🚧 Candidato | O CI compila, testa e verifica o contrato do pacote no Fedora e no Ubuntu arm64; não é publicado e ainda não há gate de VM (os runners arm64 hospedados não têm KVM) |
 
 **E o X11?** O backend X11 vem incluído nos pacotes de release candidatos (`--features x11`). O X11 oferece um bloqueio mais fraco que o Wayland, e a tela de bloqueio avisa isso enquanto está no ar: qualquer outro programa da sessão consegue ler o que você digita, e se o DeckLock parar, a tela desbloqueia. Prefira o Wayland onde houver; o DeckLock nunca usa X11 numa sessão que tenha `ext-session-lock-v1`. Os fundos em vídeo utilizam aceleração GL no X11 quando compilados com esse recurso.
 
