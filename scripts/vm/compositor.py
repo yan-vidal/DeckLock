@@ -41,9 +41,11 @@ COMPOSITORS = {
     'hyprland': {
         'command': ['Hyprland', '--config', 'hyprland.conf'],
         'renderer': SOFTWARE_GLES,
-        'env': {'HYPRLAND_HEADLESS_ONLY': '1'},
+        # Aquamarine's reasons go to stdout, and so into compositor.log.
+        'env': {'HYPRLAND_HEADLESS_ONLY': '1', 'AQ_TRACE': '1'},
         'config': ('hyprland.conf', 'monitor = , 1280x720@60, 0x0, 1\n'
                    'animations {\n    enabled = false\n}\n'
+                   'debug {\n    disable_logs = false\n    enable_stdout_logs = true\n}\n'
                    'misc {\n    disable_hyprland_logo = true\n    disable_splash_rendering = true\n}\n'),
         'after_start': ['hyprctl', '--instance', '0', 'output', 'create', 'headless'],
     },
@@ -212,7 +214,7 @@ try:
     record(f'SIGTERM leaves {NAME} locked and input isolated')
 except BaseException:
     # guest.log is what the job prints; the compositor's own words go with it.
-    print(f'--- {NAME} compositor.log (last 40 lines) ---', *text('compositor.log').splitlines()[-40:],
+    print(f'--- {NAME} compositor.log (last 60 lines) ---', *text('compositor.log').splitlines()[-60:],
           sep='\n', flush=True)
     raise
 finally:
