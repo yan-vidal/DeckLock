@@ -79,7 +79,8 @@ def main():
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign) and any(
                     isinstance(t, ast.Name) and t.id == 'COMPOSITORS' for t in node.targets):
-                known = set(ast.literal_eval(node.value))
+                known = {key.value for key in getattr(node.value, 'keys', [])
+                         if isinstance(key, ast.Constant)}
     except SyntaxError as error:
         failures.append(f"compositor VM fixture does not parse: {error}")
     if not known:

@@ -18,11 +18,20 @@ import time
 EVIDENCE = Path('/var/tmp/decklock-evidence')
 assert Path('/etc/decklock-test-vm').read_text().strip() == 'disposable-qemu-fixture'
 assert os.getuid() != 0, 'Run the locker as an ordinary guest user'
-# Only compositors that start on a headless wlroots backend with the pixman
-# renderer can run in a guest without a GPU. Wayfire and Hyprland need a DRM
-# render node for GLES, so they cannot be listed here.
+# The guest has no GPU. labwc renders with pixman. Wayfire renders only with
+# GLES, so it gets Mesa's software rasterizer on the emulated display card:
+# kms_swrast allocates dumb buffers there and llvmpipe draws into them, which
+# wlroots accepts only when software rendering is explicitly allowed.
+SOFTWARE_GLES = 'software-gles'
 COMPOSITORS = {
-    'labwc': ['labwc'],
+    'labwc': {'command': ['labwc'], 'renderer': 'pixman'},
+    'wayfire': {
+        'command': ['wayfire', '-c', 'wayfire.ini'],
+        'renderer': SOFTWARE_GLES,
+        # Only the lock protocol plugin: no effects, and no configuration from
+        # the guest user's home.
+        'config': ('wayfire.ini', '[core]\nplugins = session-lock\nxwayland = false\n'),
+    },
 }
 NAME = sys.argv[1] if len(sys.argv) == 2 else ''
 assert NAME in COMPOSITORS, f'Usage: compositor.py {{{",".join(COMPOSITORS)}}}'
@@ -127,7 +136,16 @@ try:
     def sockets():
         return {p.name for p in runtime.glob('wayland-*') if not p.name.endswith('.lock')}
     existing = sockets()
-    compositor = spawn(COMPOSITORS[NAME], 'compositor.log')
+    spec = COMPOSITORS[NAME]
+    extra = {}
+    if spec['renderer'] == SOFTWARE_GLES:
+        cards = sorted(Path('/dev/dri').glob('card*'))
+        assert cards, 'No emulated display card for software GLES'
+        extra = {'WLR_RENDERER': 'gles2', 'WLR_RENDER_DRM_DEVICE': str(cards[0]),
+                 'WLR_RENDERER_ALLOW_SOFTWARE': '1', 'MESA_LOADER_DRIVER_OVERRIDE': 'kms_swrast'}
+    if 'config' in spec:
+        (OUT / spec['config'][0]).write_text(spec['config'][1])
+    compositor = spawn(spec['command'], 'compositor.log', extra)
     until(lambda: sockets() - existing, 'Wayland socket ready', child=compositor)
     env['WAYLAND_DISPLAY'] = sorted(sockets() - existing)[0]
     (OUT / 'config.toml').write_text('locale = "en-US"\nbackground_pool = []\nidle_pool = []\nidle_enabled = false\n')
@@ -168,6 +186,11 @@ try:
     assert keys() == count, 'SIGTERM exposed the underlying client'
     assert compositor.poll() is None, f'{NAME} exited after the locker was killed'
     record(f'SIGTERM leaves {NAME} locked and input isolated')
+except BaseException:
+    # guest.log is what the job prints; the compositor's own words go with it.
+    print(f'--- {NAME} compositor.log (last 40 lines) ---', *text('compositor.log').splitlines()[-40:],
+          sep='\n', flush=True)
+    raise
 finally:
     for child in reversed(processes):
         if child.poll() is None:
