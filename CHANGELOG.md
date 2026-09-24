@@ -2,6 +2,24 @@
 
 User-facing changes are reviewed in pull requests. Dates are assigned when a release is approved. Packaging-only rebuilds use Arch pkgrel and a separate -rN tag; published assets are never replaced.
 
+## [0.3.2] - 2026-09-24
+
+### Added
+
+- Ubuntu 26.04 `aarch64` (arm64) package, published alongside the x86_64 packages. It goes through the same disposable VM gate as the others before release: real Sway and Linux-PAM, X11, labwc, Wayfire and greetd login. GitHub's arm64 runners have no hardware virtualization, so that guest is emulated and its waits scaled.
+- The VM gate repeats the lock boundary on Wayfire, rendering with software GLES, on Arch, Fedora and Ubuntu.
+- A weekly CI job checks whether a Debian release or backport carries `gtk4-layer-shell` 1.2, the floor a Debian package needs (#25).
+
+### Changed
+
+- The X11 gate requires the lock screen on top in every sample once the window manager settles, instead of 19 of 20 samples counted from its first recovery, which made the outcome depend on timing.
+
+### Compatibility and limitations
+
+- The Fedora 43 `aarch64` package is built and passes the package contract but is not published: it has no VM target yet.
+- The arm64 package is validated in an emulated VM, not on real ARM hardware.
+- Wayfire is validated with software rendering, not on real GPU drivers. Hyprland, niri, river and COSMIC stay covered by protocol compliance only; Hyprland needs a real GPU even for headless outputs.
+
 ## [0.3.1] - 2026-09-19
 
 ### Added

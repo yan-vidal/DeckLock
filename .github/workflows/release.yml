@@ -39,6 +39,13 @@ jobs:
         with:
           name: ubuntu-package
           path: artifacts/ubuntu
+      # Ubuntu arm64 is published because it has its own VM gate in the checks
+      # above (emulated, vm-ubuntu-aarch64). Fedora arm64 is built and tested
+      # there too, but has no VM target yet, so it is not downloaded here.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ubuntu-package-aarch64
+          path: artifacts/ubuntu-aarch64
       - name: Reviewed release summary
         run: python3 scripts/release-notes.py --require-date > RELEASE-NOTES.md
       - name: Publish only verified artifacts
@@ -53,17 +60,18 @@ jobs:
           # Verify every target against the checksums written when its package was
           # built and tested before publishing any of them. The published
           # SHA256SUMS is those same build-time lines, not a recomputation.
-          for target in arch fedora ubuntu; do
+          for target in arch fedora ubuntu ubuntu-aarch64; do
             (cd "artifacts/$target" && sha256sum --check SHA256SUMS)
             cat "artifacts/$target/SHA256SUMS" >> dist/SHA256SUMS
             cp "artifacts/$target"/decklock-*.tar.gz dist/
           done
           cp artifacts/arch/*.pkg.tar.zst artifacts/arch/PKGBUILD dist/
           cp artifacts/fedora/*.rpm dist/
-          cp artifacts/ubuntu/*.deb dist/
+          cp artifacts/ubuntu/*.deb artifacts/ubuntu-aarch64/*.deb dist/
           cd dist
-          # Three tarballs and three packages, each named once.
-          test "$(wc -l < SHA256SUMS)" -eq 6
+          # Four tarballs and four packages, each named once.
+          test "$(wc -l < SHA256SUMS)" -eq 8
+          test "$(ls ./*.deb | wc -l)" -eq 2
           sha256sum --check SHA256SUMS
           gh release create "$RELEASE_TAG" ./*.pkg.tar.zst ./*.rpm ./*.deb ./*.tar.gz PKGBUILD SHA256SUMS \
             --verify-tag "${channel[@]}" --title "DeckLock $RELEASE_TAG" --notes-file ../RELEASE-NOTES.md --generate-notes

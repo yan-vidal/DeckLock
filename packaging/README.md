@@ -91,7 +91,9 @@ artwork. Include verification limits in release notes.
 
 Pull requests build candidate packages for every target through
 `build-package.yml`, which takes the target and its pinned container image.
-All three packages are published. `release.yml` downloads each target's
+The Arch, Fedora and Ubuntu x86_64 packages and the Ubuntu aarch64 package are
+published; the Fedora aarch64 package is built and tested but has no VM target yet,
+so it is not. `release.yml` downloads each target's
 artifact into its own directory, because every artifact carries a `SHA256SUMS`
 under the same name and downloading them together would let one overwrite the
 others. Each is verified against the checksums written when its package was built
