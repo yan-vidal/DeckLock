@@ -84,9 +84,12 @@ others) on QEMU's `virt` machine with UEFI firmware from `qemu-efi-aarch64`. The
 hosted arm64 runners expose no `/dev/kvm`, so CI passes `--allow-emulation`: the
 guest runs under TCG with 4 virtual CPUs, and the runner hands the guest a
 slowdown factor of 8 that multiplies every host timeout and every bounded wait
-in the guest scripts (deadlines, subprocess timeouts, settle delays). Polling
-intervals and PAM's own real-time delays are not scaled, so the assertions are
-the same ones the x86_64 guests run. Without `--allow-emulation` the runner still
+in the guest scripts (deadlines, subprocess timeouts, settle delays). The
+fixture's faillock `unlock_time` scales with it (96 s instead of 12 s): typing
+the correct password took about 12 s in the emulated guest, so an unscaled
+lockout ran out before PAM saw it. That still expires before the UI's
+whole-minute estimate reaches zero. Polling intervals are not scaled, and the
+assertions are the same ones the x86_64 guests run. Without `--allow-emulation` the runner still
 refuses a guest it cannot accelerate. The report records the accelerator and
 the factor. Fedora has no aarch64 target yet; its arm64 package is covered by
 the package contract only. Emulation proves the arm64 build under a real kernel,

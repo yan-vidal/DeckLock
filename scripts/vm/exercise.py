@@ -170,8 +170,9 @@ try:
     until(lambda: any(x.startswith('Account locked') and x != notice for x in statuses()),
           'countdown advances', seconds=4, child=client)
     record('PAM countdown updates on the real lock screen')
-    # PAM is authoritative, not the rounded-up 1-minute UI estimate.
-    remaining = max(0, 14 - (time.monotonic() - locked_at))
+    # PAM is authoritative, not the UI estimate rounded up to whole minutes.
+    # setup.sh sets unlock_time to 12 s times the slowdown.
+    remaining = max(0, (12 + 2) * SLOW - (time.monotonic() - locked_at))
     time.sleep(remaining)
     submit('DeckLock-test-42')
     until(lambda: client.poll() is not None, 'PAM permits auth after its own timeout', seconds=35)

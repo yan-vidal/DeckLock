@@ -62,11 +62,14 @@ sha256sum /usr/bin/decklock > /var/tmp/decklock-evidence/binary.sha256
 cp /usr/share/doc/decklock/BUILD-INFO.json /var/tmp/decklock-evidence/
 # Fixture services only, never included in the application package. pam_faillock
 # and pam_unix exist on every target, so the policy itself needs no variation.
-cat > /etc/pam.d/decklock-vm-test <<'PAM'
-auth required pam_faillock.so preauth deny=2 unlock_time=12 fail_interval=900
+# The lockout is PAM's real time, so an emulated guest needs it longer: typing
+# the correct password alone can take 12 s there. exercise.py scales the same.
+unlock=$((12 * slowdown))
+cat > /etc/pam.d/decklock-vm-test <<PAM
+auth required pam_faillock.so preauth deny=2 unlock_time=$unlock fail_interval=900
 auth [success=1 default=bad] pam_unix.so
-auth [default=die] pam_faillock.so authfail deny=2 unlock_time=12 fail_interval=900
-auth sufficient pam_faillock.so authsucc deny=2 unlock_time=12 fail_interval=900
+auth [default=die] pam_faillock.so authfail deny=2 unlock_time=$unlock fail_interval=900
+auth sufficient pam_faillock.so authsucc deny=2 unlock_time=$unlock fail_interval=900
 account required pam_unix.so
 PAM
 cat > /etc/pam.d/decklock-vm-account <<'PAM'

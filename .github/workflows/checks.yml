@@ -210,7 +210,10 @@ jobs:
     name: Real Wayland and PAM (Ubuntu aarch64)
     needs: package-ubuntu-aarch64
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 180
+    # Above test-vm.py's own scaled bounds (boot 32 min, guest 160 min), so a
+    # stuck guest still ends in its log rather than a cancelled job. Measured:
+    # boot about 10 min, the Sway exercise reached about 75 min later.
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
