@@ -12,8 +12,9 @@ Suporte opcional a controles, incluindo dispositivos como o Steam Deck.
 
 ## Instalação
 
-A versão **0.3.1** é publicada para Arch, Fedora 43 e Ubuntu 26.04 no
-[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.1). Cada
+A versão **0.3.2** é publicada no
+[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.2) para Arch,
+Fedora 43 e Ubuntu 26.04 em x86_64, e para o Ubuntu 26.04 em aarch64 (arm64). Cada
 pacote instala o aplicativo, o atalho **Configurações do DeckLock**, as mídias
 incluídas e o serviço PAM que o DeckLock usa. O gerenciador de pacotes resolve as
 dependências de execução; não é necessário instalar Rust. Os downloads vêm do
@@ -25,29 +26,38 @@ instalar num GNOME ou KDE Plasma padrão não permite que o DeckLock bloqueie a 
 ### Arch Linux · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/decklock-0.3.1-1-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/decklock-0.3.2-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.3.1-1-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.3.2-1-x86_64.pkg.tar.zst
 ```
 
 ### Fedora 43 · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/decklock-0.3.1-1.fc43.x86_64.rpm
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/decklock-0.3.2-1.fc43.x86_64.rpm
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo dnf install ./decklock-0.3.1-1.fc43.x86_64.rpm
+sudo dnf install ./decklock-0.3.2-1.fc43.x86_64.rpm
 ```
 
 ### Ubuntu 26.04 · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/decklock_0.3.1-1_amd64.deb
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.1/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/decklock_0.3.2-1_amd64.deb
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo apt install ./decklock_0.3.1-1_amd64.deb
+sudo apt install ./decklock_0.3.2-1_amd64.deb
+```
+
+### Ubuntu 26.04 · aarch64 (arm64)
+
+```sh
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/decklock_0.3.2-1_arm64.deb
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+sudo apt install ./decklock_0.3.2-1_arm64.deb
 ```
 
 Cada pacote é construído com as bibliotecas da própria distribuição. Derivadas que
@@ -131,7 +141,7 @@ Sem argumentos, `decklock` mostra a ajuda. Use `decklock --help` ou
 `decklock config --help` para comandos e exemplos. O preview não autentica nem
 executa ações de energia. Escape oculta o teclado e, depois, fecha a janela.
 
-**A versão 0.3.1 é experimental.** Preview e configurações foram testados no Hyprland.
+**A versão 0.3.2 é experimental.** Preview e configurações foram testados no Hyprland.
 Testes de protocolo isolados cobrem aquisição do bloqueio, mudanças de monitores e
 encerramento sem desbloquear, e máquinas virtuais descartáveis exercitam cada pacote
 com Sway e Linux-PAM reais no Arch, Fedora e Ubuntu, incluindo negativa, desbloqueio
@@ -339,7 +349,7 @@ O DeckLock tem como foco sessões desktop Linux modernas. Como o bloqueio de ses
 | Arquitetura | Status | Disponibilidade de Pacotes |
 |---|---|---|
 | **x86_64** (AMD64) | ✅ Suportado | Pacotes publicados (`.pkg.tar.zst`, `.rpm`, `.deb`, `.tar.gz`) |
-| **aarch64** (ARM64) | 🚧 Candidato | O CI compila, testa e verifica o contrato do pacote no Fedora e no Ubuntu arm64, e o pacote Ubuntu arm64 passa pelo gate de VM completo numa VM emulada (os runners arm64 hospedados não têm KVM). Ainda não é publicado; sem teste em hardware ARM real |
+| **aarch64** (ARM64) | ✅ Ubuntu · 🚧 Fedora | `.deb` do Ubuntu 26.04 publicado a partir da 0.3.2, depois do gate de VM completo numa VM emulada (os runners arm64 hospedados não têm KVM). O Fedora arm64 é compilado e passa pelo contrato do pacote, mas segue sem publicação até ter seu próprio alvo de VM. Sem teste em hardware ARM real |
 
 **E o X11?** O backend X11 vem incluído nos pacotes de release candidatos (`--features x11`). O X11 oferece um bloqueio mais fraco que o Wayland, e a tela de bloqueio avisa isso enquanto está no ar: qualquer outro programa da sessão consegue ler o que você digita, e se o DeckLock parar, a tela desbloqueia. Prefira o Wayland onde houver; o DeckLock nunca usa X11 numa sessão que tenha `ext-session-lock-v1`. Os fundos em vídeo utilizam aceleração GL no X11 quando compilados com esse recurso.
 
