@@ -313,3 +313,14 @@ protocol-only (GPU render node, no headless mode, or not packaged on Ubuntu
 26.04). CI builds and tests aarch64 Fedora and Ubuntu candidate packages on
 `ubuntu-24.04-arm`; they are not published and no aarch64 VM gate exists.
 Still open: Debian (#25), GPU compositors in VM, aarch64 VM, device UAT.
+
+2026-09-24 reach items (PR #46): Wayfire joins labwc in every VM, rendering
+with software GLES on vgem; Hyprland stays protocol-only (Aquamarine needs a
+real GPU allocator). The Ubuntu arm64 package passes the whole VM suite in a
+TCG-emulated guest with waits scaled by 8 (about 100 minutes), including a
+faillock window scaled the same way and an X11 step that waits for the
+locker's keyboard grab. `debian-watch.yml` checks Debian weekly for
+gtk4-layer-shell >= 1.2 (#25 still blocked at 1.0.4). The X11 gate's stacking
+check now requires the lock on top in every sample once xfwm4 settles, instead
+of 19 of 20 counted from the first recovery. Still open: Hyprland in VM,
+Fedora arm64 VM, publishing arm64 packages, real ARM hardware, device UAT.

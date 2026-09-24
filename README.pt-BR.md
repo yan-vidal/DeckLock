@@ -339,7 +339,7 @@ O DeckLock tem como foco sessões desktop Linux modernas. Como o bloqueio de ses
 | Arquitetura | Status | Disponibilidade de Pacotes |
 |---|---|---|
 | **x86_64** (AMD64) | ✅ Suportado | Pacotes publicados (`.pkg.tar.zst`, `.rpm`, `.deb`, `.tar.gz`) |
-| **aarch64** (ARM64) | 🚧 Candidato | O CI compila, testa e verifica o contrato do pacote no Fedora e no Ubuntu arm64; não é publicado e ainda não há gate de VM (os runners arm64 hospedados não têm KVM) |
+| **aarch64** (ARM64) | 🚧 Candidato | O CI compila, testa e verifica o contrato do pacote no Fedora e no Ubuntu arm64, e o pacote Ubuntu arm64 passa pelo gate de VM completo numa VM emulada (os runners arm64 hospedados não têm KVM). Ainda não é publicado; sem teste em hardware ARM real |
 
 **E o X11?** O backend X11 vem incluído nos pacotes de release candidatos (`--features x11`). O X11 oferece um bloqueio mais fraco que o Wayland, e a tela de bloqueio avisa isso enquanto está no ar: qualquer outro programa da sessão consegue ler o que você digita, e se o DeckLock parar, a tela desbloqueia. Prefira o Wayland onde houver; o DeckLock nunca usa X11 numa sessão que tenha `ext-session-lock-v1`. Os fundos em vídeo utilizam aceleração GL no X11 quando compilados com esse recurso.
 

@@ -80,9 +80,8 @@ jobs:
       image: ubuntu:26.04@sha256:513c074113a871b51a8d16ab445c88779d6452d937a164fb5cc479f32668a41d
 
   # aarch64 candidates: the same recipes, tests and package contract on an
-  # arm64 runner. Arch has no official aarch64 image, and no VM gate runs
-  # these packages (hosted arm64 runners offer no KVM), so they are never
-  # published.
+  # arm64 runner. Arch has no official aarch64 image. The Ubuntu one also goes
+  # through the VM gate below; neither is published yet.
   package-fedora-aarch64:
     name: Package (Fedora aarch64)
     needs: check
@@ -212,7 +211,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     # Above test-vm.py's own scaled bounds (boot 32 min, guest 160 min), so a
     # stuck guest still ends in its log rather than a cancelled job. Measured:
-    # boot about 10 min, the Sway exercise reached about 75 min later.
+    # a passing run takes about 100 min, 10 of them booting.
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
