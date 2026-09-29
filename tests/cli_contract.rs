@@ -443,3 +443,78 @@ fn setup_subcommands_exercise_cli_boundary_and_support_isolated_targets() {
     assert!(completed.contains("lock_cmd = decklock --lock"));
     assert!(completed.contains("inhibit_sleep = 1"));
 }
+
+#[test]
+fn setup_lock_keeps_a_custom_wrapper_until_replace_custom_is_requested() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("wrapper-hypridle.conf");
+    let target_arg = target.to_str().unwrap();
+    let original = "general {\n    on_lock_cmd = notify-send locked\n    lock_cmd = /opt/bin/lock-screen\n    before_sleep_cmd = /opt/bin/lock-screen\n}\nlistener {\n    timeout = 300\n    on-timeout = /opt/bin/lock-screen\n}\nlistener {\n    timeout = 900\n    on-timeout = systemctl suspend\n}\n";
+    std::fs::write(&target, original).unwrap();
+    let stdout =
+        |output: &std::process::Output| String::from_utf8_lossy(&output.stdout).to_string();
+
+    // Without the flag the user's wrapper is not overwritten, and the command says why.
+    let kept = cli.run(&["setup", "lock", "--target", target_arg], true);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), original);
+    let report = stdout(&kept);
+    assert!(report.contains("/opt/bin/lock-screen"), "{report}");
+    assert!(report.contains("--replace-custom"), "{report}");
+
+    // A dry run with the flag shows the change and writes nothing.
+    let dry = cli.run(
+        &[
+            "setup",
+            "lock",
+            "--replace-custom",
+            "--dry-run",
+            "--target",
+            target_arg,
+        ],
+        true,
+    );
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), original);
+    let preview = stdout(&dry);
+    assert!(preview.contains("Dry-run: would update"), "{preview}");
+    assert!(preview.contains("decklock --lock"), "{preview}");
+
+    // With the flag the wrapper goes, unrelated hooks and listeners stay, and a
+    // backup of the original is left next to the file.
+    cli.run(
+        &["setup", "lock", "--replace-custom", "--target", target_arg],
+        true,
+    );
+    let replaced = std::fs::read_to_string(&target).unwrap();
+    assert_eq!(replaced.matches("decklock --lock").count(), 3, "{replaced}");
+    assert!(!replaced.contains("/opt/bin/lock-screen"), "{replaced}");
+    assert!(
+        replaced.contains("on_lock_cmd = notify-send locked"),
+        "{replaced}"
+    );
+    assert!(
+        replaced.contains("on-timeout = systemctl suspend"),
+        "{replaced}"
+    );
+    let backup = std::fs::read_dir(cli.home.path())
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .contains("wrapper-hypridle.conf.bak")
+        })
+        .expect("setup backs up the file it rewrites");
+    assert_eq!(std::fs::read_to_string(backup.path()).unwrap(), original);
+
+    // Running it again has nothing left to do.
+    let again = cli.run(
+        &["setup", "lock", "--replace-custom", "--target", target_arg],
+        true,
+    );
+    assert!(
+        stdout(&again).contains("already configured"),
+        "{}",
+        stdout(&again)
+    );
+}

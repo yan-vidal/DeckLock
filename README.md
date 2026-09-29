@@ -282,6 +282,8 @@ Configure `hypridle` to lock using DeckLock:
 decklock setup lock
 ```
 
+With no `hypridle.conf` it writes the template. With an existing one it edits only `lock_cmd`, `before_sleep_cmd` and the `on-timeout` of listeners, keeping indentation and trailing comments. A known locker (`hyprlock`, `gtklock`, `swaylock`, `waylock`, `i3lock`, alone or behind a `pidof … ||` guard) becomes `decklock --lock`. Anything else, such as your own wrapper script, is kept and listed, because a wrapper may add guards or steps DeckLock does not know about. Add `--replace-custom` to replace those too; a listener is only replaced when it runs the same command as `lock_cmd`, so `systemctl suspend` and `dpms off` are never touched. Running it again changes nothing, and a changed file is backed up first.
+
 Reference configuration templates are installed under `/usr/share/decklock/setup/` (`greetd.toml`, `hypridle.conf`, `decklock.service`). Use `--dry-run` to preview file changes without writing to disk. Setup preserves other greetd TOML options and backs up the existing file. Only installed Wayland desktop sessions are offered for greetd login; it does not launch an X session from Cage's bare VT.
 
 ## Keyboard and power controls
