@@ -288,13 +288,15 @@ Sem `hypridle.conf`, ele grava o modelo. Com um arquivo existente, edita só `lo
 Modelos de configuração de referência ficam instalados em `/usr/share/decklock/setup/` (`greetd.toml`, `hypridle.conf`, `decklock.service`). Use `--dry-run` para visualizar o que seria escrito sem alterar os arquivos no disco. O setup preserva outras opções TOML do greetd e cria backup do arquivo existente. No login via greetd, o seletor oferece apenas sessões Wayland instaladas; ele não inicia uma sessão X a partir do VT do Cage.
 
 O greeter usa config, cache, dados e estado privados em
-`/var/lib/decklock-greeter` (modo 0750, pertencente à conta `greeter`). O setup
+`/var/lib/decklock-greeter` (ou `/var/lib/greetd/decklock` com SELinux) (modo 0750, pertencente à conta `greeter`). O setup
 informa esses caminhos ao comando de login, inclusive com `--state-dir` customizado.
 Se não conseguir preparar o armazenamento ou seu dono, mantém o comando anterior
 do greetd. `--target` só altera o arquivo indicado, exceto quando também recebe
 `--state-dir`. O dry run não cria nada. O greeter lê mídia sem criar pastas de
 usuário; falhas nas pastas opcionais de mídia do preview/bloqueio viram avisos com
 o caminho que falhou.
+
+Em sistemas com SELinux, o setup usa o caminho da política existente do gerenciador de login, executa `restorecon` e exige o tipo `xdm_var_lib_t` no armazenamento antes de mudar o greetd. Um `--state-dir` customizado precisa desse mapeamento permanente de contexto. A proteção continua ativa. A tela cheia é solicitada após o primeiro frame da superfície, para versões antigas do Cage/wlroots inicializarem a janela de login.
 
 A tela de login sempre abre em tela cheia e sem decoração. Sem uma escolha salva,
 uma sessão gerenciada pelo uwsm instalado tem preferência; uma escolha salva

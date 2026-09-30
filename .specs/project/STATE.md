@@ -343,3 +343,10 @@ starts the exact generated command. The required DeckLock checks aggregator wait
 for every existing isolated, package and VM gate. Local/CI evidence and hardware
 limits are recorded in docs/testing.md and the PR descriptions; do not infer a
 new package release or Steam Deck GPU/touch UAT from these source changes.
+
+Greeter compatibility corrections: fullscreen waits for the initial surface frame
+to avoid older Cage/wlroots initialization assertions. The isolated GTK gate uses
+a private window manager to assert its acknowledgement. On SELinux systems setup
+uses /var/lib/greetd/decklock, restores and verifies the existing xdm_var_lib_t
+context before changing greetd, without disabling enforcement. Fedora VM checks
+the storage context and remembers both fixture accounts. Device UAT remains separate.

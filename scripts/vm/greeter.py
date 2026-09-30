@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import pwd
 import shutil
+import shlex
 import subprocess
 import time
 import tomllib
@@ -79,7 +80,11 @@ document = tomllib.loads(config.read_text())
 original = document['default_session']['command']
 assert 'cage -s -- decklock --greeter --keyboard' in original, original
 assert 'XDG_CONFIG_HOME=' in original and 'XDG_CACHE_HOME=' in original, original
-state_dir = Path('/var/lib/decklock-greeter')
+storage_env = dict(word.split('=', 1) for word in shlex.split(original) if '=' in word)
+state_dir = Path(storage_env['XDG_CONFIG_HOME'])
+if Path('/sys/fs/selinux/enforce').exists():
+    assert state_dir == Path('/var/lib/greetd/decklock')
+    assert subprocess.check_output(['stat', '-c', '%C', str(state_dir)], text=True).split(':')[2] == 'xdm_var_lib_t'
 for path in [state_dir, state_dir / 'cache', state_dir / 'data']:
     info = path.stat()
     assert info.st_uid == greeter.pw_uid and info.st_gid == greeter.pw_gid, path

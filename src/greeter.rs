@@ -187,6 +187,16 @@ pub struct GreeterState {
 /// that account is `/` and so never writable. `setup greeter` creates it.
 pub const SYSTEM_STATE_DIR: &str = "/var/lib/decklock-greeter";
 
+/// SELinux's existing display-manager policy labels this subtree writable by
+/// greetd's xdm_t domain. A generic /var/lib directory is read-only to that domain.
+pub fn system_state_dir() -> &'static str {
+    if Path::new("/sys/fs/selinux/enforce").exists() {
+        "/var/lib/greetd/decklock"
+    } else {
+        SYSTEM_STATE_DIR
+    }
+}
+
 type EnvValue = Option<std::ffi::OsString>;
 
 fn resolve_state_path(
@@ -257,7 +267,7 @@ impl GreeterState {
             std::env::var_os("DECKLOCK_GREETER_STATE"),
             std::env::var_os("XDG_STATE_HOME"),
             std::env::var_os("GREETD_SOCK").is_some(),
-            Path::new(SYSTEM_STATE_DIR),
+            Path::new(system_state_dir()),
             std::env::var_os("HOME"),
         )
     }

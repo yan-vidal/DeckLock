@@ -24,7 +24,8 @@ pub enum Action {
         #[arg(long)]
         no_keyboard: bool,
         /// Where the greeter remembers the last user and session. Defaults to
-        /// /var/lib/decklock-greeter, and is left alone when --target is given.
+        /// /var/lib/decklock-greeter (/var/lib/greetd/decklock with SELinux).
+        /// It is left alone when --target is given.
         #[arg(long)]
         state_dir: Option<PathBuf>,
         /// Compositor for login. Existing Hyprland greeters are preserved when omitted.
@@ -718,7 +719,7 @@ fn greeter_state_dir(target: Option<&Path>, explicit: Option<PathBuf>) -> Option
     explicit.or_else(|| {
         target
             .is_none()
-            .then(|| PathBuf::from(crate::greeter::SYSTEM_STATE_DIR))
+            .then(|| PathBuf::from(crate::greeter::system_state_dir()))
     })
 }
 
@@ -768,6 +769,61 @@ fn prepare_greeter_dirs(dir: &Path, system: bool, dry_run: bool) -> Result<Strin
         fs::set_permissions(&path, fs::Permissions::from_mode(0o750)).map_err(fail)?;
         if let Some((uid, gid)) = owner {
             std::os::unix::fs::chown(&path, Some(uid), Some(gid)).map_err(fail)?;
+        }
+    }
+    if system && Path::new("/sys/fs/selinux/enforce").exists() {
+        // Use the installed display-manager policy, without changing its rules
+        // or disabling enforcement. Custom paths need a compatible saved label.
+        let mut child = ProcessCommand::new("restorecon")
+            .arg("-RF")
+            .arg(dir)
+            .spawn()
+            .map_err(|e| {
+                format!("Cannot label greeter storage with restorecon: {e}; greetd was not changed")
+            })?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+                if !status.success() {
+                    return Err(
+                        "restorecon failed for greeter storage; greetd was not changed".into(),
+                    );
+                }
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("restorecon timed out; greetd was not changed".into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).map_err(|e| e.to_string())?;
+        let mut label = [0u8; 1024];
+        // SAFETY: both strings are NUL-terminated; the output is writable for
+        // exactly its supplied length. Read only this storage directory's label.
+        let length = unsafe {
+            libc::getxattr(
+                path.as_ptr(),
+                c"security.selinux".as_ptr(),
+                label.as_mut_ptr().cast(),
+                label.len(),
+            )
+        };
+        if length < 0 {
+            return Err(format!(
+                "Cannot read SELinux label for {}: {}; greetd was not changed",
+                dir.display(),
+                std::io::Error::last_os_error()
+            ));
+        }
+        let context = String::from_utf8_lossy(&label[..length as usize]);
+        if context.split(':').nth(2) != Some("xdm_var_lib_t") {
+            return Err(format!(
+                "Greeter storage {} needs an xdm_var_lib_t SELinux file-context mapping (found {context}); choose /var/lib/greetd/decklock or configure its permanent label before setup. greetd was not changed",
+                dir.display()
+            ));
         }
     }
     Ok(format!(
