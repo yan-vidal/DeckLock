@@ -618,3 +618,78 @@ fn setup_lock_does_not_treat_shell_parameter_braces_as_configuration_blocks() {
         "Explicit replacement missed the shell wrapper: {replaced}"
     );
 }
+
+#[test]
+fn setup_lock_inserts_missing_keys_outside_shell_parameter_braces() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("hypridle.conf");
+    let wrapper = "    before_sleep_cmd = /bin/sh -c 'echo ${HOME}; lock-screen'\n";
+    let input =
+        format!("general {{\n{wrapper}}}\nlistener {{\n    on-timeout = systemctl suspend\n}}\n");
+    std::fs::write(&target, input).unwrap();
+    cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        true,
+    );
+    let saved = std::fs::read_to_string(&target).unwrap();
+    assert!(
+        saved.contains(wrapper),
+        "A shell expression was corrupted: {saved}"
+    );
+    assert!(
+        saved.contains("    lock_cmd = decklock --lock\n}\nlistener {"),
+        "The key was inserted outside its block: {saved}"
+    );
+    assert_eq!(saved.matches("before_sleep_cmd").count(), 1, "{saved}");
+    assert!(saved.contains("on-timeout = systemctl suspend"), "{saved}");
+}
+
+#[test]
+fn setup_lock_preserves_the_config_when_backup_creation_fails() {
+    let cli = Cli::new();
+    // The target is valid on Linux, but its timestamped backup exceeds NAME_MAX.
+    // This deterministic filesystem failure also works when tests run as root.
+    let target = cli.home.path().join(format!("{}.conf", "a".repeat(240)));
+    let original = "general {\n    lock_cmd = swaylock\n}\n";
+    std::fs::write(&target, original).unwrap();
+    let output = cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        false,
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("backup"));
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), original);
+}
+
+#[test]
+fn setup_lock_does_not_count_commented_keys_as_existing_settings() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("hypridle.conf");
+    let input = "general {\n    # before_sleep_cmd = old-locker\n}\n";
+    std::fs::write(&target, input).unwrap();
+    cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        true,
+    );
+    let saved = std::fs::read_to_string(target).unwrap();
+    assert!(
+        saved.contains("    before_sleep_cmd = decklock --lock\n"),
+        "{saved}"
+    );
+    assert!(saved.contains("# before_sleep_cmd = old-locker"), "{saved}");
+}
+
+#[test]
+fn setup_lock_keeps_listener_migration_when_it_adds_a_general_block() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("hypridle.conf");
+    let input = "listener {\n    timeout = 300\n    on-timeout = swaylock -f\n}\nlistener {\n    timeout = 900\n    on-timeout = systemctl suspend\n}\n";
+    std::fs::write(&target, input).unwrap();
+    cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        true,
+    );
+    let saved = std::fs::read_to_string(target).unwrap();
+    assert!(saved.contains("on-timeout = decklock --lock"), "{saved}");
+    assert!(!saved.contains("swaylock"), "{saved}");
+    assert!(saved.contains("on-timeout = systemctl suspend"), "{saved}");
+}
