@@ -42,10 +42,11 @@ DISTROS = {
     'ubuntu': {
         'image': 'ubuntu-26.04-server-cloudimg-amd64.img',
         'sha256': '4908fb59ccd4e87ae4e8e973b7ef56f535448eacb24a87fd787270c0048987bc',
-        'base': 'https://cloud-images.ubuntu.com/releases/26.04/release/',
+        # Both architectures are fetched from the dated serial their hash belongs to.
+        # releases/26.04/release/ follows the newest serial, so it stopped matching the
+        # x86_64 hash once Canonical published a new one; a serial directory does not move.
+        'base': 'https://cloud-images.ubuntu.com/releases/resolute/release-20260918/',
         'suffix': '.deb',
-        # The dated serial the x86_64 pin above also resolves to today; release/
-        # moves when Canonical publishes a new serial, a serial directory does not.
         'aarch64': {
             'image': 'ubuntu-26.04-server-cloudimg-arm64.img',
             'sha256': '8dc812bc6356d0abf825d8029f25f1b71f02cb103e1d0cc5c17fbb2572322972',
