@@ -334,7 +334,19 @@ fn plan(value: &str) -> Plan {
     // `pidof <locker> || <locker>` guards. They suppress a lock while any process
     // of that name is alive, so a stray one silently disables locking.
     while let Some((guard, rest)) = command.split_once("||") {
-        if !guard.trim_start().starts_with("pidof ") {
+        let guard_words: Vec<_> = guard.split_whitespace().collect();
+        let guarded_name = rest
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .rsplit('/')
+            .next()
+            .unwrap_or_default();
+        if guard_words.len() != 2
+            || guard_words[0] != "pidof"
+            || guard_words[1] != guarded_name
+            || !(KNOWN_LOCKERS.contains(&guarded_name) || guarded_name == "decklock")
+        {
             break;
         }
         command = rest.trim_start();
@@ -411,11 +423,16 @@ fn scan(content: &str) -> Vec<Command> {
     let mut blocks: Vec<&str> = Vec::new();
     for (line, text) in content.lines().enumerate() {
         let code = strip_comment(text);
-        if let Some(open) = code.find('{') {
+        // Braces after '=' belong to a shell command (e.g. ${HOME}), not
+        // hyprlang's block structure. Only a block header opens a category.
+        let opening = code
+            .find('{')
+            .filter(|open| code.find('=').is_none_or(|eq| *open < eq));
+        if let Some(open) = opening {
             blocks.push(code[..open].trim());
         }
         found.extend(parse_command(line, code, blocks.last().copied()));
-        for _ in code.matches('}') {
+        if code.trim() == "}" || (opening.is_some() && code.trim_end().ends_with('}')) {
             blocks.pop();
         }
     }

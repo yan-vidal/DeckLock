@@ -566,7 +566,6 @@ fn config_set_keeps_the_mode_of_the_config_it_replaces() {
     assert_eq!(mode_of(&cli.file), 0o644, "a shared config became private");
     let saved = std::fs::read_to_string(&cli.file).unwrap();
     assert!(saved.contains("idle_seconds = 180"), "{saved}");
-
 }
 
 #[test]
@@ -575,7 +574,47 @@ fn setup_lock_preserves_shell_braces_and_custom_process_guards() {
     let target = cli.home.path().join("hypridle.conf");
     let input = "general {\n    lock_cmd = pidof important-job || swaylock -f\n    before_sleep_cmd = /bin/sh -c 'echo ${HOME}; lock-screen'\n}\nlistener {\n    timeout = 300\n    on-timeout = pidof important-job || swaylock -f\n}\n";
     std::fs::write(&target, input).unwrap();
-    let output = cli.run(&["setup", "lock", "--target", target.to_str().unwrap()], true);
-    assert_eq!(std::fs::read_to_string(&target).unwrap(), input, "Custom guard or shell braces were overwritten");
+    let output = cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        true,
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        input,
+        "Custom guard or shell braces were overwritten"
+    );
     assert!(String::from_utf8_lossy(&output.stdout).contains("Kept"));
+}
+
+#[test]
+fn setup_lock_does_not_treat_shell_parameter_braces_as_configuration_blocks() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("hypridle.conf");
+    let input = "general {\n    before_sleep_cmd = /bin/sh -c 'echo ${HOME}; lock-screen'\n    lock_cmd = /opt/bin/lock-screen\n}\n";
+    std::fs::write(&target, input).unwrap();
+    cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        true,
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        input,
+        "Shell parameter braces changed custom config"
+    );
+    cli.run(
+        &[
+            "setup",
+            "lock",
+            "--replace-custom",
+            "--target",
+            target.to_str().unwrap(),
+        ],
+        true,
+    );
+    let replaced = std::fs::read_to_string(target).unwrap();
+    assert_eq!(
+        replaced.matches("decklock --lock").count(),
+        2,
+        "Explicit replacement missed the shell wrapper: {replaced}"
+    );
 }
