@@ -518,3 +518,64 @@ fn setup_lock_keeps_a_custom_wrapper_until_replace_custom_is_requested() {
         stdout(&again)
     );
 }
+
+fn mode_of(path: &Path) -> u32 {
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
+#[test]
+fn setup_greeter_keeps_the_mode_of_the_greetd_config_it_replaces() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let target_arg = target.to_str().unwrap();
+
+    // A system config is normally world-readable. Replacing it through a private
+    // temporary file must not leave it readable by root only: `setup status` as a
+    // regular user then cannot see the greeter that is configured.
+    std::fs::write(&target, "[default_session]\ncommand = \"agreety\"\n").unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+    cli.run(&["setup", "greeter", "--target", target_arg], true);
+    assert_eq!(
+        mode_of(&target),
+        0o644,
+        "a 0644 greetd config was tightened"
+    );
+
+    // Whatever mode the administrator chose is kept, not forced to a default.
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
+    cli.run(&["setup", "greeter", "--target", target_arg], true);
+    assert_eq!(mode_of(&target), 0o640, "a 0640 greetd config was changed");
+
+    // A file setup creates from nothing is a normal readable system config.
+    let created = cli.home.path().join("created-greetd.toml");
+    cli.run(
+        &["setup", "greeter", "--target", created.to_str().unwrap()],
+        true,
+    );
+    assert_eq!(mode_of(&created), 0o644, "a new greetd config is not 0644");
+}
+
+#[test]
+fn config_set_keeps_the_mode_of_the_config_it_replaces() {
+    let cli = Cli::new();
+    // The README tells the greeter to read a shared config it can access, so
+    // editing that file with `config set` must not make it private again.
+    cli.config(&["set", "idle_seconds", "120"], true);
+    std::fs::set_permissions(&cli.file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    cli.config(&["set", "idle_seconds", "180"], true);
+    assert_eq!(mode_of(&cli.file), 0o644, "a shared config became private");
+    let saved = std::fs::read_to_string(&cli.file).unwrap();
+    assert!(saved.contains("idle_seconds = 180"), "{saved}");
+
+}
+
+#[test]
+fn setup_lock_preserves_shell_braces_and_custom_process_guards() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("hypridle.conf");
+    let input = "general {\n    lock_cmd = pidof important-job || swaylock -f\n    before_sleep_cmd = /bin/sh -c 'echo ${HOME}; lock-screen'\n}\nlistener {\n    timeout = 300\n    on-timeout = pidof important-job || swaylock -f\n}\n";
+    std::fs::write(&target, input).unwrap();
+    let output = cli.run(&["setup", "lock", "--target", target.to_str().unwrap()], true);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), input, "Custom guard or shell braces were overwritten");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Kept"));
+}

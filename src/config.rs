@@ -212,9 +212,33 @@ impl Config {
         let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
         file.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
         file.as_file().sync_all().map_err(|e| e.to_string())?;
+        keep_mode(&file, path, None)?;
         file.persist(path).map_err(|e| e.to_string())?;
         Ok(())
     }
+}
+
+/// A `NamedTempFile` is created private (0600), and persisting it over another file
+/// keeps that mode. Carry the replaced file's mode over instead, so an atomic write
+/// never changes who can read the file. `fallback` applies only when there is nothing
+/// to replace; `None` leaves the private default.
+pub(crate) fn keep_mode(
+    replacement: &tempfile::NamedTempFile,
+    replaced: &Path,
+    fallback: Option<u32>,
+) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = match std::fs::metadata(replaced) {
+        Ok(existing) => existing.permissions().mode() & 0o7777,
+        Err(_) => match fallback {
+            Some(mode) => mode,
+            None => return Ok(()),
+        },
+    };
+    replacement
+        .as_file()
+        .set_permissions(std::fs::Permissions::from_mode(mode))
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
