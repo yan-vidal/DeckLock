@@ -170,12 +170,7 @@ parsing and deadline regressions. No real credentials or account lockouts are us
 
 ### X11 stacking recovery
 
-The backend also checks stacking every 50 ms while locked. GDK's X11 event
-source can pause X event dispatch during frame processing; waiting only for
-root events left an intruder on top in 10 of 20 samples in the existing gate.
-This adds a stacking check independent of frame event dispatch; it does not
-change the one-second input watchdog, unlock authorization or the documented
-X11 guarantee limits. The original sampling and grab assertions remain intact.
+Root stacking notifications use a separate X connection, watched by GLib on the GTK thread. GDK can pause its own X event source during frame processing; even the attempted 50-ms polling fallback still failed the existing raising-client assertion (10/20 samples). The independent event connection reacts without that paused queue, preserves GTK-owned popups and is closed with its source at release/failure/drop. Input grabs, authentication and the one-second watchdog are unchanged. The original sampling assertions remain intact.
 
 ### X11 VM display readiness
 
