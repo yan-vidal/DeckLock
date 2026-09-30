@@ -176,3 +176,7 @@ root events left an intruder on top in 10 of 20 samples in the existing gate.
 This adds a stacking check independent of frame event dispatch; it does not
 change the one-second input watchdog, unlock authorization or the documented
 X11 guarantee limits. The original sampling and grab assertions remain intact.
+
+### X11 VM display readiness
+
+The VM Xvfb uses `-noreset` and waits for an actual client connection before GTK starts. A probe disconnecting as the final client otherwise resets the server generation; the Arch VM failed GTK initialization during that race before the X11 backend ran. `scripts/test-vm-x11-fixture.py` runs the exact fixture arguments on a private dynamically allocated display and checks a protocol marker survives closing the last client. Missing Xvfb/xdotool now fails the guest gate instead of skipping X11; PAM and input assertions are unchanged.
