@@ -305,6 +305,7 @@ fn write_greeter_config(
         ));
     }
 
+    let mut backup = None;
     if target_path.exists() {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -317,6 +318,7 @@ fn write_greeter_config(
                 backup_path.display()
             )
         })?;
+        backup = Some(backup_path);
     }
 
     if let Some(parent) = target_path.parent() {
@@ -342,8 +344,11 @@ fn write_greeter_config(
         .map_err(|e| format!("Failed to replace {}: {e}", target_path.display()))?;
 
     Ok(format!(
-        "Successfully configured greetd at {}",
-        target_path.display()
+        "Successfully configured greetd at {}{}",
+        target_path.display(),
+        backup
+            .map(|path| format!("\n  backup: {}", path.display()))
+            .unwrap_or_default()
     ))
 }
 
@@ -756,6 +761,7 @@ fn setup_greeter_with_storage(
     }) {
         return Err("Output must be a connector name, such as eDP-1".into());
     }
+    let state_dir_requested = state_dir.is_some();
     let dir = greeter_state_dir(target, state_dir);
     let path = target.unwrap_or_else(|| Path::new("/etc/greetd/config.toml"));
     let previous = fs::read_to_string(path)
@@ -779,31 +785,52 @@ fn setup_greeter_with_storage(
             ),
             dir.as_deref(),
         )
-    } else if compositor.is_none() && previous.is_some() {
-        previous.unwrap()
+    } else if compositor.is_none()
+        && let Some(previous) = previous
+    {
+        if no_keyboard || state_dir_requested {
+            return Err("To change an existing Hyprland greeter's keyboard or storage, pass --compositor hyprland and its output/transform options; greetd was not changed".into());
+        }
+        previous
     } else {
         greeter_command(no_keyboard, dir.as_deref())
     };
     // Parse/validate existing greetd policy before touching any saved files.
-    let _ = write_greeter_config(target, &command, true)?;
-    if let Some(lua) = &lua {
-        if dry_run {
-            return Ok(format!(
-                "{}\nDry-run: would write {}\n{lua}",
-                write_greeter_config(target, &command, true)?,
-                lua_path.display()
-            ));
-        }
+    let review = write_greeter_config(target, &command, true)?;
+    if !dry_run && let Some(lua) = &lua {
         verify_hyprland_config(lua)?;
     }
     let preparation = match &dir {
         Some(dir) => prepare_greeter_dirs(dir, target.is_none(), dry_run)?,
         None => String::new(),
     };
-    if let Some(lua) = lua {
-        save_greeter_lua(&lua_path, &lua)?;
+    if dry_run {
+        let compositor_report = lua
+            .as_ref()
+            .map(|lua| format!("\nDry-run: would write {}\n{lua}", lua_path.display()))
+            .unwrap_or_default();
+        return Ok(format!("{review}\n{preparation}{compositor_report}"));
     }
-    let report = write_greeter_config(target, &command, dry_run)?;
+    let old_lua = fs::read_to_string(&lua_path).ok();
+    if let Some(lua) = &lua {
+        save_greeter_lua(&lua_path, lua)?;
+    }
+    let report = match write_greeter_config(target, &command, false) {
+        Ok(report) => report,
+        Err(error) => {
+            if lua.is_some() {
+                let rollback = match old_lua {
+                    Some(content) => save_greeter_lua(&lua_path, &content),
+                    None => fs::remove_file(&lua_path).map_err(|e| e.to_string()),
+                };
+                rollback.map_err(|rollback| {
+                    format!("{error}; compositor rollback failed: {rollback}")
+                })?;
+            }
+            return Err(error);
+        }
+    };
+
     Ok(format!(
         "{report}\n{preparation}\nLogin changes take effect at the next logout or boot; greetd was not restarted."
     ))
