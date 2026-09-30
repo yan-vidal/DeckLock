@@ -98,6 +98,18 @@ run(['runuser', '-u', greeter_name, '--', 'python3', '-c',
      'from pathlib import Path; import sys; p=Path(sys.argv[1])/".setup-write-check"; '
      'p.write_text("probe"); p.unlink()', str(state_dir)])
 record('configured packaged greeter account can traverse and write its storage')
+# A correct child owner/label must not hide an inaccessible ancestor.
+private_parent = state_dir / '.private-parent'
+private_parent.mkdir(mode=0o700)
+blocked_storage = private_parent / 'state'
+saved_config = config.read_bytes()
+blocked = subprocess.run(
+    ['decklock', 'setup', 'greeter', '--state-dir', str(blocked_storage)],
+    capture_output=True, text=True, timeout=30 * SLOW)
+assert blocked.returncode != 0, 'Setup accepted storage beneath a root-only ancestor'
+assert 'cannot access greeter storage' in blocked.stderr, blocked.stderr
+assert config.read_bytes() == saved_config, 'Rejected storage changed the working greetd command'
+record('setup rejects inaccessible ancestors before replacing the greetd command')
 state = state_dir / 'greeter-state.toml'
 state.write_text('last_user = "locktest"\nlast_session = "00-decklock-vm"\n')
 os.chown(state, greeter.pw_uid, greeter.pw_gid)

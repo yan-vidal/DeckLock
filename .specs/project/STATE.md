@@ -356,3 +356,7 @@ that exact account. Fedora uses greetd with a private /var/lib/greetd parent;
 forcing a separate greeter account prevented traversal despite correct leaf
 ownership and SELinux labels. The VM probes writing as the selected account before
 login, while retaining its existing two-account PAM/state assertions.
+
+Before saving system greetd setup, a bounded setpriv (util-linux) probe checks
+read/write/traversal as that account without PAM. The VM asserts a root-only
+ancestor is rejected while preserving the working command.

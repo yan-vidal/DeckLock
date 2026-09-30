@@ -854,6 +854,35 @@ fn prepare_greeter_dirs(
             ));
         }
     }
+    if let Some((uid, gid)) = owner {
+        // Drop privileges in a separate process, including supplementary groups,
+        // without invoking PAM or mutating the caller's credentials. Correct leaf
+        // ownership is insufficient when an ancestor rejects traversal.
+        let mut probe = ProcessCommand::new("setpriv")
+            .args(["--reuid", &uid.to_string(), "--regid", &gid.to_string(), "--init-groups", "--", "/usr/bin/test", "-r"])
+            .arg(dir).arg("-a").arg("-w").arg(dir).arg("-a").arg("-x").arg(dir)
+            .spawn().map_err(|e| format!("Cannot verify greeter storage access with setpriv (util-linux): {e}; greetd was not changed"))?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Some(status) = probe.try_wait().map_err(|e| e.to_string())? {
+                if !status.success() {
+                    return Err(format!(
+                        "The '{user}' account cannot access greeter storage {}; check ancestor permissions; greetd was not changed",
+                        dir.display()
+                    ));
+                }
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = probe.kill();
+                let _ = probe.wait();
+                return Err(
+                    "Greeter storage access check timed out; greetd was not changed".into(),
+                );
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
     Ok(format!(
         "Greeter directory {} is ready (mode 0750)",
         dir.display()

@@ -289,7 +289,7 @@ Reference configuration templates are installed under `/usr/share/decklock/setup
 The system greeter uses private config, cache, data and state under
 `/var/lib/decklock-greeter` (or `/var/lib/greetd/decklock` with SELinux) (mode 0750, owned by the configured greetd account). Setup
 preserves the packaged `default_session.user` (`greeter` on Arch, `greetd` on Fedora) and passes those paths to the login command, including a custom `--state-dir`; a
-storage or ownership failure leaves the existing greetd command intact. With
+storage, ancestor-access or ownership failure leaves the existing greetd command intact. With
 `--target`, only that target is written unless `--state-dir` is also supplied.
 Dry runs create nothing. The greeter reads media without creating user folders;
 optional media-folder errors in preview/lock mode are warnings that name the path.

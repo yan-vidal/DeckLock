@@ -290,7 +290,7 @@ Modelos de configuração de referência ficam instalados em `/usr/share/deckloc
 O greeter usa config, cache, dados e estado privados em
 `/var/lib/decklock-greeter` (ou `/var/lib/greetd/decklock` com SELinux) (modo 0750, pertencente à conta configurada no greetd). O setup
 preserva o `default_session.user` do pacote (`greeter` no Arch, `greetd` no Fedora) e informa esses caminhos ao comando de login, inclusive com `--state-dir` customizado.
-Se não conseguir preparar o armazenamento ou seu dono, mantém o comando anterior
+Se não conseguir preparar o armazenamento, seu dono ou o acesso pelos diretórios pais, mantém o comando anterior
 do greetd. `--target` só altera o arquivo indicado, exceto quando também recebe
 `--state-dir`. O dry run não cria nada. O greeter lê mídia sem criar pastas de
 usuário; falhas nas pastas opcionais de mídia do preview/bloqueio viram avisos com
