@@ -821,3 +821,129 @@ fn setup_greeter_storage_failure_preserves_the_previous_login_command() {
     assert_eq!(std::fs::read(&target).unwrap(), saved);
     assert!(String::from_utf8_lossy(&output.stderr).contains(storage.to_str().unwrap()));
 }
+
+#[test]
+fn setup_lock_keeps_a_custom_wrapper_until_replace_custom_is_requested() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("wrapper-hypridle.conf");
+    let target_arg = target.to_str().unwrap();
+    let original = "general {\n    on_lock_cmd = notify-send locked\n    lock_cmd = /opt/bin/lock-screen\n    before_sleep_cmd = /opt/bin/lock-screen\n}\nlistener {\n    timeout = 300\n    on-timeout = /opt/bin/lock-screen\n}\nlistener {\n    timeout = 900\n    on-timeout = systemctl suspend\n}\n";
+    std::fs::write(&target, original).unwrap();
+    let stdout =
+        |output: &std::process::Output| String::from_utf8_lossy(&output.stdout).to_string();
+
+    // Without the flag the user's wrapper is not overwritten, and the command says why.
+    let kept = cli.run(&["setup", "lock", "--target", target_arg], true);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), original);
+    let report = stdout(&kept);
+    assert!(report.contains("/opt/bin/lock-screen"), "{report}");
+    assert!(report.contains("--replace-custom"), "{report}");
+
+    // A dry run with the flag shows the change and writes nothing.
+    let dry = cli.run(
+        &[
+            "setup",
+            "lock",
+            "--replace-custom",
+            "--dry-run",
+            "--target",
+            target_arg,
+        ],
+        true,
+    );
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), original);
+    let preview = stdout(&dry);
+    assert!(preview.contains("Dry-run: would update"), "{preview}");
+    assert!(preview.contains("decklock --lock"), "{preview}");
+
+    // With the flag the wrapper goes, unrelated hooks and listeners stay, and a
+    // backup of the original is left next to the file.
+    cli.run(
+        &["setup", "lock", "--replace-custom", "--target", target_arg],
+        true,
+    );
+    let replaced = std::fs::read_to_string(&target).unwrap();
+    assert_eq!(replaced.matches("decklock --lock").count(), 3, "{replaced}");
+    assert!(!replaced.contains("/opt/bin/lock-screen"), "{replaced}");
+    assert!(
+        replaced.contains("on_lock_cmd = notify-send locked"),
+        "{replaced}"
+    );
+    assert!(
+        replaced.contains("on-timeout = systemctl suspend"),
+        "{replaced}"
+    );
+    let backup = std::fs::read_dir(cli.home.path())
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .contains("wrapper-hypridle.conf.bak")
+        })
+        .expect("setup backs up the file it rewrites");
+    assert_eq!(std::fs::read_to_string(backup.path()).unwrap(), original);
+
+    // Running it again has nothing left to do.
+    let again = cli.run(
+        &["setup", "lock", "--replace-custom", "--target", target_arg],
+        true,
+    );
+    assert!(
+        stdout(&again).contains("already configured"),
+        "{}",
+        stdout(&again)
+    );
+}
+
+#[test]
+fn setup_lock_preserves_shell_braces_and_custom_process_guards() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("hypridle.conf");
+    let input = "general {\n    lock_cmd = pidof important-job || swaylock -f\n    before_sleep_cmd = /bin/sh -c 'echo ${HOME}; lock-screen'\n}\nlistener {\n    timeout = 300\n    on-timeout = pidof important-job || swaylock -f\n}\n";
+    std::fs::write(&target, input).unwrap();
+    let output = cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        true,
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        input,
+        "Custom guard or shell braces were overwritten"
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Kept"));
+}
+
+#[test]
+fn setup_lock_does_not_treat_shell_parameter_braces_as_configuration_blocks() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("hypridle.conf");
+    let input = "general {\n    before_sleep_cmd = /bin/sh -c 'echo ${HOME}; lock-screen'\n    lock_cmd = /opt/bin/lock-screen\n}\n";
+    std::fs::write(&target, input).unwrap();
+    cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        true,
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        input,
+        "Shell parameter braces changed custom config"
+    );
+    cli.run(
+        &[
+            "setup",
+            "lock",
+            "--replace-custom",
+            "--target",
+            target.to_str().unwrap(),
+        ],
+        true,
+    );
+    let replaced = std::fs::read_to_string(target).unwrap();
+    assert_eq!(
+        replaced.matches("decklock --lock").count(),
+        2,
+        "Explicit replacement missed the shell wrapper: {replaced}"
+    );
+}
