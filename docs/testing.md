@@ -30,6 +30,18 @@ On Arch these are provided by `xorg-server-xvfb`, `xorg-xauth` and `dbus`.
 The X11 lock gate additionally needs `xfwm4` as the window manager, `xset` from
 `xorg-xset`/`x11-xserver-utils`, and the Xtst, Xi and Xss client libraries used by
 its helper. Missing tools fail the gate; none of the required suites silently skip.
+The `x11` build also requires the Xlib/XCB development bridge (`libx11-xcb-dev`
+on Ubuntu, `libX11-devel` and `libxcb-devel` on Fedora, `libx11` and `libxcb` on
+Arch). Package library scans retain those runtime dependencies.
+
+The X11 gate builds a small C fixture with `cc` and preloads it into the real
+locker only, on its private Xvfb. A private marker delays main-thread `XPending`
+calls by 150 ms to model GTK frame work; an assertion confirms the delay actually
+ran. The ordinary intruder/WM stay independent. Both the normal and delayed
+competition require at least 12 of 20 topmost samples, with no relaxed assertions.
+The stacking guard owns a separate worker/connection and is joined before unlock;
+GTK retains input grabs, focus and authentication. Owned popups are identified
+from the GDK client's server-provided resource range, not copied window properties.
 
 The optional `x11` feature is off for a plain local build; distribution package
 jobs build with it enabled. `scripts/check` also lints and builds that feature
@@ -58,7 +70,7 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | GTK settings | `examples/settings_check.rs`, `settings_live_check.rs` | Theme contrast providers, language, preview identity, idle clock, draft errors/persistence, cleanup |
 | Media | `src/library.rs`, invariants, `media_check`, `video_live_check` | Seeded photo/video selection, imports without overwrites, viewer reuse, video retained on palette changes |
 | Lock protocol | `scripts/test-lock-isolated.py` | Ownership, output hotplug/remove/re-add, SIGTERM without unlock, second-lock refusal |
-| X11 lock backend | `scripts/test-lock-x11.py`, `examples/x11_intruder` | Override-redirect window covering the screen, grabs another client cannot take, stacking and focus recovered from an intruding window, blank/wake, refusal when the keyboard cannot be grabbed, and the two gaps X11 leaves |
+| X11 lock backend | `scripts/test-lock-x11.py`, `examples/x11_intruder` | Override-redirect window covering the screen, grabs another client cannot take, stacking and focus recovered from an intruding window, stacking independent of deliberately slow GTK event processing, blank/wake, refusal when the keyboard cannot be grabbed, and the two gaps X11 leaves |
 | Video path on X11 | `examples/x11_video_check.rs`, run by both gates | Frames keep arriving on an X11 display, through the software path without the `x11` feature and the accelerated one with it |
 | Reduced-guarantee notice | `examples/guarantee_check.rs` | Catalog text, silence when a backend keeps its guarantees, and a theme that cannot hide it |
 | Guest provisioning fixture | `scripts/test-vm-fixture.py` | The readiness decision made before a guest is tested, and the cloud-init status recorded with it, checked against a stubbed cloud-init |

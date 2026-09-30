@@ -107,7 +107,15 @@ class Session:
         return fields
 
     def lock(self, config):
-        process = subprocess.Popen([str(BINARY), "--lock", "--config", str(config)], env=self.env,
+        # Only the real locker gets the rendering-delay fixture; the WM and
+        # ordinary protocol observer must remain independent of its scheduling.
+        fixture = self.directory / "slow-main.so"
+        subprocess.run(["cc", "-shared", "-fPIC", "-pthread", "-o", str(fixture),
+                        str(ROOT / "scripts/fixtures/x11-slow-main.c"), "-ldl"],
+                       check=True, capture_output=True, timeout=30)
+        lock_env = dict(self.env, LD_PRELOAD=str(fixture),
+                        DECKLOCK_TEST_SLOW_MAIN_MARKER=str(self.directory / "slow-main"))
+        process = subprocess.Popen([str(BINARY), "--lock", "--config", str(config)], env=lock_env,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.processes.append(process)
         return process
@@ -199,6 +207,26 @@ def run():
             check(stack == "on_top=20 samples=20 other_top=0", f"The lock screen did not stay on top: {stack}")
             covered = coverer.communicate(timeout=30)[0]
             check("mapped=" in covered, f"The covering window never appeared: {covered}")
+
+            # A slow GTK thread must not delay the independent stacking guard.
+            # Preserve the existing competition, sample count and >=12 bound.
+            marker = directory / "slow-main"
+            marker.touch()
+            try:
+                slow_raiser = session.intruder("raise", 4, background=True)
+                time.sleep(1)
+                stack = session.intruder("stack", xid, 20)
+                samples = dict(pair.split("=") for pair in stack.split())
+                check(int(samples["on_top"]) >= 12,
+                      f"GTK frame work delayed stacking recovery: {stack}")
+                raised = slow_raiser.communicate(timeout=30)[0]
+                check(int(dict(pair.split("=") for pair in raised.split())["raises"]) >= 5,
+                      f"The intruder never competed with the slow GTK thread: {raised}")
+                check(len(marker.read_bytes()) >= 2,
+                      "The GTK main thread was never delayed; stacking regression was vacuous")
+            finally:
+                marker.unlink()
+            passed.append("stacking recovery independent of slow GTK frame work")
 
             # A client raising itself every 200 ms wins the odd moment: X11 lets
             # any client raise a window, and the lock can only answer each time.

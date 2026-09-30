@@ -1,4 +1,9 @@
 fn main() {
+    if std::env::var_os("CARGO_FEATURE_X11").is_some() {
+        pkg_config::Config::new()
+            .probe("x11-xcb")
+            .expect("X11 locking requires the Xlib/XCB development bridge");
+    }
     for path in [
         "assets/icons/icons.gresource.xml",
         "assets/icons/decklock.svg",

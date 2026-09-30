@@ -360,3 +360,17 @@ login, while retaining its existing two-account PAM/state assertions.
 Before saving system greetd setup, a bounded setpriv (util-linux) probe checks
 read/write/traversal as that account without PAM. The VM asserts a root-only
 ancestor is rejected while preserving the working command.
+
+2026-09-30 merge follow-up: PR #48 passed every required CI job (including the
+Ubuntu ARM VM) and was squash-merged as ba682dd, as required by mainProtect's
+linear-history rule. PR #51 was reconciled without force-push; its tree remained
+identical to 221c0ea. A fresh local full gate then exposed intermittent X11
+stacking recovery (9/20 samples, below the unchanged 12/20 contract). A new
+real-CLI/private-Xvfb regression models slow GTK event processing with a
+main-thread-only preload and confirms the delay ran. The original backend failed
+that regression at 0/20. The observer now owns a separate restacking worker and
+X connection; GDK's server-provided resource range preserves owned popups,
+input/focus/authentication stay on GTK, and the worker stops before unlock.
+The targeted full X11 gate and X11 clippy passed; the new commit still needs the
+complete local suite and required package/VM CI. Native Xlib/XCB build/runtime
+dependencies are explicit. No release, installation or active session changed.

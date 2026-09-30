@@ -12,6 +12,8 @@
 //! `SubstructureNotify` on the root window rather than `VisibilityNotify`, and
 //! taking X focus back from the window manager.
 
+mod stacking;
+
 use super::{Guarantees, LockBackend};
 use crate::{
     session::Session,
@@ -91,7 +93,7 @@ pub(super) fn configure(
             screens: RefCell::new(Vec::new()),
             held: Cell::new(false),
             finished: Cell::new(false),
-            stacking_source: RefCell::new(None),
+            stacking_guard: RefCell::new(None),
         }),
     }
 }
@@ -130,36 +132,6 @@ struct Screen {
     xid: xlib::Window,
 }
 
-/// An independent event connection, kept on the GTK thread. GDK can pause its
-/// own X event source while processing frames; root stacking must still react.
-struct StackingConnection {
-    xlib: xlib::Xlib,
-    dpy: *mut xlib::Display,
-}
-
-impl StackingConnection {
-    fn changed(&self) -> bool {
-        let mut changed = false;
-        // SAFETY: only the GTK-thread callback reads this owned connection.
-        // XPending prevents XNextEvent from blocking.
-        unsafe {
-            while (self.xlib.XPending)(self.dpy) != 0 {
-                let mut event: xlib::XEvent = mem::zeroed();
-                (self.xlib.XNextEvent)(self.dpy, &mut event);
-                changed |= matches!(event.get_type(), xlib::MapNotify | xlib::ConfigureNotify);
-            }
-        }
-        changed
-    }
-}
-
-impl Drop for StackingConnection {
-    fn drop(&mut self) {
-        // SAFETY: this owns a separate connection and runs on the GTK thread.
-        unsafe { (self.xlib.XCloseDisplay)(self.dpy) };
-    }
-}
-
 struct Backend {
     xlib: xlib::Xlib,
     dpy: *mut xlib::Display,
@@ -174,14 +146,12 @@ struct Backend {
     screens: RefCell<Vec<Screen>>,
     held: Cell<bool>,
     finished: Cell<bool>,
-    stacking_source: RefCell<Option<glib::SourceId>>,
+    stacking_guard: RefCell<Option<stacking::Guard>>,
 }
 
 impl Drop for Backend {
     fn drop(&mut self) {
-        if let Some(source) = self.stacking_source.get_mut().take() {
-            source.remove();
-        }
+        self.stacking_guard.get_mut().take();
     }
 }
 
@@ -211,6 +181,15 @@ impl Backend {
         let watchdog = self.clone();
         glib::timeout_add_local(WATCHDOG, move || {
             if watchdog.finished.get() {
+                return glib::ControlFlow::Break;
+            }
+            let failure = watchdog
+                .stacking_guard
+                .borrow()
+                .as_ref()
+                .and_then(stacking::Guard::failure);
+            if let Some(error) = failure {
+                watchdog.fail(&error);
                 return glib::ControlFlow::Break;
             }
             if watchdog.held.get() {
@@ -250,6 +229,15 @@ impl Backend {
         }
         for monitor in close {
             self.close_screen(&monitor);
+        }
+        if let Some(guard) = self.stacking_guard.borrow().as_ref() {
+            guard.update(
+                self.screens
+                    .borrow()
+                    .iter()
+                    .map(|screen| screen.xid)
+                    .collect(),
+            );
         }
     }
 
@@ -367,44 +355,13 @@ impl Backend {
     /// Composite extension, which Xorg enables by default, it never reports the
     /// lock window as obscured.
     fn watch_stacking_and_focus(self: &Rc<Self>) -> Result<(), String> {
-        let xlib = xlib::Xlib::open().map_err(|e| e.to_string())?;
-        // SAFETY: GDK's display name is valid for this call. The new connection
-        // uses exactly that display, never a guessed or inherited alternative.
-        let dpy = unsafe { (xlib.XOpenDisplay)((self.xlib.XDisplayString)(self.dpy)) };
-        if dpy.is_null() {
-            return Err("cannot open the X11 stacking event connection".into());
-        }
-        let connection = StackingConnection { xlib, dpy };
-        // SAFETY: this connection owns only the root event subscription.
-        let fd = unsafe {
-            (connection.xlib.XSelectInput)(dpy, self.root, xlib::SubstructureNotifyMask);
-            (connection.xlib.XFlush)(dpy);
-            (connection.xlib.XConnectionNumber)(dpy)
-        };
-        let weak = Rc::downgrade(self);
-        // Default-priority sources wait behind GTK frame work. Root stacking
-        // must run before another ready frame, even under software rendering.
-        let source = glib_unix::unix_fd_add_local_full(
-            fd,
-            glib::Priority::HIGH,
-            glib::IOCondition::IN | glib::IOCondition::ERR | glib::IOCondition::HUP,
-            move |_, condition| {
-                let Some(backend) = weak.upgrade() else {
-                    return glib::ControlFlow::Break;
-                };
-                if condition.intersects(glib::IOCondition::ERR | glib::IOCondition::HUP) {
-                    backend.fail("lost the X11 stacking event connection");
-                    return glib::ControlFlow::Break;
-                }
-                // Call through the owner, so the closure retains the entire
-                // connection rather than copying individual raw pointer fields.
-                if connection.changed() {
-                    backend.keep_on_top();
-                }
-                glib::ControlFlow::Continue
-            },
-        );
-        *self.stacking_source.borrow_mut() = Some(source);
+        let windows = self
+            .screens
+            .borrow()
+            .iter()
+            .map(|screen| screen.xid)
+            .collect();
+        *self.stacking_guard.borrow_mut() = Some(stacking::Guard::start(&self.display, windows)?);
         // Focus on lock windows still belongs to GDK's own connection.
         unsafe {
             let weak = Rc::downgrade(self);
@@ -584,9 +541,7 @@ impl Backend {
         if self.finished.replace(true) {
             return;
         }
-        if let Some(source) = self.stacking_source.borrow_mut().take() {
-            source.remove();
-        }
+        self.stacking_guard.borrow_mut().take();
         self.ungrab();
         if let Some(app) = self.app.upgrade() {
             app.quit();
@@ -608,9 +563,7 @@ impl Backend {
         if self.finished.replace(true) {
             return;
         }
-        if let Some(source) = self.stacking_source.borrow_mut().take() {
-            source.remove();
-        }
+        self.stacking_guard.borrow_mut().take();
         self.session.borrow_mut().terminate();
         self.exit_code.set(1);
         self.ungrab();
