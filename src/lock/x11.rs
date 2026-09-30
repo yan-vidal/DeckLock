@@ -382,8 +382,11 @@ impl Backend {
             (connection.xlib.XConnectionNumber)(dpy)
         };
         let weak = Rc::downgrade(self);
-        let source = glib_unix::unix_fd_add_local(
+        // Default-priority sources wait behind GTK frame work. Root stacking
+        // must run before another ready frame, even under software rendering.
+        let source = glib_unix::unix_fd_add_local_full(
             fd,
+            glib::Priority::HIGH,
             glib::IOCondition::IN | glib::IOCondition::ERR | glib::IOCondition::HUP,
             move |_, condition| {
                 let Some(backend) = weak.upgrade() else {

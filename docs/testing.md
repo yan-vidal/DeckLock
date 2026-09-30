@@ -170,7 +170,7 @@ parsing and deadline regressions. No real credentials or account lockouts are us
 
 ### X11 stacking recovery
 
-Root stacking notifications use a separate X connection, watched by GLib on the GTK thread. GDK can pause its own X event source during frame processing; even the attempted 50-ms polling fallback still failed the existing raising-client assertion (10/20 samples). The independent event connection reacts without that paused queue, preserves GTK-owned popups and is closed with its source at release/failure/drop. Input grabs, authentication and the one-second watchdog are unchanged. The original sampling assertions remain intact.
+Root stacking notifications use a separate X connection, watched by GLib at high priority on the GTK thread. GDK can pause its own X event source during frame processing; even the attempted 50-ms polling fallback still failed the existing raising-client assertion (10/20 samples). A default-priority watcher also failed (10/20); diagnostic timestamps showed event handling waiting behind 150-ms software-rendered frames. The high-priority event connection reacts before another ready frame without that paused queue, preserves GTK-owned popups and is closed with its source at release/failure/drop. Input grabs, authentication and the one-second watchdog are unchanged. The original sampling assertions remain intact.
 
 ### X11 VM display readiness
 
