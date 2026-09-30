@@ -412,14 +412,11 @@ impl Backend {
                 if backend.finished.get() {
                     return glib::Propagation::Proceed;
                 }
-                match (*event).get_type() {
-                    xlib::FocusOut => {
-                        let window = (*event).focus_change.window;
-                        if backend.screens.borrow().iter().any(|s| s.xid == window) {
-                            backend.take_focus();
-                        }
+                if (*event).get_type() == xlib::FocusOut {
+                    let window = (*event).focus_change.window;
+                    if backend.screens.borrow().iter().any(|s| s.xid == window) {
+                        backend.take_focus();
                     }
-                    _ => {}
                 }
                 glib::Propagation::Proceed
             });
