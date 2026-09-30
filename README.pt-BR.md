@@ -283,6 +283,8 @@ Configure o `hypridle` para realizar o bloqueio com o DeckLock:
 decklock setup lock
 ```
 
+Sem `hypridle.conf`, ele grava o modelo. Com um arquivo existente, edita só `lock_cmd`, `before_sleep_cmd` e o `on-timeout` dos listeners, preservando indentação e comentários no fim da linha. Um bloqueador conhecido (`hyprlock`, `gtklock`, `swaylock`, `waylock`, `i3lock`, sozinho ou atrás de uma guarda `pidof … ||`) vira `decklock --lock`. Qualquer outra coisa, como o seu próprio script wrapper, é mantida e listada, porque um wrapper pode ter guardas ou etapas que o DeckLock desconhece. Use `--replace-custom` para trocar também esses; um listener só é trocado quando executa o mesmo comando do `lock_cmd`, então `systemctl suspend` e `dpms off` nunca são tocados. Rodar de novo não muda nada, e um arquivo alterado recebe backup antes.
+
 Modelos de configuração de referência ficam instalados em `/usr/share/decklock/setup/` (`greetd.toml`, `hypridle.conf`, `decklock.service`). Use `--dry-run` para visualizar o que seria escrito sem alterar os arquivos no disco. O setup preserva outras opções TOML do greetd e cria backup do arquivo existente. No login via greetd, o seletor oferece apenas sessões Wayland instaladas; ele não inicia uma sessão X a partir do VT do Cage.
 
 ## Teclado e energia

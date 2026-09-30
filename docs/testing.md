@@ -65,6 +65,7 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | Greeter IPC and preview | `src/greeter.rs` protocol tests, `examples/preview_check.rs` | Several greetd prompts, denied session start, JSON parsing, no power actions in greeter preview, and activation of an existing greeter |
 | Greeter arrow keys | `examples/greeter_keys_check.rs`, X11 gate | Left/Right from an empty password entry select accounts through GTK's own key dispatch, wrap at both ends, keep entry focus, and still move the cursor while a password is being typed |
 | Greeter setup command | `tests/cli_contract.rs` | The command `setup greeter` writes starts when run as greetd runs it (`sh -c "exec <command>"`), with a fake Cage. Replacing a greetd config keeps its mode (0644 for a file setup creates), and `config set` keeps the mode of the config it replaces, because the atomic write goes through a private temporary file |
+| Lock setup command | `src/setup.rs` unit tests, `tests/cli_contract.rs` | Editing an existing `hypridle.conf`: exact key matching (`on_lock_cmd` untouched), known lockers replaced in `general` and `listener` blocks, trailing comments kept, custom wrappers and compound commands kept and reported until `--replace-custom` (including shell parameter braces and guards for unrelated processes), listeners that are not the lock command never replaced, inserting missing keys without corrupting shell expressions or losing listener edits, idempotence, atomic replacement preserving file mode, and a failed backup preserving the original. Never touches the real `~/.config`: every case uses `--target` in a temporary directory |
 | Real greetd login | `scripts/vm/greeter.py`, run by each distribution VM | Packaged setup command, greetd as a system service, logind runtime directories for the greeter and user sessions, real greetd and PAM rejection/acceptance, Cage Wayland greeter, chosen session running as the authenticated user, and a second account selected by arrow key |
 | Lock boundary on further compositors | `scripts/vm/compositor.py`, run by each distribution VM for its `EXTRA_COMPOSITORS` (labwc with pixman, Wayfire with software GLES on vgem) | Input reaching an ordinary client before lock, compositor lock confirmation, real PAM denial with no input leak, one protocol unlock, input restored, and a killed locker leaving the compositor locked. PAM policy cases stay on Sway only |
 | aarch64 packages | `package-fedora-aarch64` and `package-ubuntu-aarch64` jobs on `ubuntu-24.04-arm` | The same release build, `cli_contract` and `session_invariants` tests and package contract as x86_64. Ubuntu arm64 is published from 0.3.2; Fedora arm64 stays a candidate until it has a VM target |
@@ -92,11 +93,11 @@ on Arch and include their linked-library provenance.
 
 ## GitHub flow
 
-- PR targeting main: required **DeckLock checks** and **Arch package contract**.
+- PR targeting main: required **DeckLock checks** (all isolated, package and VM jobs) and **Arch package contract**.
   Fedora and Ubuntu packages also build. Download any `<target>-package`
   candidate from the workflow's artifacts if needed.
 - After packaging: **Real Wayland and PAM** for each target, using that exact
-  package in QEMU/KVM. Only the Arch contract is a required check today.
+  package in QEMU/KVM. Every package and VM is required by the final **DeckLock checks** aggregator. Failed, skipped or cancelled gates fail the aggregator.
 - Main: the same checks after merge. No public release just because a PR exists.
 - Version/revision tag: `Release` invokes the checks and Arch package build, then
   verifies the tag matches Cargo/package metadata and the commit belongs to main.
@@ -163,3 +164,11 @@ Injected clock values cover elapsed time across suspension; this is not a real
 suspend or PAM integration test. Policy/tally parser tests were removed together
 with the unreliable local remaining-attempt inference, replaced by PAM-message
 parsing and deadline regressions. No real credentials or account lockouts are used.
+
+### X11 stacking recovery
+
+Root stacking notifications use a separate X connection, watched by GLib at high priority on the GTK thread. GDK can pause its own X event source during frame processing; even the attempted 50-ms polling fallback still failed the existing raising-client assertion (10/20 samples). A default-priority watcher also failed (10/20); diagnostic timestamps showed event handling waiting behind 150-ms software-rendered frames. The high-priority event connection reacts before another ready frame without that paused queue, preserves GTK-owned popups and is closed with its source at release/failure/drop. Input grabs, authentication and the one-second watchdog are unchanged. The original sampling assertions remain intact.
+
+### X11 VM display readiness
+
+The VM Xvfb uses `-noreset` and waits for an actual client connection before GTK starts. A probe disconnecting as the final client otherwise resets the server generation; the Arch VM failed GTK initialization during that race before the X11 backend ran. `scripts/test-vm-x11-fixture.py` runs the exact fixture arguments on a private dynamically allocated display and checks a protocol marker survives closing the last client. Missing Xvfb/xdotool now fails the guest gate instead of skipping X11; PAM and input assertions are unchanged.

@@ -444,6 +444,81 @@ fn setup_subcommands_exercise_cli_boundary_and_support_isolated_targets() {
     assert!(completed.contains("inhibit_sleep = 1"));
 }
 
+#[test]
+fn setup_lock_keeps_a_custom_wrapper_until_replace_custom_is_requested() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("wrapper-hypridle.conf");
+    let target_arg = target.to_str().unwrap();
+    let original = "general {\n    on_lock_cmd = notify-send locked\n    lock_cmd = /opt/bin/lock-screen\n    before_sleep_cmd = /opt/bin/lock-screen\n}\nlistener {\n    timeout = 300\n    on-timeout = /opt/bin/lock-screen\n}\nlistener {\n    timeout = 900\n    on-timeout = systemctl suspend\n}\n";
+    std::fs::write(&target, original).unwrap();
+    let stdout =
+        |output: &std::process::Output| String::from_utf8_lossy(&output.stdout).to_string();
+
+    // Without the flag the user's wrapper is not overwritten, and the command says why.
+    let kept = cli.run(&["setup", "lock", "--target", target_arg], true);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), original);
+    let report = stdout(&kept);
+    assert!(report.contains("/opt/bin/lock-screen"), "{report}");
+    assert!(report.contains("--replace-custom"), "{report}");
+
+    // A dry run with the flag shows the change and writes nothing.
+    let dry = cli.run(
+        &[
+            "setup",
+            "lock",
+            "--replace-custom",
+            "--dry-run",
+            "--target",
+            target_arg,
+        ],
+        true,
+    );
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), original);
+    let preview = stdout(&dry);
+    assert!(preview.contains("Dry-run: would update"), "{preview}");
+    assert!(preview.contains("decklock --lock"), "{preview}");
+
+    // With the flag the wrapper goes, unrelated hooks and listeners stay, and a
+    // backup of the original is left next to the file.
+    cli.run(
+        &["setup", "lock", "--replace-custom", "--target", target_arg],
+        true,
+    );
+    let replaced = std::fs::read_to_string(&target).unwrap();
+    assert_eq!(replaced.matches("decklock --lock").count(), 3, "{replaced}");
+    assert!(!replaced.contains("/opt/bin/lock-screen"), "{replaced}");
+    assert!(
+        replaced.contains("on_lock_cmd = notify-send locked"),
+        "{replaced}"
+    );
+    assert!(
+        replaced.contains("on-timeout = systemctl suspend"),
+        "{replaced}"
+    );
+    let backup = std::fs::read_dir(cli.home.path())
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .contains("wrapper-hypridle.conf.bak")
+        })
+        .expect("setup backs up the file it rewrites");
+    assert_eq!(std::fs::read_to_string(backup.path()).unwrap(), original);
+
+    // Running it again has nothing left to do.
+    let again = cli.run(
+        &["setup", "lock", "--replace-custom", "--target", target_arg],
+        true,
+    );
+    assert!(
+        stdout(&again).contains("already configured"),
+        "{}",
+        stdout(&again)
+    );
+}
+
 fn mode_of(path: &Path) -> u32 {
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
@@ -491,4 +566,130 @@ fn config_set_keeps_the_mode_of_the_config_it_replaces() {
     assert_eq!(mode_of(&cli.file), 0o644, "a shared config became private");
     let saved = std::fs::read_to_string(&cli.file).unwrap();
     assert!(saved.contains("idle_seconds = 180"), "{saved}");
+}
+
+#[test]
+fn setup_lock_preserves_shell_braces_and_custom_process_guards() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("hypridle.conf");
+    let input = "general {\n    lock_cmd = pidof important-job || swaylock -f\n    before_sleep_cmd = /bin/sh -c 'echo ${HOME}; lock-screen'\n}\nlistener {\n    timeout = 300\n    on-timeout = pidof important-job || swaylock -f\n}\n";
+    std::fs::write(&target, input).unwrap();
+    let output = cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        true,
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        input,
+        "Custom guard or shell braces were overwritten"
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Kept"));
+}
+
+#[test]
+fn setup_lock_does_not_treat_shell_parameter_braces_as_configuration_blocks() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("hypridle.conf");
+    let input = "general {\n    before_sleep_cmd = /bin/sh -c 'echo ${HOME}; lock-screen'\n    lock_cmd = /opt/bin/lock-screen\n}\n";
+    std::fs::write(&target, input).unwrap();
+    cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        true,
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        input,
+        "Shell parameter braces changed custom config"
+    );
+    cli.run(
+        &[
+            "setup",
+            "lock",
+            "--replace-custom",
+            "--target",
+            target.to_str().unwrap(),
+        ],
+        true,
+    );
+    let replaced = std::fs::read_to_string(target).unwrap();
+    assert_eq!(
+        replaced.matches("decklock --lock").count(),
+        2,
+        "Explicit replacement missed the shell wrapper: {replaced}"
+    );
+}
+
+#[test]
+fn setup_lock_inserts_missing_keys_outside_shell_parameter_braces() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("hypridle.conf");
+    let wrapper = "    before_sleep_cmd = /bin/sh -c 'echo ${HOME}; lock-screen'\n";
+    let input =
+        format!("general {{\n{wrapper}}}\nlistener {{\n    on-timeout = systemctl suspend\n}}\n");
+    std::fs::write(&target, input).unwrap();
+    cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        true,
+    );
+    let saved = std::fs::read_to_string(&target).unwrap();
+    assert!(
+        saved.contains(wrapper),
+        "A shell expression was corrupted: {saved}"
+    );
+    assert!(
+        saved.contains("    lock_cmd = decklock --lock\n}\nlistener {"),
+        "The key was inserted outside its block: {saved}"
+    );
+    assert_eq!(saved.matches("before_sleep_cmd").count(), 1, "{saved}");
+    assert!(saved.contains("on-timeout = systemctl suspend"), "{saved}");
+}
+
+#[test]
+fn setup_lock_preserves_the_config_when_backup_creation_fails() {
+    let cli = Cli::new();
+    // The target is valid on Linux, but its timestamped backup exceeds NAME_MAX.
+    // This deterministic filesystem failure also works when tests run as root.
+    let target = cli.home.path().join(format!("{}.conf", "a".repeat(240)));
+    let original = "general {\n    lock_cmd = swaylock\n}\n";
+    std::fs::write(&target, original).unwrap();
+    let output = cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        false,
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("backup"));
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), original);
+}
+
+#[test]
+fn setup_lock_does_not_count_commented_keys_as_existing_settings() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("hypridle.conf");
+    let input = "general {\n    # before_sleep_cmd = old-locker\n}\n";
+    std::fs::write(&target, input).unwrap();
+    cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        true,
+    );
+    let saved = std::fs::read_to_string(target).unwrap();
+    assert!(
+        saved.contains("    before_sleep_cmd = decklock --lock\n"),
+        "{saved}"
+    );
+    assert!(saved.contains("# before_sleep_cmd = old-locker"), "{saved}");
+}
+
+#[test]
+fn setup_lock_keeps_listener_migration_when_it_adds_a_general_block() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("hypridle.conf");
+    let input = "listener {\n    timeout = 300\n    on-timeout = swaylock -f\n}\nlistener {\n    timeout = 900\n    on-timeout = systemctl suspend\n}\n";
+    std::fs::write(&target, input).unwrap();
+    cli.run(
+        &["setup", "lock", "--target", target.to_str().unwrap()],
+        true,
+    );
+    let saved = std::fs::read_to_string(target).unwrap();
+    assert!(saved.contains("on-timeout = decklock --lock"), "{saved}");
+    assert!(!saved.contains("swaylock"), "{saved}");
+    assert!(saved.contains("on-timeout = systemctl suspend"), "{saved}");
 }

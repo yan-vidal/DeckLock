@@ -29,6 +29,9 @@ pub enum Action {
         /// Dry-run mode: show what would be written without modifying files.
         #[arg(long)]
         dry_run: bool,
+        /// Also replace lock commands that are not a known locker (for example a wrapper script).
+        #[arg(long)]
+        replace_custom: bool,
     },
     /// Configure both greetd login and hypridle screen lock.
     All {
@@ -310,7 +313,172 @@ pub fn setup_greeter(
     ))
 }
 
+/// Screen lockers `setup lock` recognises by name and swaps for DeckLock.
+const KNOWN_LOCKERS: [&str; 5] = ["hyprlock", "gtklock", "swaylock", "waylock", "i3lock"];
+const DECKLOCK: &str = "decklock --lock";
+
+/// What `setup lock` does with one hypridle command.
+#[derive(Debug, PartialEq, Eq)]
+enum Plan {
+    /// Already right, or not a locker to swap: `loginctl lock-session` only asks
+    /// logind to lock, and hypridle's `lock_cmd` does the work.
+    Keep,
+    Replace(String),
+    /// A wrapper script or compound shell command: replaced only when asked.
+    Custom,
+}
+
+fn plan(value: &str) -> Plan {
+    let mut command = value.trim();
+    let mut guarded = false;
+    // `pidof <locker> || <locker>` guards. They suppress a lock while any process
+    // of that name is alive, so a stray one silently disables locking.
+    while let Some((guard, rest)) = command.split_once("||") {
+        let guard_words: Vec<_> = guard.split_whitespace().collect();
+        let guarded_name = rest
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .rsplit('/')
+            .next()
+            .unwrap_or_default();
+        if guard_words.len() != 2
+            || guard_words[0] != "pidof"
+            || guard_words[1] != guarded_name
+            || !(KNOWN_LOCKERS.contains(&guarded_name) || guarded_name == "decklock")
+        {
+            break;
+        }
+        command = rest.trim_start();
+        guarded = true;
+    }
+    if command.contains(['|', '&', ';', '$', '`', '(', ')', '<', '>']) {
+        return Plan::Custom;
+    }
+    let mut words = command.split_whitespace();
+    let program = words.next().unwrap_or_default();
+    let name = program.rsplit('/').next().unwrap_or(program);
+    match (name, words.next(), words.next()) {
+        ("decklock", Some("--lock"), _) if guarded => Plan::Replace(command.to_string()),
+        ("decklock", Some("--lock"), _) | ("loginctl", Some("lock-session"), None) => Plan::Keep,
+        (name, _, _) if KNOWN_LOCKERS.contains(&name) => Plan::Replace(DECKLOCK.to_string()),
+        _ => Plan::Custom,
+    }
+}
+
+/// A `key = value` line of hypridle.conf that `setup lock` may rewrite. The value
+/// is a byte range of the line, so indentation, spacing, a trailing comment and a
+/// closing brace survive a replacement exactly as the user wrote them.
+struct Command {
+    line: usize,
+    key: &'static str,
+    value: std::ops::Range<usize>,
+}
+
+/// The part of a line before a hyprlang comment (`#`; `##` is a literal `#`).
+fn strip_comment(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'#' {
+            if bytes.get(i + 1) != Some(&b'#') {
+                return &line[..i];
+            }
+            i += 1;
+        }
+        i += 1;
+    }
+    line
+}
+
+fn parse_command(line: usize, code: &str, block: Option<&str>) -> Option<Command> {
+    let eq = code.find('=')?;
+    let head = code[..eq].rsplit('{').next()?.trim();
+    let (block, name) = match head.split_once(':') {
+        Some((category, name)) => (category, name),
+        None => (block?, head),
+    };
+    let key = match (block, name) {
+        ("general", "lock_cmd") => "lock_cmd",
+        ("general", "before_sleep_cmd") => "before_sleep_cmd",
+        ("listener", "on-timeout") => "on-timeout",
+        _ => return None,
+    };
+    let after = &code[eq + 1..];
+    let start = eq + 1 + (after.len() - after.trim_start().len());
+    let mut end = code.trim_end().len();
+    if code[..eq].contains('{') && code[..end].ends_with('}') {
+        end = code[..end - 1].trim_end().len();
+    }
+    (start < end).then_some(Command {
+        line,
+        key,
+        value: start..end,
+    })
+}
+
+/// Finds the lock-related commands of a hypridle.conf, following its blocks.
+fn scan(content: &str) -> Vec<Command> {
+    let mut found = Vec::new();
+    let mut blocks: Vec<&str> = Vec::new();
+    for (line, text) in content.lines().enumerate() {
+        let code = strip_comment(text);
+        // Braces after '=' belong to a shell command (e.g. ${HOME}), not
+        // hyprlang's block structure. Only a block header opens a category.
+        let opening = code
+            .find('{')
+            .filter(|open| code.find('=').is_none_or(|eq| *open < eq));
+        if let Some(open) = opening {
+            blocks.push(code[..open].trim());
+        }
+        found.extend(parse_command(line, code, blocks.last().copied()));
+        if code.trim() == "}" || (opening.is_some() && code.trim_end().ends_with('}')) {
+            blocks.pop();
+        }
+    }
+    found
+}
+
+/// Find a real general block's closing line, ignoring shell value braces and comments.
+fn general_end(content: &str) -> Result<Option<usize>, String> {
+    let mut blocks = Vec::new();
+    let mut offset = 0;
+    for text in content.split_inclusive('\n') {
+        let code = strip_comment(text);
+        let opening = code
+            .find('{')
+            .filter(|open| code.find('=').is_none_or(|eq| *open < eq));
+        if let Some(open) = opening {
+            blocks.push(code[..open].trim());
+        }
+        let standalone_close = code.trim() == "}";
+        if standalone_close || (opening.is_some() && code.trim_end().ends_with('}')) {
+            if blocks.last() == Some(&"general") {
+                return Ok(Some(if standalone_close {
+                    offset
+                } else {
+                    offset + code.rfind('}').unwrap()
+                }));
+            }
+            blocks.pop();
+        }
+        offset += text.len();
+    }
+    if blocks.contains(&"general") {
+        return Err("hypridle general block is not closed; configuration was not changed".into());
+    }
+    Ok(None)
+}
+
 pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String> {
+    setup_lock_with(target, dry_run, false)
+}
+
+pub fn setup_lock_with(
+    target: Option<&Path>,
+    dry_run: bool,
+    replace_custom: bool,
+) -> Result<String, String> {
     let default_path = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
@@ -321,36 +489,71 @@ pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String
         .or(default_path)
         .ok_or_else(|| "Could not determine hypridle.conf path".to_string())?;
 
-    let (content_to_write, was_existing) = if target_path.exists() {
+    let (content_to_write, was_existing, notes) = if target_path.exists() {
         let content = fs::read_to_string(&target_path)
             .map_err(|e| format!("Failed to read {}: {e}", target_path.display()))?;
-        let mut updated_lines = Vec::new();
-        let mut has_lock_cmd = false;
-        for line in content.lines() {
-            if let Some(pos) = line.find("lock_cmd") {
-                let after = &line[pos + "lock_cmd".len()..];
-                let after_trimmed = after.trim_start();
-                if after_trimmed.starts_with('=') {
-                    has_lock_cmd = true;
-                    let indent = &line[..pos];
-                    let suffix = if line.ends_with('}') { " }" } else { "" };
-                    updated_lines.push(format!("{indent}lock_cmd = decklock --lock{suffix}"));
-                    continue;
+        let lines: Vec<&str> = content.lines().collect();
+        let commands = scan(&content);
+        let value_of = |command: &Command| &lines[command.line][command.value.clone()];
+        let lock_cmd = commands
+            .iter()
+            .find(|command| command.key == "lock_cmd")
+            .map(value_of);
+        let has_lock_cmd = lock_cmd.is_some();
+        let has_before_sleep = commands
+            .iter()
+            .any(|command| command.key == "before_sleep_cmd");
+
+        let mut updated_lines: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
+        let mut changed = Vec::new();
+        let mut kept = Vec::new();
+        for command in &commands {
+            let value = value_of(command);
+            let replacement = match plan(value) {
+                Plan::Keep => continue,
+                Plan::Replace(replacement) => replacement,
+                Plan::Custom => {
+                    // A custom `on-timeout` is a lock only when it runs the same
+                    // command as `lock_cmd`; `systemctl suspend` and `dpms off`
+                    // live in listeners too and must never become a lock.
+                    if command.key == "on-timeout" && Some(value) != lock_cmd {
+                        continue;
+                    }
+                    if !replace_custom {
+                        kept.push(format!(
+                            "  line {}: {}",
+                            command.line + 1,
+                            lines[command.line].trim()
+                        ));
+                        continue;
+                    }
+                    DECKLOCK.to_string()
                 }
-            }
-            if let Some(pos) = line.find("before_sleep_cmd") {
-                let after = &line[pos + "before_sleep_cmd".len()..];
-                let after_trimmed = after.trim_start();
-                if after_trimmed.starts_with('=') {
-                    let indent = &line[..pos];
-                    let suffix = if line.ends_with('}') { " }" } else { "" };
-                    updated_lines.push(format!(
-                        "{indent}before_sleep_cmd = decklock --lock{suffix}"
-                    ));
-                    continue;
-                }
-            }
-            updated_lines.push(line.to_string());
+            };
+            let line = lines[command.line];
+            let rewritten = format!(
+                "{}{replacement}{}",
+                &line[..command.value.start],
+                &line[command.value.end..]
+            );
+            changed.push(format!(
+                "  line {}:\n    - {}\n    + {}",
+                command.line + 1,
+                line.trim(),
+                rewritten.trim()
+            ));
+            updated_lines[command.line] = rewritten;
+        }
+        let mut notes = String::new();
+        if !changed.is_empty() {
+            notes.push_str(&format!("Changes:\n{}\n", changed.join("\n")));
+        }
+        if !kept.is_empty() {
+            notes.push_str(&format!(
+                "Kept, because they are not a known locker:\n{}\n\
+                 Point them at `{DECKLOCK}`, or run setup lock again with --replace-custom.\n",
+                kept.join("\n")
+            ));
         }
         let mut edited = updated_lines.join("\n");
         if content.ends_with('\n') {
@@ -358,19 +561,20 @@ pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String
         }
         let updated = if has_lock_cmd {
             edited
-        } else if let Some(start) = edited.find("general {") {
-            let close = edited[start..]
-                .find('}')
-                .map(|offset| start + offset)
-                .ok_or_else(|| "hypridle general block is not closed".to_string())?;
-            let before_sleep = if edited.contains("before_sleep_cmd") {
+        } else if let Some(close) = general_end(&edited)? {
+            let before_sleep = if has_before_sleep {
                 String::new()
             } else {
                 "    before_sleep_cmd = decklock --lock\n".to_string()
             };
+            let separator = if edited[..close].ends_with('\n') {
+                ""
+            } else {
+                "\n"
+            };
             edited.insert_str(
                 close,
-                &format!("    lock_cmd = decklock --lock\n{before_sleep}"),
+                &format!("{separator}    lock_cmd = decklock --lock\n{before_sleep}"),
             );
             edited
         } else {
@@ -382,19 +586,27 @@ pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String
                      after_sleep_cmd = hyprctl dispatch dpms on\n\
                      inhibit_sleep = 3\n\
                  }}\n\n{}",
-                content
+                edited
             )
         };
         if updated == content {
-            return Ok(format!(
-                "Screen lock in {} is already configured for DeckLock",
-                target_path.display()
-            ));
+            return Ok(if kept.is_empty() {
+                format!(
+                    "Screen lock in {} is already configured for DeckLock",
+                    target_path.display()
+                )
+            } else {
+                format!(
+                    "Screen lock in {} was left unchanged.\n{}",
+                    target_path.display(),
+                    notes.trim_end()
+                )
+            });
         }
-        (updated, true)
+        (updated, true, notes)
     } else {
         let template = include_str!("../packaging/setup/hypridle.conf").to_string();
-        (template, false)
+        (template, false, String::new())
     };
 
     if dry_run {
@@ -404,31 +616,59 @@ pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String
             "would create screen lock config in"
         };
         return Ok(format!(
-            "Dry-run: {action_desc} {}\n---\n{}",
+            "Dry-run: {action_desc} {}\n{notes}---\n{}",
             target_path.display(),
             content_to_write
         ));
     }
 
+    let mut backup = None;
     if was_existing {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs();
+            .as_nanos();
         let backup_path = target_path.with_extension(format!("conf.bak.{timestamp}"));
-        let _ = fs::copy(&target_path, &backup_path);
+        fs::copy(&target_path, &backup_path).map_err(|e| {
+            format!(
+                "Failed to backup {} to {}: {e}; configuration was not changed",
+                target_path.display(),
+                backup_path.display()
+            )
+        })?;
+        backup = Some(backup_path);
     } else if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directory {}: {e}", parent.display()))?;
     }
 
-    fs::write(&target_path, content_to_write)
-        .map_err(|e| format!("Failed to write {}: {e}", target_path.display()))?;
+    let parent = target_path
+        .parent()
+        .ok_or("hypridle configuration has no parent")?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| format!("Failed to create temporary hypridle configuration: {e}"))?;
+    use std::io::Write;
+    temporary
+        .write_all(content_to_write.as_bytes())
+        .map_err(|e| format!("Failed to write temporary hypridle configuration: {e}"))?;
+    crate::config::keep_mode(&temporary, &target_path, Some(0o644))
+        .map_err(|e| format!("Failed to preserve mode of {}: {e}", target_path.display()))?;
+    temporary
+        .persist(&target_path)
+        .map_err(|e| format!("Failed to replace {}: {e}", target_path.display()))?;
 
-    Ok(format!(
+    let mut report = format!(
         "Successfully configured hypridle at {}",
         target_path.display()
-    ))
+    );
+    if let Some(backup) = backup {
+        report.push_str(&format!("\n  backup: {}", backup.display()));
+    }
+    if !notes.is_empty() {
+        report.push('\n');
+        report.push_str(notes.trim_end());
+    }
+    Ok(report)
 }
 
 pub fn execute(action: Option<Action>) -> Result<String, String> {
@@ -442,7 +682,11 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
             no_keyboard,
             dry_run,
         } => setup_greeter(target.as_deref(), no_keyboard, dry_run),
-        Action::Lock { target, dry_run } => setup_lock(target.as_deref(), dry_run),
+        Action::Lock {
+            target,
+            dry_run,
+            replace_custom,
+        } => setup_lock_with(target.as_deref(), dry_run, replace_custom),
         Action::All { dry_run } => {
             let greeter_res = setup_greeter(None, false, dry_run)?;
             let lock_res = setup_lock(None, dry_run)?;
@@ -535,5 +779,117 @@ mod tests {
         let formatted = format_status(&report);
         assert!(formatted.contains("DeckLock [Configured]"));
         assert!(formatted.contains("decklock --lock [Configured]"));
+    }
+
+    /// Runs `setup lock` against an existing hypridle.conf and returns the file
+    /// afterwards together with what the command printed.
+    fn lock_existing(content: &str, replace_custom: bool) -> (String, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hypridle.conf");
+        fs::write(&path, content).unwrap();
+        let out = setup_lock_with(Some(&path), false, replace_custom).unwrap();
+        (fs::read_to_string(&path).unwrap(), out)
+    }
+
+    const WRAPPER_CONF: &str = "general {\n    lock_cmd = /usr/local/bin/lock-wrapper\n    before_sleep_cmd = /usr/local/bin/lock-wrapper\n}\nlistener {\n    timeout = 300\n    on-timeout = /usr/local/bin/lock-wrapper\n}\nlistener {\n    timeout = 600\n    on-timeout = hyprctl dispatch dpms off\n    on-resume = hyprctl dispatch dpms on\n}\nlistener {\n    timeout = 900\n    on-timeout = systemctl suspend\n}\n";
+
+    #[test]
+    fn lock_setup_matches_keys_exactly_so_on_lock_cmd_is_left_alone() {
+        let (after, _) = lock_existing(
+            "general {\n    on_lock_cmd = notify-send locked\n    lock_cmd = gtklock\n}\n",
+            false,
+        );
+        assert!(
+            after.contains("    on_lock_cmd = notify-send locked\n"),
+            "{after}"
+        );
+        assert!(
+            after.contains("    lock_cmd = decklock --lock\n"),
+            "{after}"
+        );
+    }
+
+    #[test]
+    fn lock_setup_replaces_a_known_locker_in_a_listener_but_not_other_listeners() {
+        let (after, _) = lock_existing(
+            "general {\n    lock_cmd = swaylock\n}\nlistener {\n    timeout = 300\n    on-timeout = pidof swaylock || swaylock -f\n}\nlistener {\n    timeout = 600\n    on-timeout = systemctl suspend\n}\n",
+            false,
+        );
+        assert!(
+            after.contains("    on-timeout = decklock --lock\n"),
+            "{after}"
+        );
+        assert!(
+            after.contains("    on-timeout = systemctl suspend\n"),
+            "{after}"
+        );
+        assert!(!after.contains("swaylock"), "{after}");
+    }
+
+    #[test]
+    fn lock_setup_keeps_the_inline_comment_after_a_replaced_value() {
+        let (after, _) = lock_existing(
+            "general {\n    lock_cmd = pidof hyprlock || hyprlock   # old guard\n}\n",
+            false,
+        );
+        assert!(
+            after.contains("    lock_cmd = decklock --lock   # old guard\n"),
+            "{after}"
+        );
+    }
+
+    #[test]
+    fn lock_setup_treats_a_compound_shell_command_as_custom() {
+        let original = "general {\n    lock_cmd = playerctl pause; hyprlock\n}\n";
+        let (after, out) = lock_existing(original, false);
+        assert_eq!(after, original);
+        assert!(out.contains("playerctl pause; hyprlock"), "{out}");
+    }
+
+    #[test]
+    fn lock_setup_keeps_and_reports_a_custom_wrapper_by_default() {
+        let (after, out) = lock_existing(WRAPPER_CONF, false);
+        assert_eq!(after, WRAPPER_CONF);
+        assert!(out.contains("/usr/local/bin/lock-wrapper"), "{out}");
+        assert!(out.contains("--replace-custom"), "{out}");
+    }
+
+    #[test]
+    fn replace_custom_swaps_the_wrapper_but_never_unrelated_listeners() {
+        let (after, _) = lock_existing(WRAPPER_CONF, true);
+        assert_eq!(after.matches("decklock --lock").count(), 3, "{after}");
+        assert!(!after.contains("lock-wrapper"), "{after}");
+        assert!(
+            after.contains("on-timeout = hyprctl dispatch dpms off\n"),
+            "{after}"
+        );
+        assert!(
+            after.contains("on-resume = hyprctl dispatch dpms on\n"),
+            "{after}"
+        );
+        assert!(
+            after.contains("on-timeout = systemctl suspend\n"),
+            "{after}"
+        );
+    }
+
+    #[test]
+    fn lock_setup_is_idempotent_and_backs_up_only_when_it_changes_something() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hypridle.conf");
+        fs::write(&path, "general {\n    lock_cmd = hyprlock\n}\n").unwrap();
+
+        setup_lock_with(Some(&path), false, false).unwrap();
+        let first = fs::read_to_string(&path).unwrap();
+        let again = setup_lock_with(Some(&path), false, false).unwrap();
+
+        assert!(again.contains("already configured"), "{again}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), first);
+        let backups = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".bak"))
+            .count();
+        assert_eq!(backups, 1);
     }
 }
