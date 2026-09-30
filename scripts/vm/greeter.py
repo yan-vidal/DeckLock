@@ -50,14 +50,12 @@ if not subprocess.run(['id', '-u', 'greeter'], capture_output=True).returncode =
 if not subprocess.run(['id', '-u', 'locktest2'], capture_output=True).returncode == 0:
     run(['useradd', '--create-home', '--shell', '/bin/bash', 'locktest2'])
 run(['chpasswd'], input='locktest2:DeckLock-second-42\n', text=True)
+# Reproduce the Arch system-account boundary on every distribution.
+run(['usermod', '--home', '/', 'greeter'])
 greeter = pwd.getpwnam('greeter')
+assert greeter.pw_dir == '/'
 WORK.mkdir(mode=0o777, exist_ok=True)
 WORK.chmod(0o1777)
-state = Path(greeter.pw_dir) / '.local/state/decklock/greeter-state.toml'
-state.parent.mkdir(parents=True, exist_ok=True)
-state.write_text('last_user = "locktest"\nlast_session = "00-decklock-vm"\n')
-run(['chown', '-R', 'greeter:greeter', str(state.parent.parent.parent)])
-
 session_file = Path('/usr/share/wayland-sessions/00-decklock-vm.desktop')
 session_file.parent.mkdir(parents=True, exist_ok=True)
 session_file.write_text('[Desktop Entry]\nName=DeckLock VM session\nExec=/usr/local/bin/decklock-vm-session\nType=Application\n')
@@ -75,17 +73,26 @@ session_command.write_text(
 session_command.chmod(0o755)
 
 # Inspect the actual setup output before adding guest-only headless variables.
-config = WORK / 'config.toml'
-run(['decklock', 'setup', 'greeter', '--target', str(config)])
+config = Path('/etc/greetd/config.toml')
+run(['decklock', 'setup', 'greeter'])
 document = tomllib.loads(config.read_text())
 original = document['default_session']['command']
-assert original == 'cage -s -- decklock --greeter --keyboard', original
-record('packaged setup selects the native greetd/Cage greeter')
+assert 'cage -s -- decklock --greeter --keyboard' in original, original
+assert 'XDG_CONFIG_HOME=' in original and 'XDG_CACHE_HOME=' in original, original
+state_dir = Path('/var/lib/decklock-greeter')
+for path in [state_dir, state_dir / 'cache', state_dir / 'data']:
+    info = path.stat()
+    assert info.st_uid == greeter.pw_uid and info.st_gid == greeter.pw_gid, path
+    assert info.st_mode & 0o777 == 0o750, path
+state = state_dir / 'greeter-state.toml'
+state.write_text('last_user = "locktest"\nlast_session = "00-decklock-vm"\n')
+run(['chown', 'greeter:greeter', str(state)])
+record('packaged system setup prepares private storage owned by the HOME=/ greeter')
 
-greeter_config = Path(greeter.pw_dir) / '.config/decklock/config.toml'
+greeter_config = state_dir / 'decklock/config.toml'
 greeter_config.parent.mkdir(parents=True, exist_ok=True)
 greeter_config.write_text('locale = "en-US"\nbackground_pool = []\nidle_pool = []\nidle_enabled = false\n')
-run(['chown', '-R', 'greeter:greeter', str(greeter_config.parent.parent)])
+run(['chown', '-R', 'greeter:greeter', str(greeter_config.parent)])
 wrapper = Path('/usr/local/bin/decklock-vm-greeter')
 wrapper.write_text(
     '#!/bin/sh\n'
@@ -93,11 +100,11 @@ wrapper.write_text(
     'exec >> /var/tmp/decklock-greeter-test/cage.log 2>&1\n'
     'id\n'
     'printf "runtime=%s\\n" "${XDG_RUNTIME_DIR:-unset}"\n'
+    'printf "home=%s\\n" "$HOME"\n'
     'printf "start\\n" >> /var/tmp/decklock-greeter-test/starts\n'
     'exec env WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman '
     'WLR_LIBINPUT_NO_DEVICES=1 GDK_BACKEND=wayland GSK_RENDERER=cairo '
-    'cage -s -- decklock --greeter --keyboard '
-    f'--config {greeter_config}\n'
+    f'{original}\n'
 )
 wrapper.chmod(0o755)
 active_config = Path('/etc/greetd/decklock-vm.toml')
@@ -109,7 +116,7 @@ active_config.write_text(
 WORK.chmod(0o1777)
 if Path('/usr/sbin/restorecon').exists() or Path('/sbin/restorecon').exists():
     run(['restorecon', '-RF', '/etc/greetd', str(wrapper), str(session_file),
-         str(session_command), greeter.pw_dir])
+         str(session_command), str(state_dir)])
 run(['loginctl', 'enable-linger', 'greeter'])
 run(['systemctl', 'stop', 'greetd.service'])
 run(['systemctl', 'stop', 'getty@tty2.service'])
@@ -132,7 +139,8 @@ try:
     greeter_runtime = f'runtime={runtime}'
     assert greeter_runtime in (WORK / 'cage.log').read_text(errors='replace').splitlines(), \
         'greetd did not give the greeter its logind runtime directory; see cage.log'
-    record('greetd gives the packaged greeter command its logind runtime directory')
+    assert 'home=/' in (WORK / 'cage.log').read_text().splitlines()
+    record('greetd starts the exact setup command with HOME=/ and its logind runtime directory')
     def type_password(value):
         greeter_env = os.environ.copy()
         greeter_env.update(

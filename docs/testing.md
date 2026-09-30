@@ -65,8 +65,9 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | Greeter IPC and preview | `src/greeter.rs` protocol tests, `examples/preview_check.rs` | Several greetd prompts, denied session start, JSON parsing, no power actions in greeter preview, and activation of an existing greeter |
 | Greeter arrow keys | `examples/greeter_keys_check.rs`, X11 gate | Left/Right from an empty password entry select accounts through GTK's own key dispatch, wrap at both ends, keep entry focus, and still move the cursor while a password is being typed |
 | Greeter setup command | `tests/cli_contract.rs` | The command `setup greeter` writes starts when run as greetd runs it (`sh -c "exec <command>"`), with a fake Cage. Replacing a greetd config keeps its mode (0644 for a file setup creates), and `config set` keeps the mode of the config it replaces, because the atomic write goes through a private temporary file |
-| Greeter state directory and default session | `src/greeter.rs` unit tests, `src/setup.rs` unit tests, `tests/cli_contract.rs` | Under greetd the state file goes to the system directory when it exists (an explicit path and `XDG_STATE_HOME` still win, and outside greetd it is ignored); a uwsm-managed session is preselected over the bare one only when `uwsm` exists; `setup greeter --state-dir` creates the directory with mode 0750, does nothing in a dry run, and a custom `--target` alone creates nothing. Not covered automatically: giving the directory to the greeter account, which needs root (`chown`) |
-
+| Greeter state directory and default session | `src/greeter.rs` unit tests, `src/setup.rs` unit tests, `tests/cli_contract.rs` | Under greetd the state file goes to the system directory when it exists (an explicit path and `XDG_STATE_HOME` still win, and outside greetd it is ignored); a uwsm-managed session is preselected over the bare one only when `uwsm` exists; `setup greeter --state-dir` creates the directory with mode 0750, does nothing in a dry run, and a custom `--target` alone creates nothing. Ownership and HOME=/ startup are additionally asserted by the packaged VM gate |
+| Greeter startup and kiosk | `tests/cli_contract.rs`, `examples/preview_check.rs` | Unwritable HOME reaches GTK rather than aborting on media preparation; optional media failures name their path; greeter windows are fullscreen and undecorated |
+| Hyprland greeter setup | `tests/cli_contract.rs` | Generated Lua rotates output and touchscreen, closes the compositor after DeckLock, preserves a working Hyprland command on repeat, refuses invalid rotation and passes custom storage paths through greetd shell quoting. Installed Hyprland Lua parsing is a separate local check; this does not prove GPU or real Hyprland login |
 | Real greetd login | `scripts/vm/greeter.py`, run by each distribution VM | Packaged setup command, greetd as a system service, logind runtime directories for the greeter and user sessions, real greetd and PAM rejection/acceptance, Cage Wayland greeter, chosen session running as the authenticated user, and a second account selected by arrow key |
 | Lock boundary on further compositors | `scripts/vm/compositor.py`, run by each distribution VM for its `EXTRA_COMPOSITORS` (labwc with pixman, Wayfire with software GLES on vgem) | Input reaching an ordinary client before lock, compositor lock confirmation, real PAM denial with no input leak, one protocol unlock, input restored, and a killed locker leaving the compositor locked. PAM policy cases stay on Sway only |
 | aarch64 packages | `package-fedora-aarch64` and `package-ubuntu-aarch64` jobs on `ubuntu-24.04-arm` | The same release build, `cli_contract` and `session_invariants` tests and package contract as x86_64. Ubuntu arm64 is published from 0.3.2; Fedora arm64 stays a candidate until it has a VM target |
@@ -94,11 +95,11 @@ on Arch and include their linked-library provenance.
 
 ## GitHub flow
 
-- PR targeting main: required **DeckLock checks** and **Arch package contract**.
+- PR targeting main: required **DeckLock checks** (all isolated, package and VM jobs) and **Arch package contract**.
   Fedora and Ubuntu packages also build. Download any `<target>-package`
   candidate from the workflow's artifacts if needed.
 - After packaging: **Real Wayland and PAM** for each target, using that exact
-  package in QEMU/KVM. Only the Arch contract is a required check today.
+  package in QEMU/KVM. Every package and VM is required by the final **DeckLock checks** aggregator. Failed, skipped or cancelled gates fail the aggregator.
 - Main: the same checks after merge. No public release just because a PR exists.
 - Version/revision tag: `Release` invokes the checks and Arch package build, then
   verifies the tag matches Cargo/package metadata and the commit belongs to main.

@@ -558,5 +558,266 @@ fn config_set_keeps_the_mode_of_the_config_it_replaces() {
     assert_eq!(mode_of(&cli.file), 0o644, "a shared config became private");
     let saved = std::fs::read_to_string(&cli.file).unwrap();
     assert!(saved.contains("idle_seconds = 180"), "{saved}");
+}
 
+#[test]
+fn greeter_startup_with_an_unwritable_home_reaches_the_display_boundary() {
+    let cli = Cli::new();
+    // A regular file is a deterministic, unwritable HOME even when tests run as
+    // root. No host paths, display, greetd socket or credentials are available.
+    let home = cli.home.path().join("not-a-directory");
+    std::fs::write(&home, "fixture").unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_decklock"));
+    command
+        .args(["--greeter"])
+        .env("HOME", &home)
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("GREETD_SOCK")
+        .env_remove("DISPLAY")
+        .env_remove("WAYLAND_DISPLAY")
+        .env_remove("WAYLAND_SOCKET")
+        .env_remove("DBUS_SESSION_BUS_ADDRESS");
+    let output = bounded_output(&mut command);
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("GTK") || error.contains("display"),
+        "Greeter aborted before GTK: {error}"
+    );
+    assert!(!error.contains("Not a directory"), "{error}");
+}
+
+#[test]
+fn preview_startup_reports_the_media_path_and_continues_to_the_display_boundary() {
+    let cli = Cli::new();
+    let blocked = cli.home.path().join("config");
+    std::fs::write(&blocked, "fixture").unwrap();
+    let output = cli.run(&["--preview"], false);
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("GTK") || error.contains("display"),
+        "{error}"
+    );
+    assert!(
+        error.contains(blocked.join("midias/bloqueio/fotos").to_str().unwrap()),
+        "Missing failing path: {error}"
+    );
+}
+
+#[test]
+fn setup_greeter_passes_its_custom_directories_to_the_started_command() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let state = cli.home.path().join("greeter's private data");
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target.to_str().unwrap(),
+            "--state-dir",
+            state.to_str().unwrap(),
+        ],
+        true,
+    );
+    let document: toml::Value = toml::from_str(&std::fs::read_to_string(&target).unwrap()).unwrap();
+    let command = document["default_session"]["command"].as_str().unwrap();
+    assert!(command.contains("XDG_CONFIG_HOME="), "{command}");
+    assert!(command.contains("XDG_CACHE_HOME="), "{command}");
+    assert!(command.contains("DECKLOCK_GREETER_STATE="), "{command}");
+    let bin = cli.home.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let cage = bin.join("cage");
+    std::fs::write(&cage, "#!/bin/sh\nprintf '%s\\n' \"$XDG_CONFIG_HOME\" \"$XDG_CACHE_HOME\" \"$DECKLOCK_GREETER_STATE\" > \"$MARKER\"\n").unwrap();
+    std::fs::set_permissions(&cage, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let marker = cli.home.path().join("env");
+    let output = Command::new("/bin/sh")
+        .args(["-c", &format!("exec {command}")])
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .env("MARKER", &marker)
+        .spawn()
+        .unwrap();
+    let output = wait_output(output);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(marker).unwrap(),
+        format!(
+            "{}\n{}\n{}\n",
+            state.display(),
+            state.join("cache").display(),
+            state.join("greeter-state.toml").display()
+        )
+    );
+    assert!(state.join("cache").is_dir());
+}
+
+fn bounded_output(command: &mut Command) -> Output {
+    wait_output(
+        command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    )
+}
+
+fn wait_output(mut child: std::process::Child) -> Output {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while child.try_wait().unwrap().is_none() {
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("Regression subprocess timed out");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn setup_greeter_generates_a_rotated_hyprland_kiosk_and_preserves_it_on_repeat() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let bin = cli.home.path().join("fake-bin");
+    std::fs::create_dir(&bin).unwrap();
+    for name in ["Hyprland", "start-hyprland", "hyprctl"] {
+        let file = bin.join(name);
+        std::fs::write(
+            &file,
+            "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'Hyprland v0.56.2'; fi\nexit 0\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let mut command = Command::new(env!("CARGO_BIN_EXE_decklock"));
+    command
+        .args([
+            "setup",
+            "greeter",
+            "--target",
+            target.to_str().unwrap(),
+            "--compositor",
+            "hyprland",
+            "--output",
+            "eDP-1",
+            "--transform",
+            "3",
+        ])
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()));
+    let mut dry = Command::new(env!("CARGO_BIN_EXE_decklock"));
+    dry.args([
+        "setup",
+        "greeter",
+        "--target",
+        target.to_str().unwrap(),
+        "--compositor",
+        "hyprland",
+        "--output",
+        "eDP-1",
+        "--transform",
+        "3",
+        "--dry-run",
+    ])
+    .env("PATH", format!("{}:/usr/bin:/bin", bin.display()));
+    assert!(bounded_output(&mut dry).status.success());
+    assert!(!target.exists());
+    assert!(
+        !target
+            .parent()
+            .unwrap()
+            .join("hyprland-greeter.lua")
+            .exists()
+    );
+    let result = bounded_output(&mut command);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let lua = target.parent().unwrap().join("hyprland-greeter.lua");
+    let content = std::fs::read_to_string(&lua).unwrap();
+    assert!(content.contains("output = \"eDP-1\""), "{content}");
+    assert!(content.contains("transform = 3"), "{content}");
+    assert!(content.contains("touchdevice"), "{content}");
+    assert!(content.contains("hl.dsp.exit()"), "{content}");
+    assert!(
+        content.contains("decklock --greeter --keyboard"),
+        "{content}"
+    );
+    let saved = std::fs::read_to_string(&target).unwrap();
+    assert!(saved.contains("start-hyprland"));
+    cli.run(
+        &["setup", "greeter", "--target", target.to_str().unwrap()],
+        true,
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        saved,
+        "Repeat setup replaced the working rotated compositor"
+    );
+    assert_eq!(std::fs::read_to_string(&lua).unwrap(), content);
+    // A compositor that rejects Lua must not replace either saved file.
+    std::fs::write(
+        bin.join("Hyprland"),
+        "#!/bin/sh\necho invalid-lua >&2\nexit 1\n",
+    )
+    .unwrap();
+    let rejected = bounded_output(&mut command);
+    assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("invalid-lua"));
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), saved);
+    assert_eq!(std::fs::read_to_string(&lua).unwrap(), content);
+}
+
+#[test]
+fn setup_greeter_refuses_invalid_rotation_without_changing_the_login_config() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    std::fs::write(&target, "[default_session]\ncommand = \"tuigreet\"\n").unwrap();
+    let saved = std::fs::read(&target).unwrap();
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target.to_str().unwrap(),
+            "--compositor",
+            "hyprland",
+            "--transform",
+            "8",
+        ],
+        false,
+    );
+    assert_eq!(std::fs::read(target).unwrap(), saved);
+}
+
+#[test]
+fn setup_greeter_storage_failure_preserves_the_previous_login_command() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let storage = cli.home.path().join("not-a-directory");
+    std::fs::write(
+        &target,
+        "[default_session]\ncommand = \"tuigreet\"\nuser = \"greeter\"\n",
+    )
+    .unwrap();
+    std::fs::write(&storage, "fixture").unwrap();
+    let saved = std::fs::read(&target).unwrap();
+    let output = cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target.to_str().unwrap(),
+            "--state-dir",
+            storage.to_str().unwrap(),
+        ],
+        false,
+    );
+    assert_eq!(std::fs::read(&target).unwrap(), saved);
+    assert!(String::from_utf8_lossy(&output.stderr).contains(storage.to_str().unwrap()));
 }

@@ -885,7 +885,10 @@ fn build_in(
         window.set_application(Some(app));
     }
     window.add_css_class("decklock");
-    if settings.preview || settings.greeter {
+    if settings.greeter {
+        window.set_decorated(false);
+        window.fullscreen();
+    } else if settings.preview {
         crate::window_chrome::install(&window);
         window.set_decorated(settings.config.window_decorations);
     }

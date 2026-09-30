@@ -284,7 +284,39 @@ decklock setup lock
 
 Reference configuration templates are installed under `/usr/share/decklock/setup/` (`greetd.toml`, `hypridle.conf`, `decklock.service`). Use `--dry-run` to preview file changes without writing to disk. Setup preserves other greetd TOML options and backs up the existing file. Only installed Wayland desktop sessions are offered for greetd login; it does not launch an X session from Cage's bare VT.
 
-Under greetd the greeter account's home is `/`, which it cannot write to, so `sudo decklock setup greeter` also creates `/var/lib/decklock-greeter`, owned by that account (mode 0750). There the greeter remembers the last user and session. Until one is remembered, it preselects a uwsm-managed session (`uwsm start …`) when `uwsm` is installed, because that variant runs the compositor as a systemd user service, which user units tied to `graphical-session.target` expect; otherwise it preselects the first session by name. `--state-dir` picks another directory, and with `--target` nothing outside that file is created.
+The system greeter uses private config, cache, data and state under
+`/var/lib/decklock-greeter` (mode 0750, owned by the `greeter` account). Setup
+passes those paths to the login command, including a custom `--state-dir`; a
+storage or ownership failure leaves the existing greetd command intact. With
+`--target`, only that target is written unless `--state-dir` is also supplied.
+Dry runs create nothing. The greeter reads media without creating user folders;
+optional media-folder errors in preview/lock mode are warnings that name the path.
+
+The login window is always fullscreen and undecorated. Until a session choice is
+remembered, an installed uwsm-managed session is preferred; a remembered choice
+still wins. The normal user controller daemon is unavailable before login; the
+embedded touch/mouse keyboard remains available without capturing a controller.
+
+For an Arch Steam Deck OLED with Hyprland 0.55 or newer installed, configure the
+panel and touchscreen together using the Lua greeter compositor:
+
+```sh
+sudo decklock setup greeter --compositor hyprland --output eDP-1 --transform 3 --dry-run
+sudo decklock setup greeter --compositor hyprland --output eDP-1 --transform 3
+```
+
+Use the transform appropriate to your hardware; this is the OLED orientation.
+Setup verifies the generated Lua using the installed Hyprland before changing
+greetd, preserves other greetd options, saves backups and leaves the running
+service alone. The compositor exits when DeckLock finishes so greetd can start
+the authenticated session. Repeating setup without a compositor option preserves
+an existing Hyprland greeter. `--compositor cage` explicitly returns to Cage.
+This does not migrate your desktop Hyprland configuration. Panel/touch alignment,
+GPU behavior and an actual Hyprland login still need hardware validation.
+
+Changes take effect at the next logout or boot. Keep the printed backup and a
+working TTY available for recovery; do not restart greetd from its live desktop
+session. Install the packaged candidate with its PAM file for lock testing.
 
 ## Keyboard and power controls
 

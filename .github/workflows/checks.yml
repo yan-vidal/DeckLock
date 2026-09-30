@@ -10,7 +10,7 @@ permissions:
   contents: read
 jobs:
   check:
-    name: DeckLock checks
+    name: DeckLock isolated gates
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -237,3 +237,23 @@ jobs:
           path: target/vm-logs/
           if-no-files-found: warn
           retention-days: 14
+
+  required:
+    name: DeckLock checks
+    needs: [check, package, package-fedora, package-ubuntu, package-fedora-aarch64, package-ubuntu-aarch64, vm, vm-fedora, vm-ubuntu, vm-ubuntu-aarch64]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every isolated, package and VM gate
+        env:
+          GATE_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, sys
+          gates = json.loads(os.environ['GATE_RESULTS'])
+          failures = {name: gate['result'] for name, gate in gates.items() if gate['result'] != 'success'}
+          if failures:
+              print(f'Required gates did not pass: {failures}', file=sys.stderr)
+              sys.exit(1)
+          print(f'All {len(gates)} required gates passed')
+          PYCODE

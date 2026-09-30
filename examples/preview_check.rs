@@ -226,6 +226,14 @@ fn main() {
     greeter_view.window.present();
     while glib::MainContext::default().iteration(false) {}
     assert!(greeter_view.window.title().unwrap().contains("Login"));
+    assert!(
+        !greeter_view.window.is_decorated(),
+        "Login must never show a close button"
+    );
+    assert!(
+        greeter_view.window.is_fullscreen(),
+        "Login must request fullscreen"
+    );
     let greeter_power = descendants(greeter_view.window.upcast_ref())
         .into_iter()
         .find(|w| w.widget_name() == "power")
