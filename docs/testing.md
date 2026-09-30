@@ -164,3 +164,12 @@ Injected clock values cover elapsed time across suspension; this is not a real
 suspend or PAM integration test. Policy/tally parser tests were removed together
 with the unreliable local remaining-attempt inference, replaced by PAM-message
 parsing and deadline regressions. No real credentials or account lockouts are used.
+
+### X11 stacking recovery
+
+The backend also checks stacking every 50 ms while locked. GDK's X11 event
+source can pause X event dispatch during frame processing; waiting only for
+root events left an intruder on top in 10 of 20 samples in the existing gate.
+This adds a stacking check independent of frame event dispatch; it does not
+change the one-second input watchdog, unlock authorization or the documented
+X11 guarantee limits. The original sampling and grab assertions remain intact.

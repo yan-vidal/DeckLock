@@ -43,6 +43,10 @@ const GRAB_RETRY: Duration = Duration::from_millis(50);
 /// Re-asserts grabs, stacking and focus for the states that arrive without an
 /// event this process can observe: a VT switch back and a DPMS wake-up.
 const WATCHDOG: Duration = Duration::from_secs(1);
+// GDK can pause X event delivery during frame processing. Root ConfigureNotify
+// alone then leaves an intruder visible until a later frame. Recheck stacking
+// independently of that event queue; input reassertion keeps its slower watchdog.
+const STACK_RECHECK: Duration = Duration::from_millis(50);
 
 /// Whether an X11 lock is possible in the running session.
 pub(super) fn usable() -> bool {
@@ -163,6 +167,14 @@ impl Backend {
                 }
             });
         self.watch_stacking_and_focus();
+        let stacking = self.clone();
+        glib::timeout_add_local(STACK_RECHECK, move || {
+            if stacking.finished.get() {
+                return glib::ControlFlow::Break;
+            }
+            stacking.keep_on_top();
+            glib::ControlFlow::Continue
+        });
         self.clone()
             .take_input(Some(Instant::now() + GRAB_DEADLINE));
         let watchdog = self.clone();
