@@ -287,7 +287,12 @@ fn write_greeter_config(
     // greetd runs this as `sh -c "exec <command>"`, where a leading VAR=value
     // is taken as the program name. pam_systemd supplies XDG_RUNTIME_DIR.
     session.insert("command".into(), toml::Value::String(command.to_string()));
-    session.insert("user".into(), toml::Value::String(GREETER_USER.into()));
+    let user = session
+        .entry("user")
+        .or_insert_with(|| toml::Value::String(GREETER_USER.into()));
+    if user.as_str().is_none_or(str::is_empty) {
+        return Err("greetd default_session.user must name a service account; configuration was not changed".into());
+    }
     let content = toml::to_string_pretty(&document)
         .map_err(|e| format!("Failed to serialize greetd configuration: {e}"))?;
 
@@ -734,17 +739,37 @@ fn passwd_ids(passwd: &str, user: &str) -> Option<(u32, u32)> {
     })
 }
 
+/// Use the packaged/admin-selected account instead of creating an incompatible one.
+fn configured_greeter_user(path: &Path) -> Result<String, String> {
+    if !path.exists() {
+        return Ok(GREETER_USER.into());
+    }
+    let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let document: toml::Value = toml::from_str(&text).map_err(|e| e.to_string())?;
+    Ok(document
+        .get("default_session")
+        .and_then(|session| session.get("user"))
+        .and_then(toml::Value::as_str)
+        .unwrap_or(GREETER_USER)
+        .to_string())
+}
+
 /// Prepare private greeter storage before replacing greetd's working config.
 /// Custom targets are isolated fixtures owned by the caller; system installs
-/// require the real greeter account and fail before changing the login command.
-fn prepare_greeter_dirs(dir: &Path, system: bool, dry_run: bool) -> Result<String, String> {
+/// require the configured account and fail before changing the login command.
+fn prepare_greeter_dirs(
+    dir: &Path,
+    system: bool,
+    dry_run: bool,
+    user: &str,
+) -> Result<String, String> {
     use std::os::unix::fs::PermissionsExt;
     if !dir.is_absolute() {
         return Err("Greeter storage directory must be an absolute path".into());
     }
     if dry_run {
         return Ok(format!(
-            "Dry-run: would prepare {} for the '{GREETER_USER}' account (mode 0750)",
+            "Dry-run: would prepare {} for the '{user}' account (mode 0750)",
             dir.display()
         ));
     }
@@ -752,12 +777,15 @@ fn prepare_greeter_dirs(dir: &Path, system: bool, dry_run: bool) -> Result<Strin
         Some(
             fs::read_to_string("/etc/passwd")
                 .ok()
-                .and_then(|passwd| passwd_ids(&passwd, GREETER_USER))
-                .ok_or("The 'greeter' account is missing; install/configure greetd before setup")?,
+                .and_then(|passwd| passwd_ids(&passwd, user))
+                .ok_or_else(|| format!("The '{user}' service account is missing; install/configure greetd before setup"))?,
         )
     } else {
         None
     };
+    if owner.is_some_and(|(uid, _)| uid == 0) {
+        return Err("greetd default_session.user must be a non-root service account; greetd was not changed".into());
+    }
     for path in [dir.to_path_buf(), dir.join("cache"), dir.join("data")] {
         let fail = |e| {
             format!(
@@ -914,8 +942,9 @@ fn setup_greeter_with_storage(
     if !dry_run && let Some(lua) = &lua {
         verify_hyprland_config(lua)?;
     }
+    let user = configured_greeter_user(path)?;
     let preparation = match &dir {
-        Some(dir) => prepare_greeter_dirs(dir, target.is_none(), dry_run)?,
+        Some(dir) => prepare_greeter_dirs(dir, target.is_none(), dry_run, &user)?,
         None => String::new(),
     };
     if dry_run {

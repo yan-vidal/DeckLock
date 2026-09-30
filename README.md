@@ -287,8 +287,8 @@ With no `hypridle.conf` it writes the template. With an existing one it edits on
 Reference configuration templates are installed under `/usr/share/decklock/setup/` (`greetd.toml`, `hypridle.conf`, `decklock.service`). Use `--dry-run` to preview file changes without writing to disk. Setup preserves other greetd TOML options and backs up the existing file. Only installed Wayland desktop sessions are offered for greetd login; it does not launch an X session from Cage's bare VT.
 
 The system greeter uses private config, cache, data and state under
-`/var/lib/decklock-greeter` (or `/var/lib/greetd/decklock` with SELinux) (mode 0750, owned by the `greeter` account). Setup
-passes those paths to the login command, including a custom `--state-dir`; a
+`/var/lib/decklock-greeter` (or `/var/lib/greetd/decklock` with SELinux) (mode 0750, owned by the configured greetd account). Setup
+preserves the packaged `default_session.user` (`greeter` on Arch, `greetd` on Fedora) and passes those paths to the login command, including a custom `--state-dir`; a
 storage or ownership failure leaves the existing greetd command intact. With
 `--target`, only that target is written unless `--state-dir` is also supplied.
 Dry runs create nothing. The greeter reads media without creating user folders;

@@ -1023,3 +1023,25 @@ fn setup_lock_keeps_listener_migration_when_it_adds_a_general_block() {
     assert!(!saved.contains("swaylock"), "{saved}");
     assert!(saved.contains("on-timeout = systemctl suspend"), "{saved}");
 }
+
+#[test]
+fn setup_greeter_preserves_the_packaged_service_account() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    std::fs::write(
+        &target,
+        "[terminal]\nvt = 4\n[default_session]\ncommand = \"agreety\"\nuser = \"greetd\"\n",
+    )
+    .unwrap();
+    cli.run(
+        &["setup", "greeter", "--target", target.to_str().unwrap()],
+        true,
+    );
+    let document: toml::Value = toml::from_str(&std::fs::read_to_string(&target).unwrap()).unwrap();
+    assert_eq!(
+        document["default_session"]["user"].as_str(),
+        Some("greetd"),
+        "The native service account must retain access to its private parent directory"
+    );
+    assert_eq!(document["terminal"]["vt"].as_integer(), Some(4));
+}

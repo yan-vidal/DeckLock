@@ -350,3 +350,9 @@ a private window manager to assert its acknowledgement. On SELinux systems setup
 uses /var/lib/greetd/decklock, restores and verifies the existing xdm_var_lib_t
 context before changing greetd, without disabling enforcement. Fedora VM checks
 the storage context and remembers both fixture accounts. Device UAT remains separate.
+
+Setup preserves the packaged greetd default_session.user and prepares storage for
+that exact account. Fedora uses greetd with a private /var/lib/greetd parent;
+forcing a separate greeter account prevented traversal despite correct leaf
+ownership and SELinux labels. The VM probes writing as the selected account before
+login, while retaining its existing two-account PAM/state assertions.
