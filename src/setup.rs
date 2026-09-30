@@ -15,7 +15,7 @@ pub enum GreeterCompositor {
 pub enum Action {
     /// Inspect the current system configuration for greetd and screen lock.
     Status,
-    /// Configure /etc/greetd/config.toml to run DeckLock inside cage (requires root/sudo).
+    /// Configure greetd login using Cage or a Hyprland kiosk (requires root/sudo).
     Greeter {
         /// Alternative destination path (for dry-runs or custom configs).
         #[arg(long)]

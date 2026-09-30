@@ -330,3 +330,16 @@ package, which has its own (emulated) VM gate in the checks the release reruns.
 Fedora arm64 stays unpublished until it has a VM target: its Cloud image could
 not be pinned from the agent's environment. The user approved publishing on 2026-09-24;
 the changelog carries that date and `v0.3.2` is tagged after merge.
+
+2026-09-30 installation hardening (PRs #48 and #51): existing lock commands are
+classified without overwriting custom process guards or misreading shell parameter
+braces. Greeter startup no longer creates optional media folders; system setup
+prepares greeter-owned config/cache/data/state before replacing greetd's command.
+The login window requests fullscreen without decorations. Hyprland greeter setup
+can generate verified Lua with matching panel/touch transforms, preserves an
+existing Hyprland command on repeat, and never restarts the running greetd.
+The packaged VM fixture now uses HOME=/, checks actual directory ownership and
+starts the exact generated command. The required DeckLock checks aggregator waits
+for every existing isolated, package and VM gate. Local/CI evidence and hardware
+limits are recorded in docs/testing.md and the PR descriptions; do not infer a
+new package release or Steam Deck GPU/touch UAT from these source changes.
