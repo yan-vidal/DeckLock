@@ -927,14 +927,17 @@ fn verify_hyprland_config(lua: &str) -> Result<(), String> {
     // Configuration verification cannot block installation indefinitely. Keep
     // output in a temporary file so a verbose verifier cannot fill a pipe.
     let log = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    // Share one open file description: independently reopened streams each
+    // start at offset zero and can overwrite the verifier's other diagnostics.
+    let output = log.reopen().map_err(|e| e.to_string())?;
     let mut child = ProcessCommand::new("Hyprland")
         .args(["--verify-config", "-c"])
         .arg(file.path())
         .env_remove("WAYLAND_DISPLAY")
         .env_remove("WAYLAND_SOCKET")
         .env_remove("DISPLAY")
-        .stdout(log.reopen().map_err(|e| e.to_string())?)
-        .stderr(log.reopen().map_err(|e| e.to_string())?)
+        .stdout(output.try_clone().map_err(|e| e.to_string())?)
+        .stderr(output)
         .spawn()
         .map_err(|e| format!("Cannot verify Hyprland Lua configuration: {e}"))?;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);

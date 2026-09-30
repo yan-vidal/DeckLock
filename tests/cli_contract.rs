@@ -763,12 +763,13 @@ fn setup_greeter_generates_a_rotated_hyprland_kiosk_and_preserves_it_on_repeat()
     // A compositor that rejects Lua must not replace either saved file.
     std::fs::write(
         bin.join("Hyprland"),
-        "#!/bin/sh\necho invalid-lua >&2\nexit 1\n",
+        "#!/bin/sh\necho verifier-stdout\necho invalid-lua >&2\nexit 1\n",
     )
     .unwrap();
     let rejected = bounded_output(&mut command);
     assert!(!rejected.status.success());
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("invalid-lua"));
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("verifier-stdout"));
     assert_eq!(std::fs::read_to_string(&target).unwrap(), saved);
     assert_eq!(std::fs::read_to_string(&lua).unwrap(), content);
 }
