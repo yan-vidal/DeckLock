@@ -296,6 +296,10 @@ pub fn setup_greeter(
     temporary
         .write_all(content.as_bytes())
         .map_err(|e| format!("Failed to write temporary greetd configuration: {e}"))?;
+    // The temporary file is private. greetd's config is a normal readable system file,
+    // and an administrator's own mode must survive the replacement.
+    crate::config::keep_mode(&temporary, &target_path, Some(0o644))
+        .map_err(|e| format!("Failed to set the mode of {}: {e}", target_path.display()))?;
     temporary
         .persist(&target_path)
         .map_err(|e| format!("Failed to replace {}: {e}", target_path.display()))?;
