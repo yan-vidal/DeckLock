@@ -1179,7 +1179,7 @@ fn build_in(
             .last_session
             .as_ref()
             .and_then(|s| sessions.iter().position(|entry| &entry.id == s))
-            .unwrap_or(0)
+            .unwrap_or_else(|| crate::greeter::default_session_index(&sessions))
     } else {
         0
     };

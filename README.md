@@ -284,6 +284,8 @@ decklock setup lock
 
 Reference configuration templates are installed under `/usr/share/decklock/setup/` (`greetd.toml`, `hypridle.conf`, `decklock.service`). Use `--dry-run` to preview file changes without writing to disk. Setup preserves other greetd TOML options and backs up the existing file. Only installed Wayland desktop sessions are offered for greetd login; it does not launch an X session from Cage's bare VT.
 
+Under greetd the greeter account's home is `/`, which it cannot write to, so `sudo decklock setup greeter` also creates `/var/lib/decklock-greeter`, owned by that account (mode 0750). There the greeter remembers the last user and session. Until one is remembered, it preselects a uwsm-managed session (`uwsm start …`) when `uwsm` is installed, because that variant runs the compositor as a systemd user service, which user units tied to `graphical-session.target` expect; otherwise it preselects the first session by name. `--state-dir` picks another directory, and with `--target` nothing outside that file is created.
+
 ## Keyboard and power controls
 
 Mouse, physical keyboard and optional controller input use the same password

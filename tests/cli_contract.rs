@@ -443,3 +443,70 @@ fn setup_subcommands_exercise_cli_boundary_and_support_isolated_targets() {
     assert!(completed.contains("lock_cmd = decklock --lock"));
     assert!(completed.contains("inhibit_sleep = 1"));
 }
+
+#[test]
+fn setup_greeter_prepares_the_directory_where_the_greeter_remembers_its_choice() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let state_dir = cli.home.path().join("state/decklock-greeter");
+    let (target_arg, state_arg) = (target.to_str().unwrap(), state_dir.to_str().unwrap());
+    let stdout = |output: &Output| String::from_utf8_lossy(&output.stdout).to_string();
+    let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+
+    // A dry run says what it would do and creates nothing.
+    let dry = cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--dry-run",
+            "--target",
+            target_arg,
+            "--state-dir",
+            state_arg,
+        ],
+        true,
+    );
+    assert!(!state_dir.exists());
+    assert!(stdout(&dry).contains(state_arg), "{}", stdout(&dry));
+
+    // The greeter account's HOME under greetd is `/`, so it has nowhere to save
+    // the last user and session unless setup provides a directory. It is private
+    // to that account and its group.
+    let done = cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target_arg,
+            "--state-dir",
+            state_arg,
+        ],
+        true,
+    );
+    assert!(state_dir.is_dir(), "{}", stdout(&done));
+    assert_eq!(mode(&state_dir), 0o750);
+    assert!(stdout(&done).contains(state_arg), "{}", stdout(&done));
+
+    // Running setup again is harmless.
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target_arg,
+            "--state-dir",
+            state_arg,
+        ],
+        true,
+    );
+    assert_eq!(mode(&state_dir), 0o750);
+
+    // A custom --target is not the system greetd: without --state-dir nothing
+    // outside it is created, so this test and dry runs never touch /var/lib.
+    let plain = cli.run(&["setup", "greeter", "--target", target_arg], true);
+    assert!(
+        !stdout(&plain).contains("decklock-greeter"),
+        "{}",
+        stdout(&plain)
+    );
+}

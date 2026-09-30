@@ -17,6 +17,10 @@ pub enum Action {
         /// Do not enable the virtual keyboard by default in greeter mode.
         #[arg(long)]
         no_keyboard: bool,
+        /// Where the greeter remembers the last user and session. Defaults to
+        /// /var/lib/decklock-greeter, and is left alone when --target is given.
+        #[arg(long)]
+        state_dir: Option<PathBuf>,
         /// Dry-run mode: show what would be written without modifying files.
         #[arg(long)]
         dry_run: bool,
@@ -256,7 +260,7 @@ pub fn setup_greeter(
         "command".into(),
         toml::Value::String(format!("cage -s -- decklock --greeter{keyboard_flag}")),
     );
-    session.insert("user".into(), toml::Value::String("greeter".into()));
+    session.insert("user".into(), toml::Value::String(GREETER_USER.into()));
     let content = toml::to_string_pretty(&document)
         .map_err(|e| format!("Failed to serialize greetd configuration: {e}"))?;
 
@@ -427,6 +431,74 @@ pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String
     ))
 }
 
+const GREETER_USER: &str = "greeter";
+
+/// The directory the greeter remembers its choice in: the one asked for, else the
+/// system one, but never for a custom `--target`, which is not the system greetd.
+fn greeter_state_dir(target: Option<&Path>, explicit: Option<PathBuf>) -> Option<PathBuf> {
+    explicit.or_else(|| {
+        target
+            .is_none()
+            .then(|| PathBuf::from(crate::greeter::SYSTEM_STATE_DIR))
+    })
+}
+
+/// User and group ids of `user` in an /etc/passwd-formatted text.
+fn passwd_ids(passwd: &str, user: &str) -> Option<(u32, u32)> {
+    passwd.lines().find_map(|line| {
+        let mut fields = line.split(':');
+        (fields.next()? == user).then_some(())?;
+        let uid = fields.nth(1)?.parse().ok()?;
+        let gid = fields.next()?.parse().ok()?;
+        Some((uid, gid))
+    })
+}
+
+/// Creates the directory the greeter saves its last user and session in. Under
+/// greetd the greeter account's HOME is `/`, where it cannot write, so without this
+/// it starts from the first user and session every time. The greeter works without
+/// it, so a failure here is reported and never fails the setup.
+pub fn prepare_state_dir(dir: &Path, dry_run: bool) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    if dry_run {
+        return format!(
+            "Dry-run: would prepare {} for the '{GREETER_USER}' account (mode 0750)",
+            dir.display()
+        );
+    }
+    let warn = |problem: String| {
+        format!("Warning: {problem}; the greeter will not remember the last user and session")
+    };
+    if let Err(error) = fs::create_dir_all(dir) {
+        return warn(format!("could not create {}: {error}", dir.display()));
+    }
+    if let Err(error) = fs::set_permissions(dir, fs::Permissions::from_mode(0o750)) {
+        return warn(format!(
+            "could not set the mode of {}: {error}",
+            dir.display()
+        ));
+    }
+    let Some((uid, gid)) = fs::read_to_string("/etc/passwd")
+        .ok()
+        .and_then(|passwd| passwd_ids(&passwd, GREETER_USER))
+    else {
+        return warn(format!(
+            "the '{GREETER_USER}' account does not exist, so {} is not writable by it",
+            dir.display()
+        ));
+    };
+    if let Err(error) = std::os::unix::fs::chown(dir, Some(uid), Some(gid)) {
+        return warn(format!(
+            "could not give {} to '{GREETER_USER}': {error} (setup greeter needs root)",
+            dir.display()
+        ));
+    }
+    format!(
+        "State directory {} is ready for the '{GREETER_USER}' account",
+        dir.display()
+    )
+}
+
 pub fn execute(action: Option<Action>) -> Result<String, String> {
     match action.unwrap_or(Action::Status) {
         Action::Status => {
@@ -436,13 +508,21 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
         Action::Greeter {
             target,
             no_keyboard,
+            state_dir,
             dry_run,
-        } => setup_greeter(target.as_deref(), no_keyboard, dry_run),
+        } => {
+            let report = setup_greeter(target.as_deref(), no_keyboard, dry_run)?;
+            Ok(match greeter_state_dir(target.as_deref(), state_dir) {
+                Some(dir) => format!("{report}\n{}", prepare_state_dir(&dir, dry_run)),
+                None => report,
+            })
+        }
         Action::Lock { target, dry_run } => setup_lock(target.as_deref(), dry_run),
         Action::All { dry_run } => {
             let greeter_res = setup_greeter(None, false, dry_run)?;
+            let state_res = prepare_state_dir(Path::new(crate::greeter::SYSTEM_STATE_DIR), dry_run);
             let lock_res = setup_lock(None, dry_run)?;
-            Ok(format!("{greeter_res}\n{lock_res}"))
+            Ok(format!("{greeter_res}\n{state_res}\n{lock_res}"))
         }
     }
 }
@@ -531,5 +611,17 @@ mod tests {
         let formatted = format_status(&report);
         assert!(formatted.contains("DeckLock [Configured]"));
         assert!(formatted.contains("decklock --lock [Configured]"));
+    }
+
+    #[test]
+    fn passwd_ids_reads_the_uid_and_gid_of_the_named_account_only() {
+        let passwd = "root:x:0:0:root:/root:/bin/bash\n\
+                      greeter:x:968:967:greetd greeter user:/:/bin/bash\n\
+                      greeter2:x:1:2::/:/bin/false\n\
+                      broken\n";
+        assert_eq!(passwd_ids(passwd, "greeter"), Some((968, 967)));
+        assert_eq!(passwd_ids(passwd, "greeter2"), Some((1, 2)));
+        assert_eq!(passwd_ids(passwd, "nobody"), None);
+        assert_eq!(passwd_ids("greeter:x:abc:1::/:/bin/sh\n", "greeter"), None);
     }
 }
