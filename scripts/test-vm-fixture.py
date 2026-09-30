@@ -14,8 +14,10 @@ import re
 import subprocess
 import sys
 import tempfile
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
+VM_RUNNER = ROOT / "scripts/test-vm.py"
 HELPER = ROOT / "scripts/vm/cloud-init-ready.sh"
 SETUP = ROOT / "scripts/vm/setup.sh"
 GREETER = ROOT / "scripts/vm/greeter.py"
@@ -100,6 +102,34 @@ def main():
                 failures.append(f"{target} VM names {name}, which compositor.py cannot start")
             if name not in fields.get('HARNESS_PACKAGES', '').split():
                 failures.append(f"{target} VM exercises {name} without installing it")
+
+    # Each image is pinned by SHA256, so the URL it is fetched from must not move
+    # underneath that pin. Canonical's `release/` directory follows the newest serial:
+    # when it advanced, the pinned Ubuntu image stopped matching and every run of that
+    # target failed with "Image SHA256 mismatch", whatever change was under test.
+    # Like the compositor list above, the table is read without running the script.
+    distros = {}
+    try:
+        for node in ast.parse(VM_RUNNER.read_text(), str(VM_RUNNER)).body:
+            if isinstance(node, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == 'DISTROS' for t in node.targets):
+                distros = ast.literal_eval(node.value)
+    except (SyntaxError, ValueError) as error:
+        failures.append(f"test-vm.py does not expose its pinned images as a literal: {error}")
+    if not distros:
+        failures.append("test-vm.py names no pinned image to check")
+    moving = {'release', 'current', 'latest', 'daily', 'pending'}
+    for name, distro in distros.items():
+        entries = {name: distro}
+        entries.update({f'{name}/{key}': value for key, value in distro.items()
+                        if isinstance(value, dict)})
+        for label, entry in entries.items():
+            path = {part for part in urlsplit(entry['base']).path.split('/') if part}
+            if path & moving:
+                failures.append(
+                    f"{label} image is pinned by SHA256 but fetched from {entry['base']}, "
+                    f"a directory that moves ({', '.join(sorted(path & moving))}); "
+                    "use the dated directory the hash belongs to")
 
     if failures:
         for failure in failures:
