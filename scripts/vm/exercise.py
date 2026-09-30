@@ -11,6 +11,7 @@ EVIDENCE = Path('/var/tmp/decklock-evidence')
 # Emulated guests (aarch64 without KVM) run several times slower; test-vm.py
 # passes the factor, and every bounded wait below scales with it. 1 under KVM.
 SLOW = float(os.environ.get('DECKLOCK_VM_SLOWDOWN', '1'))
+XVFB_COMMAND = ['Xvfb', ':99', '-screen', '0', '1280x720x24', '-nolisten', 'tcp', '-noreset']
 assert Path('/etc/decklock-test-vm').read_text().strip() == 'disposable-qemu-fixture'
 assert os.getuid() != 0, 'Run the locker as an ordinary guest user'
 os.chdir(EVIDENCE)
@@ -201,99 +202,104 @@ try:
 
     # Part 2: Real PAM authentication under X11 backend
     import shutil
-    if shutil.which('Xvfb') and shutil.which('xdotool'):
-        x11_env = env.copy()
-        for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'WAYLAND_SOCKET', 'SWAYSOCK']:
-            x11_env.pop(key, None)
-        x11_env.update(DISPLAY=':99', GDK_BACKEND='x11', GSK_RENDERER='cairo')
+    assert shutil.which('Xvfb') and shutil.which('xdotool'), 'X11 VM gate requires Xvfb and xdotool'
+    x11_env = env.copy()
+    for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'WAYLAND_SOCKET', 'SWAYSOCK']:
+        x11_env.pop(key, None)
+    x11_env.update(DISPLAY=':99', GDK_BACKEND='x11', GSK_RENDERER='cairo')
 
-        xvfb = spawn(['Xvfb', ':99', '-screen', '0', '1280x720x24', '-nolisten', 'tcp'], 'xvfb.log', full_env=x11_env)
-        until(lambda: Path('/tmp/.X11-unix/X99').exists(), 'Xvfb :99 socket ready', child=xvfb)
+    xvfb = spawn(XVFB_COMMAND, 'xvfb.log', full_env=x11_env)
+    # Wait for protocol readiness; a socket path is insufficient.
+    # -noreset preserves the server generation after this probe closes.
+    until(lambda: subprocess.run(['xdotool', 'getdisplaygeometry'], env=x11_env,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 timeout=5 * SLOW).returncode == 0,
+          'Xvfb :99 accepts client connections', child=xvfb)
 
-        def type_x11(value):
-            subprocess.run(['xdotool', 'type', '--delay', '40', value], env=x11_env, check=True, timeout=10 * SLOW)
+    def type_x11(value):
+        subprocess.run(['xdotool', 'type', '--delay', '40', value], env=x11_env, check=True, timeout=10 * SLOW)
 
-        def submit_x11(value):
-            subprocess.run(['xdotool', 'key', 'ctrl+a', 'BackSpace'], env=x11_env, check=True, timeout=10 * SLOW)
-            type_x11(value)
-            subprocess.run(['xdotool', 'key', 'Return'], env=x11_env, check=True, timeout=10 * SLOW)
+    def submit_x11(value):
+        subprocess.run(['xdotool', 'key', 'ctrl+a', 'BackSpace'], env=x11_env, check=True, timeout=10 * SLOW)
+        type_x11(value)
+        subprocess.run(['xdotool', 'key', 'Return'], env=x11_env, check=True, timeout=10 * SLOW)
 
-        # On X11 the lock is the keyboard and pointer grabs, and DeckLock refuses
-        # every password until it holds both. A fixed delay before typing lost the
-        # keys on an emulated guest, so this asks the server as another client
-        # would: a grab someone else holds is refused with AlreadyGrabbed, and one
-        # this probe does get is released at once. Only the keyboard is probed:
-        # DeckLock takes the pointer and marks itself locked in the same callback,
-        # right after the keyboard, while a probe holding the pointer for a moment
-        # would make that attempt fail. Polled slowly for the same reason.
-        import ctypes
-        import ctypes.util
-        xlib = ctypes.CDLL(ctypes.util.find_library('X11'))
-        xlib.XOpenDisplay.restype = ctypes.c_void_p
-        xlib.XOpenDisplay.argtypes = [ctypes.c_char_p]
-        xlib.XDefaultRootWindow.restype = ctypes.c_ulong
-        xlib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
-        xlib.XGrabKeyboard.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int,
-                                       ctypes.c_int, ctypes.c_ulong]
-        xlib.XUngrabKeyboard.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
-        xlib.XCloseDisplay.argtypes = [ctypes.c_void_p]
-        GRAB_SUCCESS, ALREADY_GRABBED, GRAB_ASYNC = 0, 1, 1
+    # On X11 the lock is the keyboard and pointer grabs, and DeckLock refuses
+    # every password until it holds both. A fixed delay before typing lost the
+    # keys on an emulated guest, so this asks the server as another client
+    # would: a grab someone else holds is refused with AlreadyGrabbed, and one
+    # this probe does get is released at once. Only the keyboard is probed:
+    # DeckLock takes the pointer and marks itself locked in the same callback,
+    # right after the keyboard, while a probe holding the pointer for a moment
+    # would make that attempt fail. Polled slowly for the same reason.
+    import ctypes
+    import ctypes.util
+    xlib = ctypes.CDLL(ctypes.util.find_library('X11'))
+    xlib.XOpenDisplay.restype = ctypes.c_void_p
+    xlib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    xlib.XDefaultRootWindow.restype = ctypes.c_ulong
+    xlib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    xlib.XGrabKeyboard.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int,
+                                   ctypes.c_int, ctypes.c_ulong]
+    xlib.XUngrabKeyboard.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+    xlib.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    GRAB_SUCCESS, ALREADY_GRABBED, GRAB_ASYNC = 0, 1, 1
 
-        def keyboard_grabbed():
-            display = xlib.XOpenDisplay(b':99')
-            assert display, 'Could not open Xvfb :99 to probe the grabs'
-            try:
-                root = xlib.XDefaultRootWindow(display)
-                keyboard = xlib.XGrabKeyboard(display, root, 0, GRAB_ASYNC, GRAB_ASYNC, 0)
-                if keyboard == GRAB_SUCCESS:
-                    xlib.XUngrabKeyboard(display, 0)
-                return keyboard == ALREADY_GRABBED
-            finally:
-                xlib.XCloseDisplay(display)
-
-        def x11_wait(condition, message, log, child=None, grabbed=True, seconds=15):
-            deadline = time.monotonic() + seconds * SLOW
-            while condition() != grabbed:
-                if child is not None and child.poll() is not None:
-                    raise AssertionError(f'{message}: locker exited {child.returncode}: {text(log)[-2000:]}')
-                if time.monotonic() > deadline:
-                    raise AssertionError(f'Timed out: {message}: {text(log)[-2000:]}')
-                time.sleep(0.25)
-
-        (EVIDENCE / 'config-x11.toml').write_text('locale = "en-US"\npam_service = "decklock-vm-test"\nbackground_pool = []\nidle_pool = []\nidle_enabled = false\n')
-        xclient = spawn(['decklock', '--lock', '--config', str(EVIDENCE / 'config-x11.toml')], 'lock-x11.log', full_env=x11_env)
-        x11_wait(keyboard_grabbed, 'X11 locker holds its grabs', 'lock-x11.log', child=xclient)
-
-        # 1. Real PAM denial on X11
-        submit_x11('wrong-fixture-password')
-        until(lambda: any(x.startswith('Authentication failed') for x in statuses()),
-              'real PAM denial displayed on X11', seconds=35, child=xclient)
-        assert xclient.poll() is None, 'Wrong password exited X11 locker'
-        record('wrong password denied by real PAM under X11 backend')
-
-        # 2. Real PAM authorization and unlock on X11
-        submit_x11('DeckLock-test-42')
-        until(lambda: xclient.poll() is not None, 'correct password unlocks and exits under X11', seconds=35)
-        assert xclient.returncode == 0, text('lock-x11.log')[-3000:]
-        record('correct password passes real PAM and unlocks X11 session')
-
-        # 3. SIGTERM on X11 releases the session (asserting the reduced guarantee)
-        xclient2 = spawn(['decklock', '--lock', '--config', str(EVIDENCE / 'config-x11.toml')], 'lock-x11-sigterm.log', full_env=x11_env)
-        x11_wait(keyboard_grabbed, 'second X11 locker holds its grabs', 'lock-x11-sigterm.log', child=xclient2)
-        xclient2.send_signal(signal.SIGTERM)
-        assert xclient2.wait(timeout=10 * SLOW) == -signal.SIGTERM
-        x11_wait(keyboard_grabbed, 'grabs released once the X11 locker is killed', 'lock-x11-sigterm.log',
-                 grabbed=False, seconds=5)
-        record('SIGTERM under X11 releases the session as Guarantees declares')
-
-        xvfb.terminate()
+    def keyboard_grabbed():
+        display = xlib.XOpenDisplay(b':99')
+        assert display, 'Could not open Xvfb :99 to probe the grabs'
         try:
-            xvfb.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            xvfb.kill()
-            xvfb.wait()
-        if xvfb in processes:
-            processes.remove(xvfb)
+            root = xlib.XDefaultRootWindow(display)
+            keyboard = xlib.XGrabKeyboard(display, root, 0, GRAB_ASYNC, GRAB_ASYNC, 0)
+            if keyboard == GRAB_SUCCESS:
+                xlib.XUngrabKeyboard(display, 0)
+            return keyboard == ALREADY_GRABBED
+        finally:
+            xlib.XCloseDisplay(display)
+
+    def x11_wait(condition, message, log, child=None, grabbed=True, seconds=15):
+        deadline = time.monotonic() + seconds * SLOW
+        while condition() != grabbed:
+            if child is not None and child.poll() is not None:
+                raise AssertionError(f'{message}: locker exited {child.returncode}: {text(log)[-2000:]}')
+            if time.monotonic() > deadline:
+                raise AssertionError(f'Timed out: {message}: {text(log)[-2000:]}')
+            time.sleep(0.25)
+
+    (EVIDENCE / 'config-x11.toml').write_text('locale = "en-US"\npam_service = "decklock-vm-test"\nbackground_pool = []\nidle_pool = []\nidle_enabled = false\n')
+    xclient = spawn(['decklock', '--lock', '--config', str(EVIDENCE / 'config-x11.toml')], 'lock-x11.log', full_env=x11_env)
+    x11_wait(keyboard_grabbed, 'X11 locker holds its grabs', 'lock-x11.log', child=xclient)
+
+    # 1. Real PAM denial on X11
+    submit_x11('wrong-fixture-password')
+    until(lambda: any(x.startswith('Authentication failed') for x in statuses()),
+          'real PAM denial displayed on X11', seconds=35, child=xclient)
+    assert xclient.poll() is None, 'Wrong password exited X11 locker'
+    record('wrong password denied by real PAM under X11 backend')
+
+    # 2. Real PAM authorization and unlock on X11
+    submit_x11('DeckLock-test-42')
+    until(lambda: xclient.poll() is not None, 'correct password unlocks and exits under X11', seconds=35)
+    assert xclient.returncode == 0, text('lock-x11.log')[-3000:]
+    record('correct password passes real PAM and unlocks X11 session')
+
+    # 3. SIGTERM on X11 releases the session (asserting the reduced guarantee)
+    xclient2 = spawn(['decklock', '--lock', '--config', str(EVIDENCE / 'config-x11.toml')], 'lock-x11-sigterm.log', full_env=x11_env)
+    x11_wait(keyboard_grabbed, 'second X11 locker holds its grabs', 'lock-x11-sigterm.log', child=xclient2)
+    xclient2.send_signal(signal.SIGTERM)
+    assert xclient2.wait(timeout=10 * SLOW) == -signal.SIGTERM
+    x11_wait(keyboard_grabbed, 'grabs released once the X11 locker is killed', 'lock-x11-sigterm.log',
+             grabbed=False, seconds=5)
+    record('SIGTERM under X11 releases the session as Guarantees declares')
+
+    xvfb.terminate()
+    try:
+        xvfb.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        xvfb.kill()
+        xvfb.wait()
+    if xvfb in processes:
+        processes.remove(xvfb)
 finally:
     for child in reversed(processes):
         if child.poll() is None:
