@@ -478,6 +478,37 @@ fn scan(content: &str) -> Vec<Command> {
     found
 }
 
+/// Find a real general block's closing line, ignoring shell value braces and comments.
+fn general_end(content: &str) -> Result<Option<usize>, String> {
+    let mut blocks = Vec::new();
+    let mut offset = 0;
+    for text in content.split_inclusive('\n') {
+        let code = strip_comment(text);
+        let opening = code
+            .find('{')
+            .filter(|open| code.find('=').is_none_or(|eq| *open < eq));
+        if let Some(open) = opening {
+            blocks.push(code[..open].trim());
+        }
+        let standalone_close = code.trim() == "}";
+        if standalone_close || (opening.is_some() && code.trim_end().ends_with('}')) {
+            if blocks.last() == Some(&"general") {
+                return Ok(Some(if standalone_close {
+                    offset
+                } else {
+                    offset + code.rfind('}').unwrap()
+                }));
+            }
+            blocks.pop();
+        }
+        offset += text.len();
+    }
+    if blocks.contains(&"general") {
+        return Err("hypridle general block is not closed; configuration was not changed".into());
+    }
+    Ok(None)
+}
+
 pub fn setup_lock(target: Option<&Path>, dry_run: bool) -> Result<String, String> {
     setup_lock_with(target, dry_run, false)
 }
@@ -508,6 +539,9 @@ pub fn setup_lock_with(
             .find(|command| command.key == "lock_cmd")
             .map(value_of);
         let has_lock_cmd = lock_cmd.is_some();
+        let has_before_sleep = commands
+            .iter()
+            .any(|command| command.key == "before_sleep_cmd");
 
         let mut updated_lines: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
         let mut changed = Vec::new();
@@ -566,19 +600,20 @@ pub fn setup_lock_with(
         }
         let updated = if has_lock_cmd {
             edited
-        } else if let Some(start) = edited.find("general {") {
-            let close = edited[start..]
-                .find('}')
-                .map(|offset| start + offset)
-                .ok_or_else(|| "hypridle general block is not closed".to_string())?;
-            let before_sleep = if edited.contains("before_sleep_cmd") {
+        } else if let Some(close) = general_end(&edited)? {
+            let before_sleep = if has_before_sleep {
                 String::new()
             } else {
                 "    before_sleep_cmd = decklock --lock\n".to_string()
             };
+            let separator = if edited[..close].ends_with('\n') {
+                ""
+            } else {
+                "\n"
+            };
             edited.insert_str(
                 close,
-                &format!("    lock_cmd = decklock --lock\n{before_sleep}"),
+                &format!("{separator}    lock_cmd = decklock --lock\n{before_sleep}"),
             );
             edited
         } else {
@@ -590,7 +625,7 @@ pub fn setup_lock_with(
                      after_sleep_cmd = hyprctl dispatch dpms on\n\
                      inhibit_sleep = 3\n\
                  }}\n\n{}",
-                content
+                edited
             )
         };
         if updated == content {
@@ -626,25 +661,48 @@ pub fn setup_lock_with(
         ));
     }
 
+    let mut backup = None;
     if was_existing {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs();
+            .as_nanos();
         let backup_path = target_path.with_extension(format!("conf.bak.{timestamp}"));
-        let _ = fs::copy(&target_path, &backup_path);
+        fs::copy(&target_path, &backup_path).map_err(|e| {
+            format!(
+                "Failed to backup {} to {}: {e}; configuration was not changed",
+                target_path.display(),
+                backup_path.display()
+            )
+        })?;
+        backup = Some(backup_path);
     } else if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directory {}: {e}", parent.display()))?;
     }
 
-    fs::write(&target_path, content_to_write)
-        .map_err(|e| format!("Failed to write {}: {e}", target_path.display()))?;
+    let parent = target_path
+        .parent()
+        .ok_or("hypridle configuration has no parent")?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| format!("Failed to create temporary hypridle configuration: {e}"))?;
+    use std::io::Write;
+    temporary
+        .write_all(content_to_write.as_bytes())
+        .map_err(|e| format!("Failed to write temporary hypridle configuration: {e}"))?;
+    crate::config::keep_mode(&temporary, &target_path, Some(0o644))
+        .map_err(|e| format!("Failed to preserve mode of {}: {e}", target_path.display()))?;
+    temporary
+        .persist(&target_path)
+        .map_err(|e| format!("Failed to replace {}: {e}", target_path.display()))?;
 
     let mut report = format!(
         "Successfully configured hypridle at {}",
         target_path.display()
     );
+    if let Some(backup) = backup {
+        report.push_str(&format!("\n  backup: {}", backup.display()));
+    }
     if !notes.is_empty() {
         report.push('\n');
         report.push_str(notes.trim_end());
