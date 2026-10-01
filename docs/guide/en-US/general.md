@@ -42,6 +42,20 @@ Rest is DeckLock's own inactivity mode after the locker has started. It does not
 
 The Rest tab previews this state. Choose its own pool and slideshow interval, keep the normal background while hiding controls, or disable rest entirely. The rest clock is configurable. Activity restores the normal interface.
 
+## Login, locking and interface size
+
+With greetd, Cage and hypridle installed, `sudo decklock setup all` configures login and locking in one command. The lock configuration and backups belong to the invoking sudo user, under ~/.config/hypr/hypridle.conf; use --lock-target for another location. --dry-run reviews both configurations without writing. Setup preserves unrelated options and does not restart services; login changes take effect at the next logout or boot.
+
+On a Steam Deck OLED with Hyprland 0.55 or newer, use:
+
+```sh
+sudo decklock setup all --compositor hyprland --output eDP-1 --transform 3
+```
+
+Rotation depends on your hardware. The greeter uses greetd's service account and private storage under /var/lib/decklock-greeter, or /var/lib/greetd/decklock with SELinux. HOME=/ does not require creating /.config/midias. Existing photos, videos and pools are still read when accessible. Personal media is not shared automatically: login configuration must point to files readable by its service account.
+
+Login, lock and preview controls automatically shrink to fit logical viewports smaller than 1280×800. At desktop scale 1.6 on the Deck, the 800×500 logical viewport uses factor 0.625, matching the scale-1 login size. Desktop zoom stays unchanged; the background fills the surface and keyboard coordinates follow the controls. Larger viewports do not enlarge the interface. Existing themes and layout options remain valid.
+
 ## Attempts and account lockout
 
 Linux systems usually count authentication failures and lock the account for a while. That is PAM policy, not DeckLock's, and it applies to console logins just the same.

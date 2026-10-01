@@ -76,8 +76,41 @@ session_command.write_text(
 )
 session_command.chmod(0o755)
 
+# Exercise the combined command with sudo's root HOME and a fixed guest user.
+# The locker file, its directories and backups must remain writable by that user.
+caller = pwd.getpwnam('locktest')
+lock_dir = Path(caller.pw_dir) / '.config/hypr'
+lock_dir.mkdir(parents=True, exist_ok=True)
+lock_file = lock_dir / 'hypridle.conf'
+lock_file.write_text('general { lock_cmd = swaylock }\n')
+for path in [lock_dir.parent, lock_dir, lock_file]:
+    os.chown(path, caller.pw_uid, caller.pw_gid)
+lock_file.chmod(0o600)
+root_config = WORK / 'root-config'
+setup_env = dict(os.environ, HOME='/root', XDG_CONFIG_HOME=str(root_config),
+                 SUDO_UID=str(caller.pw_uid), SUDO_GID=str(caller.pw_gid), SUDO_USER='locktest')
+saved_lock = lock_file.read_bytes()
+saved_greetd = config.read_bytes() if config.exists() else None
+run(['decklock', 'setup', 'all', '--dry-run'], env=setup_env)
+assert lock_file.read_bytes() == saved_lock
+assert (config.read_bytes() if config.exists() else None) == saved_greetd
+assert not root_config.exists(), 'Combined dry-run touched root configuration'
+run(['decklock', 'setup', 'all'], env=setup_env)
+assert 'lock_cmd = decklock --lock' in lock_file.read_text()
+assert lock_file.stat().st_uid == caller.pw_uid
+assert lock_file.stat().st_gid == caller.pw_gid
+assert lock_file.stat().st_mode & 0o777 == 0o600
+backups = list(lock_dir.glob('hypridle.conf.bak.*'))
+assert backups and all(p.stat().st_uid == caller.pw_uid for p in backups)
+assert backups[0].read_bytes() == saved_lock
+assert not root_config.exists(), 'Combined setup wrote the locker to root configuration'
+after_lock = lock_file.read_bytes()
+run(['decklock', 'setup', 'all'], env=setup_env)
+assert lock_file.read_bytes() == after_lock
+assert list(lock_dir.glob('hypridle.conf.bak.*')) == backups
+record('combined packaged setup uses the sudo caller HOME, ownership, mode and backups; dry-run and repeat preserve files')
+
 # Inspect the actual setup output before adding guest-only headless variables.
-run(['decklock', 'setup', 'greeter'])
 document = tomllib.loads(config.read_text())
 assert document['default_session']['user'] == greeter_name
 original = document['default_session']['command']

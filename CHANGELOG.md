@@ -2,6 +2,23 @@
 
 User-facing changes are reviewed in pull requests. Dates are assigned when a release is approved. Packaging-only rebuilds use Arch pkgrel and a separate -rN tag; published assets are never replaced.
 
+## [Unreleased]
+
+### Fixed
+
+- Greeter startup with service-account `HOME=/` no longer fails while trying to create optional personal media directories. Existing readable media and packaged fallback backgrounds remain available; lock/preview report optional directory failures as warnings.
+- Login setup prepares private storage owned by the configured greetd account, checks ancestor access and preserves enforcing SELinux labels before changing its login command. Cage fullscreen is requested after the initial surface frame.
+- Hyprland login setup supports the Steam Deck OLED panel/touch rotation through verified Lua configuration, preserves an existing Hyprland greeter on repeat and keeps backups.
+- X11 stacking recovery runs independently of GTK frame processing while retaining GTK input grabs and authentication; the isolated VM display also keeps its server generation across client disconnects.
+- Lock setup preserves shell expressions and unrelated hypridle settings, migrates known lockers and keeps custom wrappers unless explicitly replaced.
+- `setup all` accepts the same login compositor/rotation options and configures the sudo caller's hypridle as that user, preserving file ownership, permissions and backups. It validates both configurations before writes and reports completed lock changes if login setup fails later.
+- Lock, login and preview controls automatically fit logical viewports below 1280×800. At scale 1.6 on a Steam Deck, they match the size of the scale-1 login; media stays fullscreen and keyboard hit testing follows the scaled controls.
+
+### Compatibility and limitations
+
+- Desktop zoom and existing theme/layout configuration remain unchanged. The greeter has its own configuration; personal media must be explicitly made readable to its service account.
+- Controlled GTK and packaged VM checks do not establish physical touchscreen/controller ergonomics, every compositor or real GPU behavior on a Steam Deck.
+
 ## [0.3.2] - 2026-09-24
 
 ### Added

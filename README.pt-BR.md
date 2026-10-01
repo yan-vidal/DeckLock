@@ -263,13 +263,21 @@ carregá-lo. O preview ao vivo da interface acompanha os controles não salvos d
 
 ## Automação de login e bloqueio de tela (`decklock setup`)
 
-O DeckLock pode atuar como greeter de login do `greetd` e bloqueador de sessão do compositor (`hypridle`), com a mesma interface e teclado virtual. O greeter roda na conta separada `greeter` e, por padrão, lê a configuração dessa conta. Para compartilhar um tema, coloque a configuração e as mídias num local legível por `greeter` e acrescente `--config /caminho/para/config-compartilhada.toml` ao comando do greetd. `--greeter` sem socket do greetd é uma prévia segura: não faz login nem executa ações de energia.
+O DeckLock pode atuar como greeter de login do `greetd` e bloqueador de sessão do compositor (`hypridle`), com a mesma interface e teclado virtual. O greeter roda na conta de serviço configurada no greetd (`greeter` no Arch, `greetd` no Fedora), com configuração separada. Para compartilhar um tema, coloque a configuração e as mídias num local legível por essa conta e acrescente `--config /caminho/para/config-compartilhada.toml` ao comando do greetd. `--greeter` sem socket do greetd é uma prévia segura: não faz login nem executa ações de energia.
 
 Inspecione o estado atual de integração do sistema:
 
 ```sh
 decklock setup status
 ```
+
+Configure login e bloqueio do usuário com um comando (greetd, Cage e hypridle precisam estar instalados):
+
+```sh
+sudo decklock setup all
+```
+
+Com `sudo`, a configuração do bloqueio e seus backups são gravados como o usuário que invocou o comando em `~/.config/hypr/hypridle.conf`, preservando dono e modo. Use `--lock-target` para um caminho XDG personalizado. As duas configurações são revisadas antes das gravações; se o setup do login falhar depois, o erro informa as mudanças e backups já feitos no bloqueio. Serviços não são reiniciados. Revise antes com `sudo decklock setup all --dry-run`.
 
 Configure o `greetd` para iniciar o greeter do DeckLock dentro do compositor quiosque `cage` (teclado virtual ativado por padrão):
 
@@ -296,6 +304,8 @@ do greetd. `--target` só altera o arquivo indicado, exceto quando também receb
 usuário; falhas nas pastas opcionais de mídia do preview/bloqueio viram avisos com
 o caminho que falhou.
 
+Uma conta de serviço com `HOME=/` não precisa de `/.config/midias`. Mídias existentes e legíveis, vídeos em repetição, apresentações de fotos e pools de repouso continuam funcionando. Suas mídias pessoais não são copiadas automaticamente para o login; uma configuração compartilhada precisa apontar para arquivos legíveis pela conta de serviço, fora de uma HOME privada.
+
 Em sistemas com SELinux, o setup usa o caminho da política existente do gerenciador de login, executa `restorecon` e exige o tipo `xdm_var_lib_t` no armazenamento antes de mudar o greetd. Um `--state-dir` customizado precisa desse mapeamento permanente de contexto. A proteção continua ativa. A tela cheia é solicitada após o primeiro frame da superfície, para versões antigas do Cage/wlroots inicializarem a janela de login.
 
 A tela de login sempre abre em tela cheia e sem decoração. Sem uma escolha salva,
@@ -307,8 +317,8 @@ Para um Steam Deck OLED com Arch e Hyprland 0.55 ou mais novo instalado, configu
 a rotação do painel e do toque juntos usando o compositor de login em Lua:
 
 ```sh
-sudo decklock setup greeter --compositor hyprland --output eDP-1 --transform 3 --dry-run
-sudo decklock setup greeter --compositor hyprland --output eDP-1 --transform 3
+sudo decklock setup all --compositor hyprland --output eDP-1 --transform 3 --dry-run
+sudo decklock setup all --compositor hyprland --output eDP-1 --transform 3
 ```
 
 Use a transformação correspondente ao seu hardware; essa é a orientação do OLED.
@@ -323,6 +333,8 @@ ainda exigem validação no hardware.
 As mudanças valem no próximo logout ou boot. Guarde o backup e tenha uma TTY
 funcional para recuperação; não reinicie o greetd pela sessão de desktop que ele
 iniciou. Para testar bloqueio, instale o pacote candidato com seu arquivo PAM.
+
+Os controles se adaptam automaticamente quando a área lógica é menor que 1280×800, no bloqueio, login e preview. No Steam Deck de 1280×800 com zoom de 160% (800×500 lógicos), a interface reduz por um fator de 0,625 para ficar do tamanho do login em escala 1. O zoom do desktop permanece; mídias e gradiente continuam ocupando toda a tela. O toque no teclado acompanha a transformação. Áreas maiores mantêm o tamanho atual, e temas e opções de layout existentes continuam válidos.
 
 ## Teclado e energia
 

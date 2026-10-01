@@ -13,6 +13,8 @@ use std::{
 };
 use zeroize::Zeroizing;
 
+mod adaptive;
+
 pub struct Settings {
     pub config: Config,
     pub theme: Theme,
@@ -902,11 +904,11 @@ fn build_in(
         window.set_title(Some("DeckLock"));
         window.set_decorated(false);
     }
-    let overlay = gtk::Overlay::new();
-    window.set_child(Some(&overlay));
+    let background_overlay = gtk::Overlay::new();
+    window.set_child(Some(&background_overlay));
     let background = gtk::Box::new(gtk::Orientation::Vertical, 0);
     background.set_widget_name("background");
-    overlay.set_child(Some(&background));
+    background_overlay.set_child(Some(&background));
     let stream = Rc::new(RefCell::new(None));
     let bindings = Rc::new(Bindings {
         window: window.downgrade(),
@@ -939,7 +941,10 @@ fn build_in(
         }));
     let veil = gtk::Box::new(gtk::Orientation::Vertical, 0);
     veil.set_widget_name("veil");
-    overlay.add_overlay(&veil);
+    background_overlay.add_overlay(&veil);
+    let overlay = gtk::Overlay::new();
+    overlay.set_child(Some(&gtk::Box::new(gtk::Orientation::Vertical, 0)));
+    background_overlay.add_overlay(&adaptive::Adaptive::new(&overlay));
     // Separate overlays preserve the Python geometry: the veil fills the
     // monitor, power stays in the upper-right corner, and the keyboard reserves
     // its own bottom strip without moving the background or its gradient.

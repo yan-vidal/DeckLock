@@ -56,6 +56,74 @@ impl Cli {
     }
 }
 #[test]
+fn setup_all_configures_both_targets_and_preserves_them_on_invalid_options() {
+    let cli = Cli::new();
+    let greetd = cli.home.path().join("greetd.toml");
+    let lock = cli.home.path().join("hypridle.conf");
+    let original = "general { lock_cmd = swaylock }\n";
+    std::fs::write(&lock, original).unwrap();
+    let args = [
+        "setup",
+        "all",
+        "--greeter-target",
+        greetd.to_str().unwrap(),
+        "--lock-target",
+        lock.to_str().unwrap(),
+    ];
+    let mut dry = args.to_vec();
+    dry.push("--dry-run");
+    let output = cli.run(&dry, true);
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("decklock --greeter"), "{text}");
+    assert!(text.contains("decklock --lock"), "{text}");
+    assert!(!greetd.exists());
+    assert_eq!(std::fs::read_to_string(&lock).unwrap(), original);
+    let mut rotated = dry.clone();
+    rotated.extend([
+        "--compositor",
+        "hyprland",
+        "--output",
+        "eDP-1",
+        "--transform",
+        "3",
+        "--no-keyboard",
+    ]);
+    let output = cli.run(&rotated, true);
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("transform = 3"), "{text}");
+    assert!(text.contains("touchdevice"), "{text}");
+    assert!(text.contains("decklock --greeter;"), "{text}");
+    assert!(!greetd.exists());
+    assert_eq!(std::fs::read_to_string(&lock).unwrap(), original);
+    let mut invalid = args.to_vec();
+    invalid.extend([
+        "--compositor",
+        "cage",
+        "--output",
+        "eDP-1",
+        "--transform",
+        "3",
+    ]);
+    cli.run(&invalid, false);
+    assert!(!greetd.exists());
+    assert_eq!(std::fs::read_to_string(&lock).unwrap(), original);
+    cli.run(&args, true);
+    assert!(
+        std::fs::read_to_string(&greetd)
+            .unwrap()
+            .contains("decklock --greeter")
+    );
+    assert!(
+        std::fs::read_to_string(&lock)
+            .unwrap()
+            .contains("decklock --lock")
+    );
+    let after = std::fs::read_to_string(&lock).unwrap();
+    cli.run(&args, true);
+    assert_eq!(std::fs::read_to_string(&lock).unwrap(), after);
+}
+
+#[test]
 fn help_and_read_commands_never_open_a_display_or_write_configuration() {
     let cli = Cli::new();
     for args in [

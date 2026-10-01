@@ -262,13 +262,21 @@ The visual editor's live preview follows that editor's unsaved controls.
 
 ## Login and screen lock automation (`decklock setup`)
 
-DeckLock can serve as a greetd login greeter and compositor screen locker (`hypridle`) with the same UI and on-screen keyboard. The greeter runs as the separate `greeter` account, so it reads that account's configuration by default. To use a shared theme, put its configuration and media in a location readable by `greeter` and add `--config /path/to/shared-config.toml` to greetd's command. `--greeter` without a greetd socket is a safe preview: it cannot log in or run power actions.
+DeckLock can serve as a greetd login greeter and compositor screen locker (`hypridle`) with the same UI and on-screen keyboard. The greeter runs as the configured greetd service account (`greeter` on Arch, `greetd` on Fedora), with separate configuration. To use a shared theme, put its configuration and media in a location readable by that account and add `--config /path/to/shared-config.toml` to greetd's command. `--greeter` without a greetd socket is a safe preview: it cannot log in or run power actions.
 
 Inspect your system's current integration:
 
 ```sh
 decklock setup status
 ```
+
+Configure both login and the invoking user's `hypridle` with one command (greetd, Cage and hypridle must already be installed):
+
+```sh
+sudo decklock setup all
+```
+
+Under `sudo`, the lock configuration and backups are written as the invoking user in their `~/.config/hypr/hypridle.conf`, preserving ownership and mode. Use `--lock-target` for a custom XDG location. Both configurations are reviewed before writes; if login setup subsequently fails, the error reports the completed lock changes and backups. Setup does not restart services. Run `sudo decklock setup all --dry-run` to review first.
 
 Configure `greetd` to launch DeckLock greeter inside the `cage` kiosk compositor (virtual keyboard enabled by default):
 
@@ -292,7 +300,7 @@ preserves the packaged `default_session.user` (`greeter` on Arch, `greetd` on Fe
 storage, ancestor-access or ownership failure leaves the existing greetd command intact. With
 `--target`, only that target is written unless `--state-dir` is also supplied.
 Dry runs create nothing. The greeter reads media without creating user folders;
-optional media-folder errors in preview/lock mode are warnings that name the path.
+optional media-folder errors in preview/lock mode are warnings that name the path. A service account with `HOME=/` does not need `/.config/midias`. Existing readable media, video looping, photo slideshows and rest pools keep working. Personal media is not copied to login automatically; a shared configuration needs files readable by the service account, outside a private user HOME.
 
 On SELinux systems, greeter setup uses the existing display-manager policy path, runs `restorecon`, and requires `xdm_var_lib_t` on the storage directory before changing greetd. Custom `--state-dir` paths need that permanent file-context mapping. Enforcement stays enabled. Fullscreen is requested after the initial surface frame so older Cage/wlroots versions can initialize the login window.
 
@@ -305,8 +313,8 @@ For an Arch Steam Deck OLED with Hyprland 0.55 or newer installed, configure the
 panel and touchscreen together using the Lua greeter compositor:
 
 ```sh
-sudo decklock setup greeter --compositor hyprland --output eDP-1 --transform 3 --dry-run
-sudo decklock setup greeter --compositor hyprland --output eDP-1 --transform 3
+sudo decklock setup all --compositor hyprland --output eDP-1 --transform 3 --dry-run
+sudo decklock setup all --compositor hyprland --output eDP-1 --transform 3
 ```
 
 Use the transform appropriate to your hardware; this is the OLED orientation.
@@ -321,6 +329,8 @@ GPU behavior and an actual Hyprland login still need hardware validation.
 Changes take effect at the next logout or boot. Keep the printed backup and a
 working TTY available for recovery; do not restart greetd from its live desktop
 session. Install the packaged candidate with its PAM file for lock testing.
+
+Controls automatically fit logical viewports smaller than 1280×800, in lock, login and preview. On a 1280×800 Steam Deck at desktop scale 1.6 (800×500 logical), they shrink by 0.625 to match the scale-1 login size. Desktop zoom stays unchanged; media and its gradient still fill the surface. Keyboard hit testing follows the same transform. Larger viewports retain their current control size, and existing theme/layout options remain valid.
 
 ## Keyboard and power controls
 

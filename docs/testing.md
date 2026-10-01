@@ -66,6 +66,8 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | CLI executable | `tests/cli_contract.rs`, `src/main.rs` parser regression | Help without a display, alternate paths before/after subcommands, option round trips, invalid-write protection, import/reset |
 | Configuration | `src/config.rs`, `src/config_cli.rs` | Schema/ranges, path resolution, defaults, preservation and atomic saves |
 | Controller protocol | `src/controller.rs`, shortcut mock | Fragmented lines, no unsolicited capture, capture/release and no separate OSK |
+| Adaptive foreground | `examples/preview_check.rs` | Fixed 1280×800 and 800×500 allocations, proportional controls, fullscreen media, transformed keyboard picking/clicks and destroyed-widget cleanup on a private display |
+| Combined setup | `tests/cli_contract.rs`, `scripts/vm/greeter.py` | Real CLI dry-run, option forwarding, invalid-input preservation and repeat; packaged VM checks sudo caller HOME, file/backup ownership and permissions instead of root configuration |
 | Keyboard | `src/keyboard.rs`, `examples/preview_check.rs` | Shift/Caps/Alt, Unicode/dead keys, ghost opacity and pad release |
 | GTK settings | `examples/settings_check.rs`, `settings_live_check.rs` | Theme contrast providers, language, preview identity, idle clock, draft errors/persistence, cleanup |
 | Media | `src/library.rs`, invariants, `media_check`, `video_live_check` | Seeded photo/video selection, imports without overwrites, viewer reuse, video retained on palette changes |

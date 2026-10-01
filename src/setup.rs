@@ -55,6 +55,30 @@ pub enum Action {
     },
     /// Configure both greetd login and hypridle screen lock.
     All {
+        /// Alternative greetd destination (isolated/custom configuration).
+        #[arg(long)]
+        greeter_target: Option<PathBuf>,
+        /// Alternative hypridle destination; otherwise uses the invoking user's config.
+        #[arg(long)]
+        lock_target: Option<PathBuf>,
+        /// Disable the virtual keyboard in the greeter.
+        #[arg(long)]
+        no_keyboard: bool,
+        /// Private greeter storage directory.
+        #[arg(long)]
+        state_dir: Option<PathBuf>,
+        /// Login compositor; preserves an existing Hyprland greeter when omitted.
+        #[arg(long, value_enum)]
+        compositor: Option<GreeterCompositor>,
+        /// Hyprland output to rotate (Steam Deck: eDP-1).
+        #[arg(long, requires = "compositor")]
+        output: Option<String>,
+        /// Output/input transform, 0..7 (Steam Deck OLED: 3).
+        #[arg(long, value_parser = clap::value_parser!(u8).range(0..=7), requires = "output")]
+        transform: Option<u8>,
+        /// Also replace custom screen-lock wrappers.
+        #[arg(long)]
+        replace_custom: bool,
         /// Dry-run mode: show what would be written without modifying files.
         #[arg(long)]
         dry_run: bool,
@@ -1103,6 +1127,109 @@ fn save_greeter_lua(path: &Path, content: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Root configures greetd, but hypridle belongs to the user who invoked sudo.
+/// Re-execute just the lock setup without root privileges so newly created
+/// directories, atomic replacements and backups all retain user ownership.
+fn setup_invoking_user_lock(
+    target: Option<&Path>,
+    dry_run: bool,
+    replace_custom: bool,
+) -> Result<String, String> {
+    if unsafe { libc::geteuid() } != 0 {
+        return setup_lock_with(target, dry_run, replace_custom);
+    }
+    let Some(uid) = std::env::var("SUDO_UID")
+        .ok()
+        .and_then(|uid| uid.parse::<u32>().ok())
+        .filter(|uid| *uid != 0)
+    else {
+        if target.is_some() {
+            return setup_lock_with(target, dry_run, replace_custom);
+        }
+        return Err("Run setup all through sudo from your desktop account, or specify --lock-target; root's HOME is not a desktop configuration".into());
+    };
+    let mut account: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut buffer = vec![0_u8; 65536];
+    let mut result = std::ptr::null_mut();
+    // getpwuid_r owns no global state; returned strings live in buffer until
+    // copied below. The fixed buffer fails clearly for oversized NSS records.
+    let code = unsafe {
+        libc::getpwuid_r(
+            uid,
+            &mut account,
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+            &mut result,
+        )
+    };
+    if code != 0 || result.is_null() || account.pw_dir.is_null() {
+        return Err(format!(
+            "Cannot resolve sudo caller UID {uid}; no configuration was changed"
+        ));
+    }
+    use std::os::unix::ffi::OsStrExt;
+    let home = PathBuf::from(std::ffi::OsStr::from_bytes(unsafe {
+        std::ffi::CStr::from_ptr(account.pw_dir).to_bytes()
+    }));
+    if !home.is_absolute() || home == Path::new("/") {
+        return Err("The sudo caller needs an absolute desktop HOME".into());
+    }
+    let destination = target
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".config/hypr/hypridle.conf"));
+    let log = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    let output = log.reopen().map_err(|e| e.to_string())?;
+    let mut command = ProcessCommand::new("setpriv");
+    command
+        .args([
+            "--reuid",
+            &uid.to_string(),
+            "--regid",
+            &account.pw_gid.to_string(),
+            "--init-groups",
+            "--",
+        ])
+        .arg(std::env::current_exe().map_err(|e| e.to_string())?)
+        .args(["setup", "lock", "--target"])
+        .arg(&destination)
+        .env("HOME", &home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env_remove("WAYLAND_DISPLAY")
+        .env_remove("WAYLAND_SOCKET")
+        .env_remove("DISPLAY")
+        .stdin(std::process::Stdio::null())
+        .stdout(output.try_clone().map_err(|e| e.to_string())?)
+        .stderr(output);
+    if dry_run {
+        command.arg("--dry-run");
+    }
+    if replace_custom {
+        command.arg("--replace-custom");
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Cannot configure the sudo caller's screen lock with setpriv: {e}"))?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Screen-lock setup timed out; greetd was not changed".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let text = fs::read_to_string(log.path()).map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!(
+            "Screen-lock setup failed; greetd was not changed:\n{text}"
+        ));
+    }
+    Ok(text.trim_end().to_string())
+}
+
 pub fn execute(action: Option<Action>) -> Result<String, String> {
     match action.unwrap_or(Action::Status) {
         Action::Status => {
@@ -1132,10 +1259,46 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
             replace_custom,
         } => setup_lock_with(target.as_deref(), dry_run, replace_custom),
 
-        Action::All { dry_run } => {
-            let greeter_res =
-                setup_greeter_with_storage(None, false, None, dry_run, None, None, None)?;
-            let lock_res = setup_lock(None, dry_run)?;
+        Action::All {
+            greeter_target,
+            lock_target,
+            no_keyboard,
+            state_dir,
+            compositor,
+            output,
+            transform,
+            replace_custom,
+            dry_run,
+        } => {
+            // Validate both configurations before writing either. Configure the
+            // user's lock first so a failure cannot replace their working login.
+            let greeter_review = setup_greeter_with_storage(
+                greeter_target.as_deref(),
+                no_keyboard,
+                state_dir.clone(),
+                true,
+                compositor,
+                output.as_deref(),
+                transform,
+            )?;
+            let lock_review =
+                setup_invoking_user_lock(lock_target.as_deref(), true, replace_custom)?;
+            if dry_run {
+                return Ok(format!("{greeter_review}\n{lock_review}"));
+            }
+            let lock_res = setup_invoking_user_lock(lock_target.as_deref(), false, replace_custom)?;
+            let greeter_res = setup_greeter_with_storage(
+                greeter_target.as_deref(),
+                no_keyboard,
+                state_dir,
+                false,
+                compositor,
+                output.as_deref(),
+                transform,
+            )
+            .map_err(|error| {
+                format!("{error}\nScreen-lock setup already completed:\n{lock_res}")
+            })?;
             Ok(format!("{greeter_res}\n{lock_res}"))
         }
     }
