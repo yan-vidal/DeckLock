@@ -141,7 +141,10 @@ impl Config {
         let root = config_home.join("midias");
         for mode in ["bloqueio", "ocioso"] {
             for kind in ["fotos", "videos"] {
-                std::fs::create_dir_all(root.join(mode).join(kind)).map_err(|e| e.to_string())?;
+                let path = root.join(mode).join(kind);
+                std::fs::create_dir_all(&path).map_err(|e| {
+                    format!("Failed to prepare media directory {}: {e}", path.display())
+                })?;
             }
         }
         if self.background.is_none() && theme_background.is_none() {

@@ -223,9 +223,25 @@ fn main() {
         greeter: true,
     });
     let greeter_view = ui::build(&app, greeter_settings, Rc::new(|_| {}));
+    assert!(
+        !greeter_view.window.is_fullscreen(),
+        "Login fullscreen must wait for its initial surface frame"
+    );
     greeter_view.window.present();
-    while glib::MainContext::default().iteration(false) {}
+    let fullscreen_deadline = Instant::now() + Duration::from_secs(2);
+    while !greeter_view.window.is_fullscreen() && Instant::now() < fullscreen_deadline {
+        while glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(Duration::from_millis(5));
+    }
     assert!(greeter_view.window.title().unwrap().contains("Login"));
+    assert!(
+        !greeter_view.window.is_decorated(),
+        "Login must never show a close button"
+    );
+    assert!(
+        greeter_view.window.is_fullscreen(),
+        "Login must request fullscreen"
+    );
     let greeter_power = descendants(greeter_view.window.upcast_ref())
         .into_iter()
         .find(|w| w.widget_name() == "power")

@@ -330,3 +330,47 @@ package, which has its own (emulated) VM gate in the checks the release reruns.
 Fedora arm64 stays unpublished until it has a VM target: its Cloud image could
 not be pinned from the agent's environment. The user approved publishing on 2026-09-24;
 the changelog carries that date and `v0.3.2` is tagged after merge.
+
+2026-09-30 installation hardening (PRs #48 and #51): existing lock commands are
+classified without overwriting custom process guards or misreading shell parameter
+braces. Greeter startup no longer creates optional media folders; system setup
+prepares greeter-owned config/cache/data/state before replacing greetd's command.
+The login window requests fullscreen without decorations. Hyprland greeter setup
+can generate verified Lua with matching panel/touch transforms, preserves an
+existing Hyprland command on repeat, and never restarts the running greetd.
+The packaged VM fixture now uses HOME=/, checks actual directory ownership and
+starts the exact generated command. The required DeckLock checks aggregator waits
+for every existing isolated, package and VM gate. Local/CI evidence and hardware
+limits are recorded in docs/testing.md and the PR descriptions; do not infer a
+new package release or Steam Deck GPU/touch UAT from these source changes.
+
+Greeter compatibility corrections: fullscreen waits for the initial surface frame
+to avoid older Cage/wlroots initialization assertions. The isolated GTK gate uses
+a private window manager to assert its acknowledgement. On SELinux systems setup
+uses /var/lib/greetd/decklock, restores and verifies the existing xdm_var_lib_t
+context before changing greetd, without disabling enforcement. Fedora VM checks
+the storage context and remembers both fixture accounts. Device UAT remains separate.
+
+Setup preserves the packaged greetd default_session.user and prepares storage for
+that exact account. Fedora uses greetd with a private /var/lib/greetd parent;
+forcing a separate greeter account prevented traversal despite correct leaf
+ownership and SELinux labels. The VM probes writing as the selected account before
+login, while retaining its existing two-account PAM/state assertions.
+
+Before saving system greetd setup, a bounded setpriv (util-linux) probe checks
+read/write/traversal as that account without PAM. The VM asserts a root-only
+ancestor is rejected while preserving the working command.
+
+2026-09-30 merge follow-up: PR #48 passed every required CI job (including the
+Ubuntu ARM VM) and was squash-merged as ba682dd, as required by mainProtect's
+linear-history rule. PR #51 was reconciled without force-push; its tree remained
+identical to 221c0ea. A fresh local full gate then exposed intermittent X11
+stacking recovery (9/20 samples, below the unchanged 12/20 contract). A new
+real-CLI/private-Xvfb regression models slow GTK event processing with a
+main-thread-only preload and confirms the delay ran. The original backend failed
+that regression at 0/20. The observer now owns a separate restacking worker and
+X connection; GDK's server-provided resource range preserves owned popups,
+input/focus/authentication stay on GTK, and the worker stops before unlock.
+The targeted full X11 gate and X11 clippy passed; the new commit still needs the
+complete local suite and required package/VM CI. Native Xlib/XCB build/runtime
+dependencies are explicit. No release, installation or active session changed.

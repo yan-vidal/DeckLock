@@ -48,14 +48,14 @@ jobs:
             ;;
           fedora)
             dnf install -y git rust cargo python3 gcc pkgconf-pkg-config rpm-build shadow-utils \
-              gtk4-devel gtk4-layer-shell-devel gstreamer1-devel gstreamer1-plugins-base-devel \
+              gtk4-devel gtk4-layer-shell-devel libX11-devel libxcb-devel gstreamer1-devel gstreamer1-plugins-base-devel \
               gstreamer1-plugins-good gstreamer1-libav pam-devel
             ;;
           ubuntu)
             export DEBIAN_FRONTEND=noninteractive
             apt-get update
             apt-get install -y git cargo rustc python3 build-essential pkg-config dpkg-dev \
-              libgtk-4-dev libgtk4-layer-shell-dev libgstreamer1.0-dev \
+              libgtk-4-dev libgtk4-layer-shell-dev libx11-xcb-dev libgstreamer1.0-dev \
               libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good gstreamer1.0-libav \
               libpam0g-dev
             ;;

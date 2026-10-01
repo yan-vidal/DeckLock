@@ -885,7 +885,16 @@ fn build_in(
         window.set_application(Some(app));
     }
     window.add_css_class("decklock");
-    if settings.preview || settings.greeter {
+    if settings.greeter {
+        window.set_decorated(false);
+        // Cage/wlroots versions shipped by Ubuntu reject a fullscreen request
+        // before the initial xdg_surface commit. The first frame follows its
+        // initial configure; request fullscreen then, once, without a delay.
+        window.add_tick_callback(|window, _| {
+            window.fullscreen();
+            glib::ControlFlow::Break
+        });
+    } else if settings.preview {
         crate::window_chrome::install(&window);
         window.set_decorated(settings.config.window_decorations);
     }
@@ -1179,7 +1188,7 @@ fn build_in(
             .last_session
             .as_ref()
             .and_then(|s| sessions.iter().position(|entry| &entry.id == s))
-            .unwrap_or(0)
+            .unwrap_or_else(|| crate::greeter::default_session_index(&sessions))
     } else {
         0
     };

@@ -30,6 +30,18 @@ On Arch these are provided by `xorg-server-xvfb`, `xorg-xauth` and `dbus`.
 The X11 lock gate additionally needs `xfwm4` as the window manager, `xset` from
 `xorg-xset`/`x11-xserver-utils`, and the Xtst, Xi and Xss client libraries used by
 its helper. Missing tools fail the gate; none of the required suites silently skip.
+The `x11` build also requires the Xlib/XCB development bridge (`libx11-xcb-dev`
+on Ubuntu, `libX11-devel` and `libxcb-devel` on Fedora, `libx11` and `libxcb` on
+Arch). Package library scans retain those runtime dependencies.
+
+The X11 gate builds a small C fixture with `cc` and preloads it into the real
+locker only, on its private Xvfb. A private marker delays main-thread `XPending`
+calls by 150 ms to model GTK frame work; an assertion confirms the delay actually
+ran. The ordinary intruder/WM stay independent. Both the normal and delayed
+competition require at least 12 of 20 topmost samples, with no relaxed assertions.
+The stacking guard owns a separate worker/connection and is joined before unlock;
+GTK retains input grabs, focus and authentication. Owned popups are identified
+from the GDK client's server-provided resource range, not copied window properties.
 
 The optional `x11` feature is off for a plain local build; distribution package
 jobs build with it enabled. `scripts/check` also lints and builds that feature
@@ -58,13 +70,16 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | GTK settings | `examples/settings_check.rs`, `settings_live_check.rs` | Theme contrast providers, language, preview identity, idle clock, draft errors/persistence, cleanup |
 | Media | `src/library.rs`, invariants, `media_check`, `video_live_check` | Seeded photo/video selection, imports without overwrites, viewer reuse, video retained on palette changes |
 | Lock protocol | `scripts/test-lock-isolated.py` | Ownership, output hotplug/remove/re-add, SIGTERM without unlock, second-lock refusal |
-| X11 lock backend | `scripts/test-lock-x11.py`, `examples/x11_intruder` | Override-redirect window covering the screen, grabs another client cannot take, stacking and focus recovered from an intruding window, blank/wake, refusal when the keyboard cannot be grabbed, and the two gaps X11 leaves |
+| X11 lock backend | `scripts/test-lock-x11.py`, `examples/x11_intruder` | Override-redirect window covering the screen, grabs another client cannot take, stacking and focus recovered from an intruding window, stacking independent of deliberately slow GTK event processing, blank/wake, refusal when the keyboard cannot be grabbed, and the two gaps X11 leaves |
 | Video path on X11 | `examples/x11_video_check.rs`, run by both gates | Frames keep arriving on an X11 display, through the software path without the `x11` feature and the accelerated one with it |
 | Reduced-guarantee notice | `examples/guarantee_check.rs` | Catalog text, silence when a backend keeps its guarantees, and a theme that cannot hide it |
 | Guest provisioning fixture | `scripts/test-vm-fixture.py` | The readiness decision made before a guest is tested, and the cloud-init status recorded with it, checked against a stubbed cloud-init |
 | Greeter IPC and preview | `src/greeter.rs` protocol tests, `examples/preview_check.rs` | Several greetd prompts, denied session start, JSON parsing, no power actions in greeter preview, and activation of an existing greeter |
 | Greeter arrow keys | `examples/greeter_keys_check.rs`, X11 gate | Left/Right from an empty password entry select accounts through GTK's own key dispatch, wrap at both ends, keep entry focus, and still move the cursor while a password is being typed |
 | Greeter setup command | `tests/cli_contract.rs` | The command `setup greeter` writes starts when run as greetd runs it (`sh -c "exec <command>"`), with a fake Cage. Replacing a greetd config keeps its mode (0644 for a file setup creates), and `config set` keeps the mode of the config it replaces, because the atomic write goes through a private temporary file |
+| Greeter state directory and default session | `src/greeter.rs` unit tests, `src/setup.rs` unit tests, `tests/cli_contract.rs` | Under greetd the state file goes to the system directory when it exists (an explicit path and `XDG_STATE_HOME` still win, and outside greetd it is ignored); a uwsm-managed session is preselected over the bare one only when `uwsm` exists; `setup greeter --state-dir` creates the directory with mode 0750, does nothing in a dry run, and a custom `--target` alone creates nothing. The packaged service account is preserved; traversal/writing as that account, rejection of inaccessible ancestors before changing greetd, ownership, HOME=/ startup and the enforcing SELinux display-manager storage label are additionally asserted by the packaged VM gate |
+| Greeter startup and kiosk | `tests/cli_contract.rs`, `examples/preview_check.rs` | Unwritable HOME reaches GTK rather than aborting on media preparation; optional media failures name their path; greeter windows are undecorated; fullscreen is requested after the initial surface frame and acknowledged by a private xfwm4 in the GTK gate |
+| Hyprland greeter setup | `tests/cli_contract.rs` | Generated Lua rotates output and touchscreen, closes the compositor after DeckLock, preserves a working Hyprland command on repeat, refuses invalid rotation and passes custom storage paths through greetd shell quoting. Installed Hyprland Lua parsing is a separate local check; this does not prove GPU or real Hyprland login |
 | Lock setup command | `src/setup.rs` unit tests, `tests/cli_contract.rs` | Editing an existing `hypridle.conf`: exact key matching (`on_lock_cmd` untouched), known lockers replaced in `general` and `listener` blocks, trailing comments kept, custom wrappers and compound commands kept and reported until `--replace-custom` (including shell parameter braces and guards for unrelated processes), listeners that are not the lock command never replaced, inserting missing keys without corrupting shell expressions or losing listener edits, idempotence, atomic replacement preserving file mode, and a failed backup preserving the original. Never touches the real `~/.config`: every case uses `--target` in a temporary directory |
 | Real greetd login | `scripts/vm/greeter.py`, run by each distribution VM | Packaged setup command, greetd as a system service, logind runtime directories for the greeter and user sessions, real greetd and PAM rejection/acceptance, Cage Wayland greeter, chosen session running as the authenticated user, and a second account selected by arrow key |
 | Lock boundary on further compositors | `scripts/vm/compositor.py`, run by each distribution VM for its `EXTRA_COMPOSITORS` (labwc with pixman, Wayfire with software GLES on vgem) | Input reaching an ordinary client before lock, compositor lock confirmation, real PAM denial with no input leak, one protocol unlock, input restored, and a killed locker leaving the compositor locked. PAM policy cases stay on Sway only |

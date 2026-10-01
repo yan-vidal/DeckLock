@@ -218,8 +218,13 @@ fn run(args: Args) -> Result<(), String> {
         );
         return Ok(());
     }
-    if let Some(home) = shortcut::config_dir() {
-        config.prepare_media(&home, theme.background.as_deref())?;
+    // A system greeter reads media; its account may have HOME=/ and no writable
+    // home. Optional user media scaffolding must never prevent login or locking.
+    if !args.greeter
+        && let Some(home) = shortcut::config_dir()
+        && let Err(error) = config.prepare_media(&home, theme.background.as_deref())
+    {
+        eprintln!("Warning: {error}");
     }
     // A locker handles passwords: never include its address space in a core dump.
     let limit = libc::rlimit {

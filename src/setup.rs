@@ -5,11 +5,17 @@ use std::{
     process::Command as ProcessCommand,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum GreeterCompositor {
+    Cage,
+    Hyprland,
+}
+
 #[derive(Debug, Clone, clap::Subcommand)]
 pub enum Action {
     /// Inspect the current system configuration for greetd and screen lock.
     Status,
-    /// Configure /etc/greetd/config.toml to run DeckLock inside cage (requires root/sudo).
+    /// Configure greetd login using Cage or a Hyprland kiosk (requires root/sudo).
     Greeter {
         /// Alternative destination path (for dry-runs or custom configs).
         #[arg(long)]
@@ -17,6 +23,20 @@ pub enum Action {
         /// Do not enable the virtual keyboard by default in greeter mode.
         #[arg(long)]
         no_keyboard: bool,
+        /// Where the greeter remembers the last user and session. Defaults to
+        /// /var/lib/decklock-greeter (/var/lib/greetd/decklock with SELinux).
+        /// It is left alone when --target is given.
+        #[arg(long)]
+        state_dir: Option<PathBuf>,
+        /// Compositor for login. Existing Hyprland greeters are preserved when omitted.
+        #[arg(long, value_enum)]
+        compositor: Option<GreeterCompositor>,
+        /// Output to rotate in the Hyprland greeter (Steam Deck: eDP-1).
+        #[arg(long, requires = "compositor")]
+        output: Option<String>,
+        /// Wayland output/input transform, 0..7 (Steam Deck OLED: 3).
+        #[arg(long, value_parser = clap::value_parser!(u8).range(0..=7), requires = "output")]
+        transform: Option<u8>,
         /// Dry-run mode: show what would be written without modifying files.
         #[arg(long)]
         dry_run: bool,
@@ -216,11 +236,22 @@ pub fn setup_greeter(
     no_keyboard: bool,
     dry_run: bool,
 ) -> Result<String, String> {
+    let keyboard_flag = if no_keyboard { "" } else { " --keyboard" };
+    write_greeter_config(
+        target,
+        &format!("cage -s -- decklock --greeter{keyboard_flag}"),
+        dry_run,
+    )
+}
+
+fn write_greeter_config(
+    target: Option<&Path>,
+    command: &str,
+    dry_run: bool,
+) -> Result<String, String> {
     let target_path = target
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/etc/greetd/config.toml"));
-
-    let keyboard_flag = if no_keyboard { "" } else { " --keyboard" };
     let previous = if target_path.exists() {
         fs::read_to_string(&target_path)
             .map_err(|e| format!("Failed to read {}: {e}", target_path.display()))?
@@ -255,11 +286,13 @@ pub fn setup_greeter(
         .ok_or_else(|| "greetd default_session must be a TOML table".to_string())?;
     // greetd runs this as `sh -c "exec <command>"`, where a leading VAR=value
     // is taken as the program name. pam_systemd supplies XDG_RUNTIME_DIR.
-    session.insert(
-        "command".into(),
-        toml::Value::String(format!("cage -s -- decklock --greeter{keyboard_flag}")),
-    );
-    session.insert("user".into(), toml::Value::String("greeter".into()));
+    session.insert("command".into(), toml::Value::String(command.to_string()));
+    let user = session
+        .entry("user")
+        .or_insert_with(|| toml::Value::String(GREETER_USER.into()));
+    if user.as_str().is_none_or(str::is_empty) {
+        return Err("greetd default_session.user must name a service account; configuration was not changed".into());
+    }
     let content = toml::to_string_pretty(&document)
         .map_err(|e| format!("Failed to serialize greetd configuration: {e}"))?;
 
@@ -271,11 +304,19 @@ pub fn setup_greeter(
         ));
     }
 
+    if previous == content {
+        return Ok(format!(
+            "greetd at {} is already configured",
+            target_path.display()
+        ));
+    }
+
+    let mut backup = None;
     if target_path.exists() {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_secs();
+            .as_nanos();
         let backup_path = target_path.with_extension(format!("toml.bak.{timestamp}"));
         fs::copy(&target_path, &backup_path).map_err(|e| {
             format!(
@@ -283,6 +324,7 @@ pub fn setup_greeter(
                 backup_path.display()
             )
         })?;
+        backup = Some(backup_path);
     }
 
     if let Some(parent) = target_path.parent() {
@@ -308,8 +350,11 @@ pub fn setup_greeter(
         .map_err(|e| format!("Failed to replace {}: {e}", target_path.display()))?;
 
     Ok(format!(
-        "Successfully configured greetd at {}",
-        target_path.display()
+        "Successfully configured greetd at {}{}",
+        target_path.display(),
+        backup
+            .map(|path| format!("\n  backup: {}", path.display()))
+            .unwrap_or_default()
     ))
 }
 
@@ -671,6 +716,393 @@ pub fn setup_lock_with(
     Ok(report)
 }
 
+const GREETER_USER: &str = "greeter";
+
+/// The directory the greeter remembers its choice in: the one asked for, else the
+/// system one, but never for a custom `--target`, which is not the system greetd.
+fn greeter_state_dir(target: Option<&Path>, explicit: Option<PathBuf>) -> Option<PathBuf> {
+    explicit.or_else(|| {
+        target
+            .is_none()
+            .then(|| PathBuf::from(crate::greeter::system_state_dir()))
+    })
+}
+
+/// User and group ids of `user` in an /etc/passwd-formatted text.
+fn passwd_ids(passwd: &str, user: &str) -> Option<(u32, u32)> {
+    passwd.lines().find_map(|line| {
+        let mut fields = line.split(':');
+        (fields.next()? == user).then_some(())?;
+        let uid = fields.nth(1)?.parse().ok()?;
+        let gid = fields.next()?.parse().ok()?;
+        Some((uid, gid))
+    })
+}
+
+/// Use the packaged/admin-selected account instead of creating an incompatible one.
+fn configured_greeter_user(path: &Path) -> Result<String, String> {
+    if !path.exists() {
+        return Ok(GREETER_USER.into());
+    }
+    let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let document: toml::Value = toml::from_str(&text).map_err(|e| e.to_string())?;
+    Ok(document
+        .get("default_session")
+        .and_then(|session| session.get("user"))
+        .and_then(toml::Value::as_str)
+        .unwrap_or(GREETER_USER)
+        .to_string())
+}
+
+/// Prepare private greeter storage before replacing greetd's working config.
+/// Custom targets are isolated fixtures owned by the caller; system installs
+/// require the configured account and fail before changing the login command.
+fn prepare_greeter_dirs(
+    dir: &Path,
+    system: bool,
+    dry_run: bool,
+    user: &str,
+) -> Result<String, String> {
+    use std::os::unix::fs::PermissionsExt;
+    if !dir.is_absolute() {
+        return Err("Greeter storage directory must be an absolute path".into());
+    }
+    if dry_run {
+        return Ok(format!(
+            "Dry-run: would prepare {} for the '{user}' account (mode 0750)",
+            dir.display()
+        ));
+    }
+    let owner = if system {
+        Some(
+            fs::read_to_string("/etc/passwd")
+                .ok()
+                .and_then(|passwd| passwd_ids(&passwd, user))
+                .ok_or_else(|| format!("The '{user}' service account is missing; install/configure greetd before setup"))?,
+        )
+    } else {
+        None
+    };
+    if owner.is_some_and(|(uid, _)| uid == 0) {
+        return Err("greetd default_session.user must be a non-root service account; greetd was not changed".into());
+    }
+    for path in [dir.to_path_buf(), dir.join("cache"), dir.join("data")] {
+        let fail = |e| {
+            format!(
+                "Failed to prepare {}: {e}; greetd configuration was not changed",
+                path.display()
+            )
+        };
+        fs::create_dir_all(&path).map_err(fail)?;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o750)).map_err(fail)?;
+        if let Some((uid, gid)) = owner {
+            std::os::unix::fs::chown(&path, Some(uid), Some(gid)).map_err(fail)?;
+        }
+    }
+    if system && Path::new("/sys/fs/selinux/enforce").exists() {
+        // Use the installed display-manager policy, without changing its rules
+        // or disabling enforcement. Custom paths need a compatible saved label.
+        let mut child = ProcessCommand::new("restorecon")
+            .arg("-RF")
+            .arg(dir)
+            .spawn()
+            .map_err(|e| {
+                format!("Cannot label greeter storage with restorecon: {e}; greetd was not changed")
+            })?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+                if !status.success() {
+                    return Err(
+                        "restorecon failed for greeter storage; greetd was not changed".into(),
+                    );
+                }
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("restorecon timed out; greetd was not changed".into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).map_err(|e| e.to_string())?;
+        let mut label = [0u8; 1024];
+        // SAFETY: both strings are NUL-terminated; the output is writable for
+        // exactly its supplied length. Read only this storage directory's label.
+        let length = unsafe {
+            libc::getxattr(
+                path.as_ptr(),
+                c"security.selinux".as_ptr(),
+                label.as_mut_ptr().cast(),
+                label.len(),
+            )
+        };
+        if length < 0 {
+            return Err(format!(
+                "Cannot read SELinux label for {}: {}; greetd was not changed",
+                dir.display(),
+                std::io::Error::last_os_error()
+            ));
+        }
+        let context = String::from_utf8_lossy(&label[..length as usize]);
+        if context.split(':').nth(2) != Some("xdm_var_lib_t") {
+            return Err(format!(
+                "Greeter storage {} needs an xdm_var_lib_t SELinux file-context mapping (found {context}); choose /var/lib/greetd/decklock or configure its permanent label before setup. greetd was not changed",
+                dir.display()
+            ));
+        }
+    }
+    if let Some((uid, gid)) = owner {
+        // Drop privileges in a separate process, including supplementary groups,
+        // without invoking PAM or mutating the caller's credentials. Correct leaf
+        // ownership is insufficient when an ancestor rejects traversal.
+        let mut probe = ProcessCommand::new("setpriv")
+            .args(["--reuid", &uid.to_string(), "--regid", &gid.to_string(), "--init-groups", "--", "/usr/bin/test", "-r"])
+            .arg(dir).arg("-a").arg("-w").arg(dir).arg("-a").arg("-x").arg(dir)
+            .spawn().map_err(|e| format!("Cannot verify greeter storage access with setpriv (util-linux): {e}; greetd was not changed"))?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Some(status) = probe.try_wait().map_err(|e| e.to_string())? {
+                if !status.success() {
+                    return Err(format!(
+                        "The '{user}' account cannot access greeter storage {}; check ancestor permissions; greetd was not changed",
+                        dir.display()
+                    ));
+                }
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = probe.kill();
+                let _ = probe.wait();
+                return Err(
+                    "Greeter storage access check timed out; greetd was not changed".into(),
+                );
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+    Ok(format!(
+        "Greeter directory {} is ready (mode 0750)",
+        dir.display()
+    ))
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn greeter_command(no_keyboard: bool, dir: Option<&Path>) -> String {
+    let keyboard = if no_keyboard { "" } else { " --keyboard" };
+    let command = format!("cage -s -- decklock --greeter{keyboard}");
+    with_greeter_storage(&command, dir)
+}
+
+fn with_greeter_storage(command: &str, dir: Option<&Path>) -> String {
+    match dir {
+        None => command.to_string(),
+        Some(dir) => format!(
+            "env XDG_CONFIG_HOME={} XDG_CACHE_HOME={} XDG_DATA_HOME={} DECKLOCK_GREETER_STATE={} {command}",
+            shell_quote(&dir.to_string_lossy()),
+            shell_quote(&dir.join("cache").to_string_lossy()),
+            shell_quote(&dir.join("data").to_string_lossy()),
+            shell_quote(&dir.join("greeter-state.toml").to_string_lossy())
+        ),
+    }
+}
+
+fn setup_greeter_with_storage(
+    target: Option<&Path>,
+    no_keyboard: bool,
+    state_dir: Option<PathBuf>,
+    dry_run: bool,
+    compositor: Option<GreeterCompositor>,
+    output: Option<&str>,
+    transform: Option<u8>,
+) -> Result<String, String> {
+    if output.is_some() && compositor != Some(GreeterCompositor::Hyprland) {
+        return Err("Output rotation requires --compositor hyprland".into());
+    }
+    if output.is_some_and(|output| {
+        output.is_empty()
+            || !output
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_:.".contains(&b))
+    }) {
+        return Err("Output must be a connector name, such as eDP-1".into());
+    }
+    let state_dir_requested = state_dir.is_some();
+    let dir = greeter_state_dir(target, state_dir);
+    let path = target.unwrap_or_else(|| Path::new("/etc/greetd/config.toml"));
+    let previous = fs::read_to_string(path)
+        .ok()
+        .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
+        .and_then(|doc| {
+            doc.get("default_session")?
+                .get("command")?
+                .as_str()
+                .map(str::to_string)
+        })
+        .filter(|command| command.contains("start-hyprland") && command.contains("greeter"));
+    let lua_path = path.with_file_name("hyprland-greeter.lua");
+    let lua = (compositor == Some(GreeterCompositor::Hyprland))
+        .then(|| hyprland_greeter_config(no_keyboard, output, transform.unwrap_or(0)));
+    let command = if lua.is_some() {
+        with_greeter_storage(
+            &format!(
+                "start-hyprland -- -c {}",
+                shell_quote(&lua_path.to_string_lossy())
+            ),
+            dir.as_deref(),
+        )
+    } else if compositor.is_none()
+        && let Some(previous) = previous
+    {
+        if no_keyboard || state_dir_requested {
+            return Err("To change an existing Hyprland greeter's keyboard or storage, pass --compositor hyprland and its output/transform options; greetd was not changed".into());
+        }
+        previous
+    } else {
+        greeter_command(no_keyboard, dir.as_deref())
+    };
+    // Parse/validate existing greetd policy before touching any saved files.
+    let review = write_greeter_config(target, &command, true)?;
+    if !dry_run && let Some(lua) = &lua {
+        verify_hyprland_config(lua)?;
+    }
+    let user = configured_greeter_user(path)?;
+    let preparation = match &dir {
+        Some(dir) => prepare_greeter_dirs(dir, target.is_none(), dry_run, &user)?,
+        None => String::new(),
+    };
+    if dry_run {
+        let compositor_report = lua
+            .as_ref()
+            .map(|lua| format!("\nDry-run: would write {}\n{lua}", lua_path.display()))
+            .unwrap_or_default();
+        return Ok(format!("{review}\n{preparation}{compositor_report}"));
+    }
+    let old_lua = fs::read_to_string(&lua_path).ok();
+    if let Some(lua) = &lua {
+        save_greeter_lua(&lua_path, lua)?;
+    }
+    let report = match write_greeter_config(target, &command, false) {
+        Ok(report) => report,
+        Err(error) => {
+            if lua.is_some() {
+                let rollback = match old_lua {
+                    Some(content) => save_greeter_lua(&lua_path, &content),
+                    None => fs::remove_file(&lua_path).map_err(|e| e.to_string()),
+                };
+                rollback.map_err(|rollback| {
+                    format!("{error}; compositor rollback failed: {rollback}")
+                })?;
+            }
+            return Err(error);
+        }
+    };
+
+    Ok(format!(
+        "{report}\n{preparation}\nLogin changes take effect at the next logout or boot; greetd was not restarted."
+    ))
+}
+
+fn hyprland_greeter_config(no_keyboard: bool, output: Option<&str>, transform: u8) -> String {
+    // JSON strings are also Lua quoted strings. User-supplied connector names
+    // must remain values, never executable Lua or shell fragments.
+    let monitor = output.map(|output| format!(
+        "hl.monitor({{ output = {}, mode = \"preferred\", position = \"0x0\", scale = 1, transform = {transform} }})\n",
+        serde_json::to_string(output).unwrap())).unwrap_or_default();
+    let touch = output
+        .map(|output| {
+            format!(
+                "input = {{ touchdevice = {{ output = {}, transform = {transform} }} }},",
+                serde_json::to_string(output).unwrap()
+            )
+        })
+        .unwrap_or_default();
+    let keyboard = if no_keyboard { "" } else { " --keyboard" };
+    format!(
+        "-- DeckLock login compositor; no desktop services or user configuration.\n{monitor}\nhl.monitor({{ output = \"\", mode = \"preferred\", position = \"auto\", scale = 1 }})\nhl.config({{\n general = {{ gaps_in = 0, gaps_out = 0, border_size = 0 }},\n {touch}\n misc = {{ disable_hyprland_logo = true, disable_splash_rendering = true, force_default_wallpaper = 0, disable_autoreload = true }},\n ecosystem = {{ no_update_news = true, no_donation_nag = true }},\n animations = {{ enabled = false }},\n}})\nhl.on(\"hyprland.start\", function()\n hl.exec_cmd(\"decklock --greeter{keyboard}; hyprctl dispatch 'hl.dsp.exit()'\")\nend)\n"
+    )
+}
+
+fn verify_hyprland_config(lua: &str) -> Result<(), String> {
+    use std::io::Write;
+    if !command_exists("start-hyprland") || !command_exists("hyprctl") {
+        return Err("Hyprland setup needs start-hyprland and hyprctl installed".into());
+    }
+    let mut file = tempfile::Builder::new()
+        .suffix(".lua")
+        .tempfile()
+        .map_err(|e| e.to_string())?;
+    file.write_all(lua.as_bytes()).map_err(|e| e.to_string())?;
+    // Configuration verification cannot block installation indefinitely. Keep
+    // output in a temporary file so a verbose verifier cannot fill a pipe.
+    let log = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    // Share one open file description: independently reopened streams each
+    // start at offset zero and can overwrite the verifier's other diagnostics.
+    let output = log.reopen().map_err(|e| e.to_string())?;
+    let mut child = ProcessCommand::new("Hyprland")
+        .args(["--verify-config", "-c"])
+        .arg(file.path())
+        .env_remove("WAYLAND_DISPLAY")
+        .env_remove("WAYLAND_SOCKET")
+        .env_remove("DISPLAY")
+        .stdout(output.try_clone().map_err(|e| e.to_string())?)
+        .stderr(output)
+        .spawn()
+        .map_err(|e| format!("Cannot verify Hyprland Lua configuration: {e}"))?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(
+                "Hyprland configuration verification timed out; greetd was not changed".into(),
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    if !status.success() {
+        return Err(format!(
+            "Hyprland rejected the generated Lua configuration; greetd was not changed: {}",
+            fs::read_to_string(log.path()).unwrap_or_default()
+        ));
+    }
+    Ok(())
+}
+
+fn save_greeter_lua(path: &Path, content: &str) -> Result<(), String> {
+    use std::io::Write;
+    if fs::read_to_string(path).ok().as_deref() == Some(content) {
+        return Ok(());
+    }
+    let parent = path
+        .parent()
+        .ok_or("Greeter compositor configuration needs a parent")?;
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    file.write_all(content.as_bytes())
+        .map_err(|e| e.to_string())?;
+    crate::config::keep_mode(&file, path, Some(0o644)).map_err(|e| e.to_string())?;
+    if path.exists() {
+        let backup = tempfile::Builder::new()
+            .prefix("hyprland-greeter.lua.bak.")
+            .tempfile_in(parent)
+            .map_err(|e| e.to_string())?;
+        fs::copy(path, backup.path()).map_err(|e| e.to_string())?;
+        backup.keep().map_err(|e| e.to_string())?;
+    }
+    file.persist(path)
+        .map_err(|e| format!("Cannot save {}: {e}", path.display()))?;
+    Ok(())
+}
+
 pub fn execute(action: Option<Action>) -> Result<String, String> {
     match action.unwrap_or(Action::Status) {
         Action::Status => {
@@ -680,15 +1112,29 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
         Action::Greeter {
             target,
             no_keyboard,
+            state_dir,
+            compositor,
+            output,
+            transform,
             dry_run,
-        } => setup_greeter(target.as_deref(), no_keyboard, dry_run),
+        } => setup_greeter_with_storage(
+            target.as_deref(),
+            no_keyboard,
+            state_dir,
+            dry_run,
+            compositor,
+            output.as_deref(),
+            transform,
+        ),
         Action::Lock {
             target,
             dry_run,
             replace_custom,
         } => setup_lock_with(target.as_deref(), dry_run, replace_custom),
+
         Action::All { dry_run } => {
-            let greeter_res = setup_greeter(None, false, dry_run)?;
+            let greeter_res =
+                setup_greeter_with_storage(None, false, None, dry_run, None, None, None)?;
             let lock_res = setup_lock(None, dry_run)?;
             Ok(format!("{greeter_res}\n{lock_res}"))
         }
@@ -779,6 +1225,18 @@ mod tests {
         let formatted = format_status(&report);
         assert!(formatted.contains("DeckLock [Configured]"));
         assert!(formatted.contains("decklock --lock [Configured]"));
+    }
+
+    #[test]
+    fn passwd_ids_reads_the_uid_and_gid_of_the_named_account_only() {
+        let passwd = "root:x:0:0:root:/root:/bin/bash\n\
+                      greeter:x:968:967:greetd greeter user:/:/bin/bash\n\
+                      greeter2:x:1:2::/:/bin/false\n\
+                      broken\n";
+        assert_eq!(passwd_ids(passwd, "greeter"), Some((968, 967)));
+        assert_eq!(passwd_ids(passwd, "greeter2"), Some((1, 2)));
+        assert_eq!(passwd_ids(passwd, "nobody"), None);
+        assert_eq!(passwd_ids("greeter:x:abc:1::/:/bin/sh\n", "greeter"), None);
     }
 
     /// Runs `setup lock` against an existing hypridle.conf and returns the file

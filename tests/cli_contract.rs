@@ -445,6 +445,385 @@ fn setup_subcommands_exercise_cli_boundary_and_support_isolated_targets() {
 }
 
 #[test]
+fn setup_greeter_prepares_the_directory_where_the_greeter_remembers_its_choice() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let state_dir = cli.home.path().join("state/decklock-greeter");
+    let (target_arg, state_arg) = (target.to_str().unwrap(), state_dir.to_str().unwrap());
+    let stdout = |output: &Output| String::from_utf8_lossy(&output.stdout).to_string();
+    let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+
+    // A dry run says what it would do and creates nothing.
+    let dry = cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--dry-run",
+            "--target",
+            target_arg,
+            "--state-dir",
+            state_arg,
+        ],
+        true,
+    );
+    assert!(!state_dir.exists());
+    assert!(stdout(&dry).contains(state_arg), "{}", stdout(&dry));
+
+    // The greeter account's HOME under greetd is `/`, so it has nowhere to save
+    // the last user and session unless setup provides a directory. It is private
+    // to that account and its group.
+    let done = cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target_arg,
+            "--state-dir",
+            state_arg,
+        ],
+        true,
+    );
+    assert!(state_dir.is_dir(), "{}", stdout(&done));
+    assert_eq!(mode(&state_dir), 0o750);
+    assert!(stdout(&done).contains(state_arg), "{}", stdout(&done));
+
+    // Running setup again is harmless.
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target_arg,
+            "--state-dir",
+            state_arg,
+        ],
+        true,
+    );
+    assert_eq!(mode(&state_dir), 0o750);
+
+    // A custom --target is not the system greetd: without --state-dir nothing
+    // outside it is created, so this test and dry runs never touch /var/lib.
+    let plain = cli.run(&["setup", "greeter", "--target", target_arg], true);
+    assert!(
+        !stdout(&plain).contains("decklock-greeter"),
+        "{}",
+        stdout(&plain)
+    );
+}
+
+fn mode_of(path: &Path) -> u32 {
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
+#[test]
+fn setup_greeter_keeps_the_mode_of_the_greetd_config_it_replaces() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let target_arg = target.to_str().unwrap();
+
+    // A system config is normally world-readable. Replacing it through a private
+    // temporary file must not leave it readable by root only: `setup status` as a
+    // regular user then cannot see the greeter that is configured.
+    std::fs::write(&target, "[default_session]\ncommand = \"agreety\"\n").unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+    cli.run(&["setup", "greeter", "--target", target_arg], true);
+    assert_eq!(
+        mode_of(&target),
+        0o644,
+        "a 0644 greetd config was tightened"
+    );
+
+    // Whatever mode the administrator chose is kept, not forced to a default.
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
+    cli.run(&["setup", "greeter", "--target", target_arg], true);
+    assert_eq!(mode_of(&target), 0o640, "a 0640 greetd config was changed");
+
+    // A file setup creates from nothing is a normal readable system config.
+    let created = cli.home.path().join("created-greetd.toml");
+    cli.run(
+        &["setup", "greeter", "--target", created.to_str().unwrap()],
+        true,
+    );
+    assert_eq!(mode_of(&created), 0o644, "a new greetd config is not 0644");
+}
+
+#[test]
+fn config_set_keeps_the_mode_of_the_config_it_replaces() {
+    let cli = Cli::new();
+    // The README tells the greeter to read a shared config it can access, so
+    // editing that file with `config set` must not make it private again.
+    cli.config(&["set", "idle_seconds", "120"], true);
+    std::fs::set_permissions(&cli.file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    cli.config(&["set", "idle_seconds", "180"], true);
+    assert_eq!(mode_of(&cli.file), 0o644, "a shared config became private");
+    let saved = std::fs::read_to_string(&cli.file).unwrap();
+    assert!(saved.contains("idle_seconds = 180"), "{saved}");
+}
+
+#[test]
+fn greeter_startup_with_an_unwritable_home_reaches_the_display_boundary() {
+    let cli = Cli::new();
+    // A regular file is a deterministic, unwritable HOME even when tests run as
+    // root. No host paths, display, greetd socket or credentials are available.
+    let home = cli.home.path().join("not-a-directory");
+    std::fs::write(&home, "fixture").unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_decklock"));
+    command
+        .args(["--greeter"])
+        .env("HOME", &home)
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("GREETD_SOCK")
+        .env_remove("DISPLAY")
+        .env_remove("WAYLAND_DISPLAY")
+        .env_remove("WAYLAND_SOCKET")
+        .env_remove("DBUS_SESSION_BUS_ADDRESS");
+    let output = bounded_output(&mut command);
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("GTK") || error.contains("display"),
+        "Greeter aborted before GTK: {error}"
+    );
+    assert!(!error.contains("Not a directory"), "{error}");
+}
+
+#[test]
+fn preview_startup_reports_the_media_path_and_continues_to_the_display_boundary() {
+    let cli = Cli::new();
+    let blocked = cli.home.path().join("config");
+    std::fs::write(&blocked, "fixture").unwrap();
+    let output = cli.run(&["--preview"], false);
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("GTK") || error.contains("display"),
+        "{error}"
+    );
+    assert!(
+        error.contains(blocked.join("midias/bloqueio/fotos").to_str().unwrap()),
+        "Missing failing path: {error}"
+    );
+}
+
+#[test]
+fn setup_greeter_passes_its_custom_directories_to_the_started_command() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let state = cli.home.path().join("greeter's private data");
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target.to_str().unwrap(),
+            "--state-dir",
+            state.to_str().unwrap(),
+        ],
+        true,
+    );
+    let document: toml::Value = toml::from_str(&std::fs::read_to_string(&target).unwrap()).unwrap();
+    let command = document["default_session"]["command"].as_str().unwrap();
+    assert!(command.contains("XDG_CONFIG_HOME="), "{command}");
+    assert!(command.contains("XDG_CACHE_HOME="), "{command}");
+    assert!(command.contains("DECKLOCK_GREETER_STATE="), "{command}");
+    let bin = cli.home.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let cage = bin.join("cage");
+    std::fs::write(&cage, "#!/bin/sh\nprintf '%s\\n' \"$XDG_CONFIG_HOME\" \"$XDG_CACHE_HOME\" \"$DECKLOCK_GREETER_STATE\" > \"$MARKER\"\n").unwrap();
+    std::fs::set_permissions(&cage, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let marker = cli.home.path().join("env");
+    let output = Command::new("/bin/sh")
+        .args(["-c", &format!("exec {command}")])
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .env("MARKER", &marker)
+        .spawn()
+        .unwrap();
+    let output = wait_output(output);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(marker).unwrap(),
+        format!(
+            "{}\n{}\n{}\n",
+            state.display(),
+            state.join("cache").display(),
+            state.join("greeter-state.toml").display()
+        )
+    );
+    assert!(state.join("cache").is_dir());
+}
+
+fn bounded_output(command: &mut Command) -> Output {
+    wait_output(
+        command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    )
+}
+
+fn wait_output(mut child: std::process::Child) -> Output {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while child.try_wait().unwrap().is_none() {
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("Regression subprocess timed out");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn setup_greeter_generates_a_rotated_hyprland_kiosk_and_preserves_it_on_repeat() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let bin = cli.home.path().join("fake-bin");
+    std::fs::create_dir(&bin).unwrap();
+    for name in ["Hyprland", "start-hyprland", "hyprctl"] {
+        let file = bin.join(name);
+        std::fs::write(
+            &file,
+            "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'Hyprland v0.56.2'; fi\nexit 0\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let mut command = Command::new(env!("CARGO_BIN_EXE_decklock"));
+    command
+        .args([
+            "setup",
+            "greeter",
+            "--target",
+            target.to_str().unwrap(),
+            "--compositor",
+            "hyprland",
+            "--output",
+            "eDP-1",
+            "--transform",
+            "3",
+        ])
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()));
+    let mut dry = Command::new(env!("CARGO_BIN_EXE_decklock"));
+    dry.args([
+        "setup",
+        "greeter",
+        "--target",
+        target.to_str().unwrap(),
+        "--compositor",
+        "hyprland",
+        "--output",
+        "eDP-1",
+        "--transform",
+        "3",
+        "--dry-run",
+    ])
+    .env("PATH", format!("{}:/usr/bin:/bin", bin.display()));
+    assert!(bounded_output(&mut dry).status.success());
+    assert!(!target.exists());
+    assert!(
+        !target
+            .parent()
+            .unwrap()
+            .join("hyprland-greeter.lua")
+            .exists()
+    );
+    let result = bounded_output(&mut command);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let lua = target.parent().unwrap().join("hyprland-greeter.lua");
+    let content = std::fs::read_to_string(&lua).unwrap();
+    assert!(content.contains("output = \"eDP-1\""), "{content}");
+    assert!(content.contains("transform = 3"), "{content}");
+    assert!(content.contains("touchdevice"), "{content}");
+    assert!(content.contains("hl.dsp.exit()"), "{content}");
+    assert!(
+        content.contains("decklock --greeter --keyboard"),
+        "{content}"
+    );
+    let saved = std::fs::read_to_string(&target).unwrap();
+    assert!(saved.contains("start-hyprland"));
+    cli.run(
+        &["setup", "greeter", "--target", target.to_str().unwrap()],
+        true,
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        saved,
+        "Repeat setup replaced the working rotated compositor"
+    );
+    assert_eq!(std::fs::read_to_string(&lua).unwrap(), content);
+    // A compositor that rejects Lua must not replace either saved file.
+    std::fs::write(
+        bin.join("Hyprland"),
+        "#!/bin/sh\necho verifier-stdout\necho invalid-lua >&2\nexit 1\n",
+    )
+    .unwrap();
+    let rejected = bounded_output(&mut command);
+    assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("invalid-lua"));
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("verifier-stdout"));
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), saved);
+    assert_eq!(std::fs::read_to_string(&lua).unwrap(), content);
+}
+
+#[test]
+fn setup_greeter_refuses_invalid_rotation_without_changing_the_login_config() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    std::fs::write(&target, "[default_session]\ncommand = \"tuigreet\"\n").unwrap();
+    let saved = std::fs::read(&target).unwrap();
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target.to_str().unwrap(),
+            "--compositor",
+            "hyprland",
+            "--transform",
+            "8",
+        ],
+        false,
+    );
+    assert_eq!(std::fs::read(target).unwrap(), saved);
+}
+
+#[test]
+fn setup_greeter_storage_failure_preserves_the_previous_login_command() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let storage = cli.home.path().join("not-a-directory");
+    std::fs::write(
+        &target,
+        "[default_session]\ncommand = \"tuigreet\"\nuser = \"greeter\"\n",
+    )
+    .unwrap();
+    std::fs::write(&storage, "fixture").unwrap();
+    let saved = std::fs::read(&target).unwrap();
+    let output = cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target.to_str().unwrap(),
+            "--state-dir",
+            storage.to_str().unwrap(),
+        ],
+        false,
+    );
+    assert_eq!(std::fs::read(&target).unwrap(), saved);
+    assert!(String::from_utf8_lossy(&output.stderr).contains(storage.to_str().unwrap()));
+}
+
+#[test]
 fn setup_lock_keeps_a_custom_wrapper_until_replace_custom_is_requested() {
     let cli = Cli::new();
     let target = cli.home.path().join("wrapper-hypridle.conf");
@@ -517,55 +896,6 @@ fn setup_lock_keeps_a_custom_wrapper_until_replace_custom_is_requested() {
         "{}",
         stdout(&again)
     );
-}
-
-fn mode_of(path: &Path) -> u32 {
-    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
-}
-
-#[test]
-fn setup_greeter_keeps_the_mode_of_the_greetd_config_it_replaces() {
-    let cli = Cli::new();
-    let target = cli.home.path().join("greetd.toml");
-    let target_arg = target.to_str().unwrap();
-
-    // A system config is normally world-readable. Replacing it through a private
-    // temporary file must not leave it readable by root only: `setup status` as a
-    // regular user then cannot see the greeter that is configured.
-    std::fs::write(&target, "[default_session]\ncommand = \"agreety\"\n").unwrap();
-    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
-    cli.run(&["setup", "greeter", "--target", target_arg], true);
-    assert_eq!(
-        mode_of(&target),
-        0o644,
-        "a 0644 greetd config was tightened"
-    );
-
-    // Whatever mode the administrator chose is kept, not forced to a default.
-    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
-    cli.run(&["setup", "greeter", "--target", target_arg], true);
-    assert_eq!(mode_of(&target), 0o640, "a 0640 greetd config was changed");
-
-    // A file setup creates from nothing is a normal readable system config.
-    let created = cli.home.path().join("created-greetd.toml");
-    cli.run(
-        &["setup", "greeter", "--target", created.to_str().unwrap()],
-        true,
-    );
-    assert_eq!(mode_of(&created), 0o644, "a new greetd config is not 0644");
-}
-
-#[test]
-fn config_set_keeps_the_mode_of_the_config_it_replaces() {
-    let cli = Cli::new();
-    // The README tells the greeter to read a shared config it can access, so
-    // editing that file with `config set` must not make it private again.
-    cli.config(&["set", "idle_seconds", "120"], true);
-    std::fs::set_permissions(&cli.file, std::fs::Permissions::from_mode(0o644)).unwrap();
-    cli.config(&["set", "idle_seconds", "180"], true);
-    assert_eq!(mode_of(&cli.file), 0o644, "a shared config became private");
-    let saved = std::fs::read_to_string(&cli.file).unwrap();
-    assert!(saved.contains("idle_seconds = 180"), "{saved}");
 }
 
 #[test]
@@ -692,4 +1022,26 @@ fn setup_lock_keeps_listener_migration_when_it_adds_a_general_block() {
     assert!(saved.contains("on-timeout = decklock --lock"), "{saved}");
     assert!(!saved.contains("swaylock"), "{saved}");
     assert!(saved.contains("on-timeout = systemctl suspend"), "{saved}");
+}
+
+#[test]
+fn setup_greeter_preserves_the_packaged_service_account() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    std::fs::write(
+        &target,
+        "[terminal]\nvt = 4\n[default_session]\ncommand = \"agreety\"\nuser = \"greetd\"\n",
+    )
+    .unwrap();
+    cli.run(
+        &["setup", "greeter", "--target", target.to_str().unwrap()],
+        true,
+    );
+    let document: toml::Value = toml::from_str(&std::fs::read_to_string(&target).unwrap()).unwrap();
+    assert_eq!(
+        document["default_session"]["user"].as_str(),
+        Some("greetd"),
+        "The native service account must retain access to its private parent directory"
+    );
+    assert_eq!(document["terminal"]["vt"].as_integer(), Some(4));
 }

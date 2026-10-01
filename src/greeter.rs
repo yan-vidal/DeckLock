@@ -183,18 +183,93 @@ pub struct GreeterState {
     pub last_session: Option<String>,
 }
 
+/// Where the greeter account can remember its choice under greetd, whose `HOME` for
+/// that account is `/` and so never writable. `setup greeter` creates it.
+pub const SYSTEM_STATE_DIR: &str = "/var/lib/decklock-greeter";
+
+/// SELinux's existing display-manager policy labels this subtree writable by
+/// greetd's xdm_t domain. A generic /var/lib directory is read-only to that domain.
+pub fn system_state_dir() -> &'static str {
+    if Path::new("/sys/fs/selinux/enforce").exists() {
+        "/var/lib/greetd/decklock"
+    } else {
+        SYSTEM_STATE_DIR
+    }
+}
+
+type EnvValue = Option<std::ffi::OsString>;
+
+fn resolve_state_path(
+    override_path: EnvValue,
+    state_home: EnvValue,
+    under_greetd: bool,
+    system_dir: &Path,
+    home: EnvValue,
+) -> PathBuf {
+    if let Some(override_path) = override_path {
+        return PathBuf::from(override_path);
+    }
+    if let Some(state_home) = state_home {
+        return PathBuf::from(state_home).join("decklock/greeter-state.toml");
+    }
+    if under_greetd && system_dir.is_dir() {
+        return system_dir.join("greeter-state.toml");
+    }
+    if let Some(home) = home {
+        return PathBuf::from(home).join(".local/state/decklock/greeter-state.toml");
+    }
+    std::env::temp_dir().join("decklock-greeter-state.toml")
+}
+
+/// The session to preselect when no earlier choice is remembered.
+///
+/// A uwsm-managed session (`uwsm start ...`) wins over a bare one for the same
+/// compositor: uwsm runs the compositor as a systemd user service, reaches
+/// `graphical-session.target` and imports the session environment, which is what
+/// user units tied to that target expect. Sessions are sorted by id, so the bare
+/// `hyprland` used to come first and be picked. Without a usable uwsm session it is
+/// still the first one.
+pub fn default_session_index(sessions: &[DesktopSession]) -> usize {
+    default_session_index_with(sessions, program_in_path)
+}
+
+fn default_session_index_with(
+    sessions: &[DesktopSession],
+    available: impl Fn(&str) -> bool,
+) -> usize {
+    sessions
+        .iter()
+        .position(|session| {
+            session.exec.first().is_some_and(|program| {
+                Path::new(program)
+                    .file_name()
+                    .is_some_and(|name| name == "uwsm")
+                    && available(program)
+            })
+        })
+        .unwrap_or(0)
+}
+
+/// Session entries carry `TryExec` for this, which the greeter does not read: a
+/// session whose launcher is not installed must not become the default.
+fn program_in_path(program: &str) -> bool {
+    let path = Path::new(program);
+    if path.is_absolute() {
+        return path.is_file();
+    }
+    std::env::var_os("PATH")
+        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
+}
+
 impl GreeterState {
     pub fn state_file_path() -> PathBuf {
-        if let Some(override_path) = std::env::var_os("DECKLOCK_GREETER_STATE") {
-            return PathBuf::from(override_path);
-        }
-        if let Some(state_home) = std::env::var_os("XDG_STATE_HOME") {
-            return PathBuf::from(state_home).join("decklock/greeter-state.toml");
-        }
-        if let Some(home) = std::env::var_os("HOME") {
-            return PathBuf::from(home).join(".local/state/decklock/greeter-state.toml");
-        }
-        std::env::temp_dir().join("decklock-greeter-state.toml")
+        resolve_state_path(
+            std::env::var_os("DECKLOCK_GREETER_STATE"),
+            std::env::var_os("XDG_STATE_HOME"),
+            std::env::var_os("GREETD_SOCK").is_some(),
+            Path::new(system_state_dir()),
+            std::env::var_os("HOME"),
+        )
     }
 
     pub fn load() -> Self {
@@ -420,6 +495,97 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn session(id: &str, exec: &[&str]) -> DesktopSession {
+        DesktopSession {
+            id: id.into(),
+            name: id.into(),
+            exec: exec.iter().map(|part| part.to_string()).collect(),
+        }
+    }
+
+    fn hyprland_pair() -> Vec<DesktopSession> {
+        // Sorted by id, as `list_desktop_sessions` returns them: the bare session
+        // comes first, which is what used to be preselected.
+        vec![
+            session("hyprland", &["/usr/bin/start-hyprland"]),
+            session(
+                "hyprland-uwsm",
+                &["uwsm", "start", "-e", "-D", "Hyprland", "hyprland.desktop"],
+            ),
+        ]
+    }
+
+    #[test]
+    fn a_uwsm_managed_session_is_preselected_over_the_bare_one() {
+        assert_eq!(default_session_index_with(&hyprland_pair(), |_| true), 1);
+    }
+
+    #[test]
+    fn uwsm_is_not_preferred_when_it_is_not_installed() {
+        assert_eq!(default_session_index_with(&hyprland_pair(), |_| false), 0);
+    }
+
+    #[test]
+    fn without_a_uwsm_session_the_first_one_is_preselected() {
+        let sessions = vec![
+            session("00-other", &["/usr/bin/sway"]),
+            session("sway", &["/usr/bin/sway"]),
+        ];
+        assert_eq!(default_session_index_with(&sessions, |_| true), 0);
+    }
+
+    #[test]
+    fn a_uwsm_path_in_the_exec_counts_as_uwsm() {
+        let sessions = vec![
+            session("hyprland", &["/usr/bin/start-hyprland"]),
+            session(
+                "hyprland-uwsm",
+                &["/usr/bin/uwsm", "start", "hyprland.desktop"],
+            ),
+        ];
+        assert_eq!(default_session_index_with(&sessions, |_| true), 1);
+    }
+
+    fn os(value: &str) -> EnvValue {
+        Some(value.into())
+    }
+
+    #[test]
+    fn under_greetd_the_state_goes_to_the_system_directory_when_it_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = resolve_state_path(None, None, true, dir.path(), os("/"));
+        assert_eq!(path, dir.path().join("greeter-state.toml"));
+    }
+
+    #[test]
+    fn under_greetd_without_the_system_directory_the_home_is_used_as_before() {
+        let missing = tempfile::tempdir().unwrap().path().join("absent");
+        let path = resolve_state_path(None, None, true, &missing, os("/var/lib/greeter"));
+        assert_eq!(
+            path,
+            Path::new("/var/lib/greeter/.local/state/decklock/greeter-state.toml")
+        );
+    }
+
+    #[test]
+    fn outside_greetd_the_system_directory_is_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = resolve_state_path(None, None, false, dir.path(), os("/home/me"));
+        assert_eq!(
+            path,
+            Path::new("/home/me/.local/state/decklock/greeter-state.toml")
+        );
+    }
+
+    #[test]
+    fn an_explicit_path_and_xdg_state_home_still_win_over_the_system_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let explicit = resolve_state_path(os("/x/state.toml"), os("/xdg"), true, dir.path(), None);
+        assert_eq!(explicit, Path::new("/x/state.toml"));
+        let xdg = resolve_state_path(None, os("/xdg"), true, dir.path(), None);
+        assert_eq!(xdg, Path::new("/xdg/decklock/greeter-state.toml"));
+    }
 
     #[test]
     fn test_parse_passwd_users() {

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import pwd
 import shutil
+import shlex
 import subprocess
 import time
 import tomllib
@@ -45,19 +46,20 @@ def record(name):
     print('PASS: ' + name, flush=True)
 
 
-if not subprocess.run(['id', '-u', 'greeter'], capture_output=True).returncode == 0:
-    run(['useradd', '--system', '--create-home', '--shell', '/bin/sh', 'greeter'])
+config = Path('/etc/greetd/config.toml')
+packaged_config = tomllib.loads(config.read_text()) if config.exists() else {}
+greeter_name = packaged_config.get('default_session', {}).get('user', 'greeter')
+if not subprocess.run(['id', '-u', greeter_name], capture_output=True).returncode == 0:
+    run(['useradd', '--system', '--create-home', '--shell', '/bin/sh', greeter_name])
 if not subprocess.run(['id', '-u', 'locktest2'], capture_output=True).returncode == 0:
     run(['useradd', '--create-home', '--shell', '/bin/bash', 'locktest2'])
 run(['chpasswd'], input='locktest2:DeckLock-second-42\n', text=True)
-greeter = pwd.getpwnam('greeter')
+# Reproduce the Arch system-account boundary on every distribution.
+run(['usermod', '--home', '/', greeter_name])
+greeter = pwd.getpwnam(greeter_name)
+assert greeter.pw_dir == '/'
 WORK.mkdir(mode=0o777, exist_ok=True)
 WORK.chmod(0o1777)
-state = Path(greeter.pw_dir) / '.local/state/decklock/greeter-state.toml'
-state.parent.mkdir(parents=True, exist_ok=True)
-state.write_text('last_user = "locktest"\nlast_session = "00-decklock-vm"\n')
-run(['chown', '-R', 'greeter:greeter', str(state.parent.parent.parent)])
-
 session_file = Path('/usr/share/wayland-sessions/00-decklock-vm.desktop')
 session_file.parent.mkdir(parents=True, exist_ok=True)
 session_file.write_text('[Desktop Entry]\nName=DeckLock VM session\nExec=/usr/local/bin/decklock-vm-session\nType=Application\n')
@@ -75,17 +77,48 @@ session_command.write_text(
 session_command.chmod(0o755)
 
 # Inspect the actual setup output before adding guest-only headless variables.
-config = WORK / 'config.toml'
-run(['decklock', 'setup', 'greeter', '--target', str(config)])
+run(['decklock', 'setup', 'greeter'])
 document = tomllib.loads(config.read_text())
+assert document['default_session']['user'] == greeter_name
 original = document['default_session']['command']
-assert original == 'cage -s -- decklock --greeter --keyboard', original
-record('packaged setup selects the native greetd/Cage greeter')
+assert 'cage -s -- decklock --greeter --keyboard' in original, original
+assert 'XDG_CONFIG_HOME=' in original and 'XDG_CACHE_HOME=' in original, original
+storage_env = dict(word.split('=', 1) for word in shlex.split(original) if '=' in word)
+state_dir = Path(storage_env['XDG_CONFIG_HOME'])
+if Path('/sys/fs/selinux/enforce').exists():
+    assert state_dir == Path('/var/lib/greetd/decklock')
+    assert subprocess.check_output(['stat', '-c', '%C', str(state_dir)], text=True).split(':')[2] == 'xdm_var_lib_t'
+for path in [state_dir, state_dir / 'cache', state_dir / 'data']:
+    info = path.stat()
+    assert info.st_uid == greeter.pw_uid and info.st_gid == greeter.pw_gid, path
+    assert info.st_mode & 0o777 == 0o750, path
+# Ownership of the leaf is insufficient when a packaged parent is private to
+# another account. Probe actual traversal and writing as the configured account.
+run(['runuser', '-u', greeter_name, '--', 'python3', '-c',
+     'from pathlib import Path; import sys; p=Path(sys.argv[1])/".setup-write-check"; '
+     'p.write_text("probe"); p.unlink()', str(state_dir)])
+record('configured packaged greeter account can traverse and write its storage')
+# A correct child owner/label must not hide an inaccessible ancestor.
+private_parent = state_dir / '.private-parent'
+private_parent.mkdir(mode=0o700)
+blocked_storage = private_parent / 'state'
+saved_config = config.read_bytes()
+blocked = subprocess.run(
+    ['decklock', 'setup', 'greeter', '--state-dir', str(blocked_storage)],
+    capture_output=True, text=True, timeout=30 * SLOW)
+assert blocked.returncode != 0, 'Setup accepted storage beneath a root-only ancestor'
+assert 'cannot access greeter storage' in blocked.stderr, blocked.stderr
+assert config.read_bytes() == saved_config, 'Rejected storage changed the working greetd command'
+record('setup rejects inaccessible ancestors before replacing the greetd command')
+state = state_dir / 'greeter-state.toml'
+state.write_text('last_user = "locktest"\nlast_session = "00-decklock-vm"\n')
+os.chown(state, greeter.pw_uid, greeter.pw_gid)
+record('packaged system setup prepares private storage owned by the HOME=/ greeter')
 
-greeter_config = Path(greeter.pw_dir) / '.config/decklock/config.toml'
+greeter_config = state_dir / 'decklock/config.toml'
 greeter_config.parent.mkdir(parents=True, exist_ok=True)
 greeter_config.write_text('locale = "en-US"\nbackground_pool = []\nidle_pool = []\nidle_enabled = false\n')
-run(['chown', '-R', 'greeter:greeter', str(greeter_config.parent.parent)])
+run(['chown', '-R', f'{greeter.pw_uid}:{greeter.pw_gid}', str(greeter_config.parent)])
 wrapper = Path('/usr/local/bin/decklock-vm-greeter')
 wrapper.write_text(
     '#!/bin/sh\n'
@@ -93,24 +126,24 @@ wrapper.write_text(
     'exec >> /var/tmp/decklock-greeter-test/cage.log 2>&1\n'
     'id\n'
     'printf "runtime=%s\\n" "${XDG_RUNTIME_DIR:-unset}"\n'
+    'printf "home=%s\\n" "$HOME"\n'
     'printf "start\\n" >> /var/tmp/decklock-greeter-test/starts\n'
     'exec env WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman '
     'WLR_LIBINPUT_NO_DEVICES=1 GDK_BACKEND=wayland GSK_RENDERER=cairo '
-    'cage -s -- decklock --greeter --keyboard '
-    f'--config {greeter_config}\n'
+    f'{original}\n'
 )
 wrapper.chmod(0o755)
 active_config = Path('/etc/greetd/decklock-vm.toml')
 active_config.write_text(
     '[terminal]\nvt = 2\nswitch = true\n'
     '[general]\nrunfile = "/run/decklock-vm-greetd.run"\n'
-    '[default_session]\ncommand = "' + str(wrapper) + '"\nuser = "greeter"\n'
+    '[default_session]\ncommand = "' + str(wrapper) + '"\nuser = "' + greeter_name + '"\n'
 )
 WORK.chmod(0o1777)
 if Path('/usr/sbin/restorecon').exists() or Path('/sbin/restorecon').exists():
     run(['restorecon', '-RF', '/etc/greetd', str(wrapper), str(session_file),
-         str(session_command), greeter.pw_dir])
-run(['loginctl', 'enable-linger', 'greeter'])
+         str(session_command), str(state_dir)])
+run(['loginctl', 'enable-linger', greeter_name])
 run(['systemctl', 'stop', 'greetd.service'])
 run(['systemctl', 'stop', 'getty@tty2.service'])
 runtime = Path('/run/user') / str(greeter.pw_uid)
@@ -132,18 +165,19 @@ try:
     greeter_runtime = f'runtime={runtime}'
     assert greeter_runtime in (WORK / 'cage.log').read_text(errors='replace').splitlines(), \
         'greetd did not give the greeter its logind runtime directory; see cage.log'
-    record('greetd gives the packaged greeter command its logind runtime directory')
+    assert 'home=/' in (WORK / 'cage.log').read_text().splitlines()
+    record('greetd starts the exact setup command with HOME=/ and its logind runtime directory')
     def type_password(value):
         greeter_env = os.environ.copy()
         greeter_env.update(
             HOME=greeter.pw_dir, XDG_RUNTIME_DIR=str(runtime),
             WAYLAND_DISPLAY=socket.name,
         )
-        run(['runuser', '-u', 'greeter', '--', 'env',
+        run(['runuser', '-u', greeter_name, '--', 'env',
              f'HOME={greeter.pw_dir}', f'XDG_RUNTIME_DIR={runtime}',
              f'WAYLAND_DISPLAY={socket.name}',
              'wtype', '-s', '250', '-d', '30', value], env=greeter_env)
-        run(['runuser', '-u', 'greeter', '--', 'env',
+        run(['runuser', '-u', greeter_name, '--', 'env',
              f'HOME={greeter.pw_dir}', f'XDG_RUNTIME_DIR={runtime}',
              f'WAYLAND_DISPLAY={socket.name}',
              'wtype', '-s', '250', '-k', 'Return'], env=greeter_env)
@@ -179,7 +213,7 @@ try:
     steps = (users.index('locktest2') - users.index('locktest')) % len(users)
     assert steps > 0
     for _ in range(steps):
-        run(['runuser', '-u', 'greeter', '--', 'env',
+        run(['runuser', '-u', greeter_name, '--', 'env',
              f'HOME={greeter.pw_dir}', f'XDG_RUNTIME_DIR={runtime}',
              f'WAYLAND_DISPLAY={socket.name}', 'wtype', '-s', '250', '-k', 'Right'])
     type_password('DeckLock-second-42')

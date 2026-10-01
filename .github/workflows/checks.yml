@@ -23,7 +23,7 @@ jobs:
       - name: Native test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-gl libpam0g-dev libwayland-dev wayland-protocols libxkbcommon-dev meson ninja-build xvfb xauth dbus-x11 xfwm4 x11-xserver-utils libxss-dev libxtst6 libxi6
+          sudo apt-get install -y libgtk-4-dev libx11-xcb-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-gl libpam0g-dev libwayland-dev wayland-protocols libxkbcommon-dev meson ninja-build xvfb xauth dbus-x11 xfwm4 x11-xserver-utils libxss-dev libxtst6 libxi6
       - name: Pinned Rust toolchain
         run: |
           rustup toolchain install 1.93.0 --profile minimal --component rustfmt --component clippy
