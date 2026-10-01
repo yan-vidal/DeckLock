@@ -42,6 +42,20 @@ Repouso é o modo de inatividade do próprio DeckLock depois de iniciado. Ele n�
 
 A aba Repouso mostra uma prévia desse estado. Escolha um pool e intervalo próprios, mantenha o fundo normal ocultando os controles ou desative o repouso. O relógio em repouso é configurável. A atividade restaura a interface normal.
 
+## Login, bloqueio e tamanho da interface
+
+Com greetd, Cage e hypridle instalados, `sudo decklock setup all` configura login e bloqueio em um comando. A configuração do bloqueio e seus backups pertencem ao usuário que invocou o sudo, em ~/.config/hypr/hypridle.conf; use --lock-target para outro caminho. --dry-run revisa as duas configurações sem gravar. O setup preserva opções não relacionadas e não reinicia serviços; alterações no login passam a valer no próximo logout ou boot.
+
+No Steam Deck OLED com Hyprland 0.55 ou mais novo, use:
+
+```sh
+sudo decklock setup all --compositor hyprland --output eDP-1 --transform 3
+```
+
+A rotação depende do hardware. O greeter usa a conta de serviço do greetd e armazenamento próprio em /var/lib/decklock-greeter, ou /var/lib/greetd/decklock com SELinux. HOME=/ não exige criar /.config/midias. O setup executado com sudo pela conta do desktop copia automaticamente as mídias selecionadas e a aparência para esse armazenamento. Lê como o usuário, sem abrir a HOME ao greeter nem apagar originais. O login usa as cópias antes de a HOME estar disponível, incluindo fotos, vídeos, procedurais e pools de repouso. Repita o mesmo comando após mudar a seleção. Use --user-config CAMINHO para um XDG personalizado ou --no-user-appearance para aparência independente. Um --config explícito no comando do greeter prevalece. Opções de autenticação/sessão e escolhas lembradas ficam preservadas; uma entrada inválida ou ilegível não substitui a aparência válida.
+
+Os controles do login, bloqueio e preview diminuem automaticamente para caber em áreas lógicas menores que 1280×800. Com zoom de 160% no Deck, os 800×500 lógicos usam fator 0,625, aproximando o tamanho do login em escala 1. O zoom do desktop permanece; o fundo ocupa a tela inteira e as coordenadas do teclado acompanham os controles. Áreas maiores não ampliam a interface. Temas e ajustes de layout continuam válidos.
+
 ## Tentativas e bloqueio da conta
 
 Sistemas Linux costumam contar falhas de autenticação e bloquear a conta por um tempo. Isso é política do PAM, não do DeckLock, e vale igualmente para o login no terminal.

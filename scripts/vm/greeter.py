@@ -6,6 +6,8 @@ import pwd
 import shutil
 import shlex
 import subprocess
+import struct
+import zlib
 import time
 import tomllib
 
@@ -76,8 +78,61 @@ session_command.write_text(
 )
 session_command.chmod(0o755)
 
+# Exercise the combined command with sudo's root HOME and a fixed guest user.
+# The locker file, its directories and backups must remain writable by that user.
+caller = pwd.getpwnam('locktest')
+lock_dir = Path(caller.pw_dir) / '.config/hypr'
+lock_dir.mkdir(parents=True, exist_ok=True)
+lock_file = lock_dir / 'hypridle.conf'
+lock_file.write_text('general { lock_cmd = swaylock }\n')
+for path in [lock_dir.parent, lock_dir, lock_file]:
+    os.chown(path, caller.pw_uid, caller.pw_gid)
+lock_file.chmod(0o600)
+# Personal media must remain inaccessible from the service account HOME.
+private = Path(caller.pw_dir) / '.config/decklock'
+private.mkdir(mode=0o700, exist_ok=True)
+private.chmod(0o700)
+personal_photo = private / 'private.png'
+def png_chunk(kind, data):
+    return struct.pack('!I', len(data)) + kind + data + struct.pack('!I', zlib.crc32(kind + data))
+raw = (b'\x00' + b'\x00\xff\xff' * 16) * 16
+personal_photo.write_bytes(b'\x89PNG\r\n\x1a\n' +
+    png_chunk(b'IHDR', struct.pack('!2I5B', 16, 16, 8, 2, 0, 0, 0)) +
+    png_chunk(b'IDAT', zlib.compress(raw)) + png_chunk(b'IEND', b''))
+personal_video = private / 'private.mp4'
+packaged_video = next(Path('/usr/share/decklock/media').rglob('*.mp4'))
+shutil.copyfile(packaged_video, personal_video)
+personal_config = private / 'config.toml'
+personal_config.write_text('locale="en-US"\nbackground_pool=["private.png"]\nidle_pool=["private.mp4"]\nidle_enabled=false\n')
+for path in [private, personal_photo, personal_video, personal_config]:
+    os.chown(path, caller.pw_uid, caller.pw_gid)
+for path in [personal_photo, personal_video, personal_config]:
+    path.chmod(0o600)
+root_config = WORK / 'root-config'
+setup_env = dict(os.environ, HOME='/root', XDG_CONFIG_HOME=str(root_config),
+                 SUDO_UID=str(caller.pw_uid), SUDO_GID=str(caller.pw_gid), SUDO_USER='locktest')
+saved_lock = lock_file.read_bytes()
+saved_greetd = config.read_bytes() if config.exists() else None
+run(['decklock', 'setup', 'all', '--dry-run'], env=setup_env)
+assert lock_file.read_bytes() == saved_lock
+assert (config.read_bytes() if config.exists() else None) == saved_greetd
+assert not root_config.exists(), 'Combined dry-run touched root configuration'
+run(['decklock', 'setup', 'all'], env=setup_env)
+assert 'lock_cmd = decklock --lock' in lock_file.read_text()
+assert lock_file.stat().st_uid == caller.pw_uid
+assert lock_file.stat().st_gid == caller.pw_gid
+assert lock_file.stat().st_mode & 0o777 == 0o600
+backups = list(lock_dir.glob('hypridle.conf.bak.*'))
+assert backups and all(p.stat().st_uid == caller.pw_uid for p in backups)
+assert backups[0].read_bytes() == saved_lock
+assert not root_config.exists(), 'Combined setup wrote the locker to root configuration'
+after_lock = lock_file.read_bytes()
+run(['decklock', 'setup', 'all'], env=setup_env)
+assert lock_file.read_bytes() == after_lock
+assert list(lock_dir.glob('hypridle.conf.bak.*')) == backups
+record('combined packaged setup uses the sudo caller HOME, ownership, mode and backups; dry-run and repeat preserve files')
+
 # Inspect the actual setup output before adding guest-only headless variables.
-run(['decklock', 'setup', 'greeter'])
 document = tomllib.loads(config.read_text())
 assert document['default_session']['user'] == greeter_name
 original = document['default_session']['command']
@@ -85,6 +140,41 @@ assert 'cage -s -- decklock --greeter --keyboard' in original, original
 assert 'XDG_CONFIG_HOME=' in original and 'XDG_CACHE_HOME=' in original, original
 storage_env = dict(word.split('=', 1) for word in shlex.split(original) if '=' in word)
 state_dir = Path(storage_env['XDG_CONFIG_HOME'])
+appearance_path = Path(storage_env['DECKLOCK_GREETER_APPEARANCE'])
+appearance = tomllib.loads(appearance_path.read_text())
+normal_media = Path(appearance['background_pool'][0])
+idle_media = Path(appearance['idle_pool'][0])
+assert normal_media.read_bytes() == personal_photo.read_bytes()
+assert idle_media.read_bytes() == personal_video.read_bytes()
+for path in [appearance_path, normal_media, idle_media]:
+    assert path.is_relative_to(state_dir), path
+    assert path.stat().st_uid == greeter.pw_uid and path.stat().st_gid == greeter.pw_gid
+    assert path.stat().st_mode & 0o777 == 0o640
+    run(['setpriv', '--reuid', str(greeter.pw_uid), '--regid', str(greeter.pw_gid),
+         '--init-groups', '--', '/usr/bin/test', '-r', str(path)])
+denied = subprocess.run(['setpriv', '--reuid', str(greeter.pw_uid), '--regid', str(greeter.pw_gid),
+                         '--init-groups', '--', '/usr/bin/test', '-r', str(personal_photo)], timeout=10 * SLOW)
+assert denied.returncode != 0, 'Setup opened the private user directory to the greeter'
+assert private.stat().st_mode & 0o777 == 0o700
+assert personal_photo.stat().st_mode & 0o777 == 0o600
+record('packaged setup copies normal/rest media for the login account without granting access to private HOME files')
+# A root installer must never copy a source that the desktop caller cannot read.
+root_only_media = WORK / 'root-only.png'
+root_only_media.write_bytes(personal_photo.read_bytes())
+root_only_media.chmod(0o600)
+saved_personal = personal_config.read_bytes()
+saved_appearance = appearance_path.read_bytes()
+saved_greetd_media = config.read_bytes()
+personal_config.write_text(f'background_pool=["{root_only_media}"]\n')
+rejected = subprocess.run(['decklock', 'setup', 'greeter'], env=setup_env,
+                          capture_output=True, text=True, timeout=30 * SLOW)
+assert rejected.returncode != 0, 'Root setup bypassed the desktop caller media permissions'
+assert 'Media export failed' in rejected.stderr, rejected.stderr
+assert appearance_path.read_bytes() == saved_appearance
+assert config.read_bytes() == saved_greetd_media
+personal_config.write_bytes(saved_personal)
+root_only_media.unlink()
+record('root installation rejects unreadable caller media before changing valid login/appearance')
 if Path('/sys/fs/selinux/enforce').exists():
     assert state_dir == Path('/var/lib/greetd/decklock')
     assert subprocess.check_output(['stat', '-c', '%C', str(state_dir)], text=True).split(':')[2] == 'xdm_var_lib_t'
@@ -167,6 +257,26 @@ try:
         'greetd did not give the greeter its logind runtime directory; see cage.log'
     assert 'home=/' in (WORK / 'cage.log').read_text().splitlines()
     record('greetd starts the exact setup command with HOME=/ and its logind runtime directory')
+    def copied_background_visible():
+        output = WORK / 'greeter-media.ppm'
+        run(['runuser', '-u', greeter_name, '--', 'env', f'XDG_RUNTIME_DIR={runtime}',
+             f'WAYLAND_DISPLAY={socket.name}', 'grim', '-t', 'ppm', str(output)])
+        with output.open('rb') as image:
+            assert image.readline().strip() == b'P6'
+            line = image.readline()
+            while line.startswith(b'#'):
+                line = image.readline()
+            width, height = map(int, line.split())
+            assert image.readline().strip() == b'255'
+            pixels = image.read()
+        assert len(pixels) == width * height * 3
+        # Far left of the controls: cyan photo + black veil keeps red near zero.
+        offset = ((height // 2) * width + 8) * 3
+        red, green, blue = pixels[offset:offset+3]
+        return red < 5 and green > 80 and blue > 80
+
+    until(copied_background_visible, 'installed private photo rendered by the real greeter', 30)
+    record('real Cage greeter renders copied private media with HOME=/; original user files remain unreadable')
     def type_password(value):
         greeter_env = os.environ.copy()
         greeter_env.update(

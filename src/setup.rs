@@ -1,4 +1,6 @@
 //! System setup and configuration automation for greetd and compositor screen locks.
+mod appearance;
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -37,6 +39,12 @@ pub enum Action {
         /// Wayland output/input transform, 0..7 (Steam Deck OLED: 3).
         #[arg(long, value_parser = clap::value_parser!(u8).range(0..=7), requires = "output")]
         transform: Option<u8>,
+        /// User configuration whose appearance/media are copied for login.
+        #[arg(long)]
+        user_config: Option<PathBuf>,
+        /// Keep independent greeter appearance instead of copying the sudo user's.
+        #[arg(long, conflicts_with = "user_config")]
+        no_user_appearance: bool,
         /// Dry-run mode: show what would be written without modifying files.
         #[arg(long)]
         dry_run: bool,
@@ -55,7 +63,47 @@ pub enum Action {
     },
     /// Configure both greetd login and hypridle screen lock.
     All {
+        /// Alternative greetd destination (isolated/custom configuration).
+        #[arg(long)]
+        greeter_target: Option<PathBuf>,
+        /// Alternative hypridle destination; otherwise uses the invoking user's config.
+        #[arg(long)]
+        lock_target: Option<PathBuf>,
+        /// Disable the virtual keyboard in the greeter.
+        #[arg(long)]
+        no_keyboard: bool,
+        /// Private greeter storage directory.
+        #[arg(long)]
+        state_dir: Option<PathBuf>,
+        /// Login compositor; preserves an existing Hyprland greeter when omitted.
+        #[arg(long, value_enum)]
+        compositor: Option<GreeterCompositor>,
+        /// Hyprland output to rotate (Steam Deck: eDP-1).
+        #[arg(long, requires = "compositor")]
+        output: Option<String>,
+        /// Output/input transform, 0..7 (Steam Deck OLED: 3).
+        #[arg(long, value_parser = clap::value_parser!(u8).range(0..=7), requires = "output")]
+        transform: Option<u8>,
+        /// Also replace custom screen-lock wrappers.
+        #[arg(long)]
+        replace_custom: bool,
+        /// User configuration whose appearance/media are copied for login.
+        #[arg(long)]
+        user_config: Option<PathBuf>,
+        /// Keep independent greeter appearance instead of copying the sudo user's.
+        #[arg(long, conflicts_with = "user_config")]
+        no_user_appearance: bool,
         /// Dry-run mode: show what would be written without modifying files.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Internal unprivileged exporter used by installation.
+    #[command(hide = true)]
+    ExportAppearance {
+        #[arg(long)]
+        source: Option<PathBuf>,
+        #[arg(long)]
+        target: PathBuf,
         #[arg(long)]
         dry_run: bool,
     },
@@ -903,24 +951,34 @@ fn with_greeter_storage(command: &str, dir: Option<&Path>) -> String {
     match dir {
         None => command.to_string(),
         Some(dir) => format!(
-            "env XDG_CONFIG_HOME={} XDG_CACHE_HOME={} XDG_DATA_HOME={} DECKLOCK_GREETER_STATE={} {command}",
+            "env XDG_CONFIG_HOME={} XDG_CACHE_HOME={} XDG_DATA_HOME={} DECKLOCK_GREETER_STATE={} DECKLOCK_GREETER_APPEARANCE={} {command}",
             shell_quote(&dir.to_string_lossy()),
             shell_quote(&dir.join("cache").to_string_lossy()),
             shell_quote(&dir.join("data").to_string_lossy()),
-            shell_quote(&dir.join("greeter-state.toml").to_string_lossy())
+            shell_quote(&dir.join("greeter-state.toml").to_string_lossy()),
+            shell_quote(&dir.join("appearance.toml").to_string_lossy())
         ),
     }
 }
 
-fn setup_greeter_with_storage(
-    target: Option<&Path>,
+struct GreeterOptions {
     no_keyboard: bool,
     state_dir: Option<PathBuf>,
     dry_run: bool,
+    user_config: Option<PathBuf>,
+    no_user_appearance: bool,
+}
+
+fn setup_greeter_with_storage(
+    target: Option<&Path>,
+    options: &GreeterOptions,
     compositor: Option<GreeterCompositor>,
     output: Option<&str>,
     transform: Option<u8>,
 ) -> Result<String, String> {
+    let no_keyboard = options.no_keyboard;
+    let dry_run = options.dry_run;
+    let state_dir = options.state_dir.clone();
     if output.is_some() && compositor != Some(GreeterCompositor::Hyprland) {
         return Err("Output rotation requires --compositor hyprland".into());
     }
@@ -933,7 +991,7 @@ fn setup_greeter_with_storage(
         return Err("Output must be a connector name, such as eDP-1".into());
     }
     let state_dir_requested = state_dir.is_some();
-    let dir = greeter_state_dir(target, state_dir);
+    let mut dir = greeter_state_dir(target, state_dir);
     let path = target.unwrap_or_else(|| Path::new("/etc/greetd/config.toml"));
     let previous = fs::read_to_string(path)
         .ok()
@@ -945,6 +1003,28 @@ fn setup_greeter_with_storage(
                 .map(str::to_string)
         })
         .filter(|command| command.contains("start-hyprland") && command.contains("greeter"));
+    // Preserve the storage location of a generated/admin-selected Hyprland
+    // kiosk when re-running setup without replacing that compositor command.
+    if compositor.is_none()
+        && !state_dir_requested
+        && let Some(previous) = &previous
+    {
+        let words = shlex::split(previous).ok_or(
+            "Cannot parse existing greeter environment; use explicit compositor/storage options",
+        )?;
+        if words.first().map(String::as_str) == Some("env")
+            && let Some(value) = words
+                .iter()
+                .skip(1)
+                .take_while(|word| word.contains('='))
+                .find_map(|word| word.strip_prefix("XDG_CONFIG_HOME="))
+        {
+            if !Path::new(value).is_absolute() || value.contains(['$', '`']) {
+                return Err("Existing greeter storage needs a literal absolute path; use explicit compositor/storage options".into());
+            }
+            dir = Some(PathBuf::from(value));
+        }
+    }
     let lua_path = path.with_file_name("hyprland-greeter.lua");
     let lua = (compositor == Some(GreeterCompositor::Hyprland))
         .then(|| hyprland_greeter_config(no_keyboard, output, transform.unwrap_or(0)));
@@ -972,6 +1052,13 @@ fn setup_greeter_with_storage(
         verify_hyprland_config(lua)?;
     }
     let user = configured_greeter_user(path)?;
+    let appearance = appearance::prepare(
+        dir.as_deref(),
+        target.is_none(),
+        options.user_config.as_deref(),
+        options.no_user_appearance,
+        dry_run,
+    )?;
     let preparation = match &dir {
         Some(dir) => prepare_greeter_dirs(dir, target.is_none(), dry_run, &user)?,
         None => String::new(),
@@ -982,6 +1069,9 @@ fn setup_greeter_with_storage(
             .map(|lua| format!("\nDry-run: would write {}\n{lua}", lua_path.display()))
             .unwrap_or_default();
         return Ok(format!("{review}\n{preparation}{compositor_report}"));
+    }
+    if let Some(appearance) = appearance {
+        appearance.install(dir.as_deref().unwrap(), target.is_none(), &user)?;
     }
     let old_lua = fs::read_to_string(&lua_path).ok();
     if let Some(lua) = &lua {
@@ -1103,12 +1193,149 @@ fn save_greeter_lua(path: &Path, content: &str) -> Result<(), String> {
     Ok(())
 }
 
+struct Caller {
+    uid: u32,
+    gid: u32,
+    home: PathBuf,
+}
+impl Caller {
+    fn command(&self) -> Result<ProcessCommand, String> {
+        let mut command = ProcessCommand::new("setpriv");
+        command
+            .args([
+                "--reuid",
+                &self.uid.to_string(),
+                "--regid",
+                &self.gid.to_string(),
+                "--init-groups",
+                "--",
+            ])
+            .arg(std::env::current_exe().map_err(|e| e.to_string())?)
+            .env("HOME", &self.home)
+            .env("XDG_CONFIG_HOME", self.home.join(".config"))
+            .env("XDG_DATA_HOME", self.home.join(".local/share"))
+            .env_remove("WAYLAND_DISPLAY")
+            .env_remove("WAYLAND_SOCKET")
+            .env_remove("DISPLAY")
+            .env_remove("DBUS_SESSION_BUS_ADDRESS");
+        Ok(command)
+    }
+}
+fn caller_by_uid(uid: u32) -> Result<Caller, String> {
+    let mut account: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut buffer = vec![0_u8; 65536];
+    let mut result = std::ptr::null_mut();
+    // getpwuid_r owns no global state; returned strings live in buffer until
+    // copied below. The fixed buffer fails clearly for oversized NSS records.
+    let code = unsafe {
+        libc::getpwuid_r(
+            uid,
+            &mut account,
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+            &mut result,
+        )
+    };
+    if code != 0 || result.is_null() || account.pw_dir.is_null() {
+        return Err(format!(
+            "Cannot resolve sudo caller UID {uid}; no configuration was changed"
+        ));
+    }
+    use std::os::unix::ffi::OsStrExt;
+    let home = PathBuf::from(std::ffi::OsStr::from_bytes(unsafe {
+        std::ffi::CStr::from_ptr(account.pw_dir).to_bytes()
+    }));
+    if !home.is_absolute() || home == Path::new("/") {
+        return Err("The sudo caller needs an absolute desktop HOME".into());
+    }
+    Ok(Caller {
+        uid,
+        gid: account.pw_gid,
+        home,
+    })
+}
+
+/// Root configures greetd, but hypridle belongs to the user who invoked sudo.
+/// Re-execute just the lock setup without root privileges so newly created
+/// directories, atomic replacements and backups all retain user ownership.
+fn setup_invoking_user_lock(
+    target: Option<&Path>,
+    dry_run: bool,
+    replace_custom: bool,
+) -> Result<String, String> {
+    if unsafe { libc::geteuid() } != 0 {
+        return setup_lock_with(target, dry_run, replace_custom);
+    }
+    let Some(uid) = std::env::var("SUDO_UID")
+        .ok()
+        .and_then(|uid| uid.parse::<u32>().ok())
+        .filter(|uid| *uid != 0)
+    else {
+        if target.is_some() {
+            return setup_lock_with(target, dry_run, replace_custom);
+        }
+        return Err("Run setup all through sudo from your desktop account, or specify --lock-target; root's HOME is not a desktop configuration".into());
+    };
+    let caller = caller_by_uid(uid)?;
+    let home = &caller.home;
+    let destination = target
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".config/hypr/hypridle.conf"));
+    let log = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    let output = log.reopen().map_err(|e| e.to_string())?;
+    let mut command = caller.command()?;
+    command
+        .args(["setup", "lock", "--target"])
+        .arg(&destination)
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env_remove("WAYLAND_DISPLAY")
+        .env_remove("WAYLAND_SOCKET")
+        .env_remove("DISPLAY")
+        .stdin(std::process::Stdio::null())
+        .stdout(output.try_clone().map_err(|e| e.to_string())?)
+        .stderr(output);
+    if dry_run {
+        command.arg("--dry-run");
+    }
+    if replace_custom {
+        command.arg("--replace-custom");
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Cannot configure the sudo caller's screen lock with setpriv: {e}"))?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Screen-lock setup timed out; greetd was not changed".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let text = fs::read_to_string(log.path()).map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!(
+            "Screen-lock setup failed; greetd was not changed:\n{text}"
+        ));
+    }
+    Ok(text.trim_end().to_string())
+}
+
 pub fn execute(action: Option<Action>) -> Result<String, String> {
     match action.unwrap_or(Action::Status) {
         Action::Status => {
             let report = inspect_system(None, None);
             Ok(format_status(&report))
         }
+        Action::ExportAppearance {
+            source,
+            target,
+            dry_run,
+        } => appearance::export(source.as_deref(), &target, dry_run),
         Action::Greeter {
             target,
             no_keyboard,
@@ -1116,12 +1343,18 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
             compositor,
             output,
             transform,
+            user_config,
+            no_user_appearance,
             dry_run,
         } => setup_greeter_with_storage(
             target.as_deref(),
-            no_keyboard,
-            state_dir,
-            dry_run,
+            &GreeterOptions {
+                no_keyboard,
+                state_dir,
+                dry_run,
+                user_config,
+                no_user_appearance,
+            },
             compositor,
             output.as_deref(),
             transform,
@@ -1132,10 +1365,52 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
             replace_custom,
         } => setup_lock_with(target.as_deref(), dry_run, replace_custom),
 
-        Action::All { dry_run } => {
-            let greeter_res =
-                setup_greeter_with_storage(None, false, None, dry_run, None, None, None)?;
-            let lock_res = setup_lock(None, dry_run)?;
+        Action::All {
+            greeter_target,
+            lock_target,
+            no_keyboard,
+            state_dir,
+            compositor,
+            output,
+            transform,
+            replace_custom,
+            user_config,
+            no_user_appearance,
+            dry_run,
+        } => {
+            let mut options = GreeterOptions {
+                no_keyboard,
+                state_dir,
+                dry_run: true,
+                user_config,
+                no_user_appearance,
+            };
+            // Validate both configurations before writing either. Configure the
+            // user's lock first so a failure cannot replace their working login.
+            let greeter_review = setup_greeter_with_storage(
+                greeter_target.as_deref(),
+                &options,
+                compositor,
+                output.as_deref(),
+                transform,
+            )?;
+            let lock_review =
+                setup_invoking_user_lock(lock_target.as_deref(), true, replace_custom)?;
+            if dry_run {
+                return Ok(format!("{greeter_review}\n{lock_review}"));
+            }
+            let lock_res = setup_invoking_user_lock(lock_target.as_deref(), false, replace_custom)?;
+            options.dry_run = false;
+            let greeter_res = setup_greeter_with_storage(
+                greeter_target.as_deref(),
+                &options,
+                compositor,
+                output.as_deref(),
+                transform,
+            )
+            .map_err(|error| {
+                format!("{error}\nScreen-lock setup already completed:\n{lock_res}")
+            })?;
             Ok(format!("{greeter_res}\n{lock_res}"))
         }
     }

@@ -32,6 +32,124 @@ fn key(view: &ui::View, label: &str) -> gtk::Button {
         .unwrap_or_else(|| panic!("Missing key: {label}"))
 }
 
+fn check_adaptive_controls(app: &gtk::Application) {
+    for (width, height, factor) in [(1280, 800, 1.0_f32), (800, 500, 0.625_f32)] {
+        let view = ui::build(
+            app,
+            Rc::new(ui::Settings {
+                config: Config {
+                    system_keyboard: false,
+                    window_decorations: false,
+                    background_pool: Some(vec![]),
+                    ..Config::default()
+                },
+                theme: Theme::load(None).unwrap(),
+                strings: I18n::new(Some("pt-BR"), None).unwrap(),
+                preview: true,
+                show_keyboard: false,
+                start_idle: false,
+                username: "Fixed fixture".into(),
+                greeter: false,
+            }),
+            Rc::new(|_| panic!("Adaptive preview must never authenticate")),
+        );
+        view.window.set_titlebar(None::<&gtk::Widget>);
+        view.window.set_decorated(false);
+        view.window.set_default_size(width, height);
+        if width == 1280 {
+            view.window.add_tick_callback(|window, _| {
+                window.fullscreen();
+                glib::ControlFlow::Break
+            });
+        }
+        view.window.present();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while (view.window.width() != width || view.window.height() != height)
+            && Instant::now() < deadline
+        {
+            for _ in 0..100 {
+                if !glib::MainContext::default().iteration(false) {
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!((view.window.width(), view.window.height()), (width, height));
+        let named = |name: &str| {
+            descendants(view.window.upcast_ref())
+                .into_iter()
+                .find(|widget| widget.widget_name() == name)
+                .unwrap()
+        };
+        let avatar = named("avatar");
+        let bounds = avatar.compute_bounds(&view.window).unwrap();
+        assert!(
+            (bounds.width() - 108.0 * factor).abs() < 1.0,
+            "Controls must fit {width}x{height}: avatar width {} instead of {}",
+            bounds.width(),
+            108.0 * factor
+        );
+        let background = named("background").compute_bounds(&view.window).unwrap();
+        assert_eq!(
+            (
+                background.width().round() as i32,
+                background.height().round() as i32
+            ),
+            (width, height),
+            "Media must keep filling the entire surface"
+        );
+        view.keyboard.set_visible(true);
+        let button = key(&view, "a");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while button.width() == 0 && Instant::now() < deadline {
+            for _ in 0..100 {
+                if !glib::MainContext::default().iteration(false) {
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let center = button
+            .compute_point(
+                &view.window,
+                &gtk::graphene::Point::new(
+                    button.width() as f32 / 2.0,
+                    button.height() as f32 / 2.0,
+                ),
+            )
+            .unwrap();
+        let picked = view
+            .window
+            .pick(
+                center.x() as f64,
+                center.y() as f64,
+                gtk::PickFlags::DEFAULT,
+            )
+            .unwrap();
+        assert!(
+            picked == button || picked.is_ancestor(&button),
+            "Scaled keyboard lost pointer hit testing"
+        );
+        button.emit_clicked();
+        assert_eq!(view.entry.text(), "a");
+        let weak_entry = view.entry.downgrade();
+        view.window.destroy();
+        drop(view);
+        drop(button);
+        drop(picked);
+        drop(avatar);
+        for _ in 0..100 {
+            if !glib::MainContext::default().iteration(false) {
+                break;
+            }
+        }
+        assert!(
+            weak_entry.upgrade().is_none(),
+            "Adaptive controls retained a destroyed view"
+        );
+    }
+}
+
 fn main() {
     gtk::init().expect("Wayland display required for the preview check");
     let app = gtk::Application::new(
@@ -39,6 +157,8 @@ fn main() {
         gio::ApplicationFlags::NON_UNIQUE,
     );
     app.register(None::<&gio::Cancellable>).unwrap();
+    ui::apply_css(&Theme::load(None).unwrap().css).unwrap();
+    check_adaptive_controls(&app);
     let settings = Rc::new(ui::Settings {
         config: Config {
             system_keyboard: false,
