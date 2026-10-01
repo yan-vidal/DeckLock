@@ -389,3 +389,7 @@ remain unchanged. SELinux uses a persistent xdm_var_lib_t mapping rather than
 disabling policy. Source/isolated/packaged checks must still be reported
 separately; this change does not add login backends beyond greetd, make encrypted
 HOME mounts available before login, establish device UAT or publish a release.
+
+The appearance pointer is published only after legacy conversion and label
+verification succeed; rejected unrelated hard links preserve the valid installed
+appearance and login command, with a real-CLI regression.

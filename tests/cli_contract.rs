@@ -191,6 +191,61 @@ fn shared_setup_rejects_bad_inputs_before_migrating_a_valid_file() {
 }
 
 #[test]
+fn rejected_legacy_media_preserves_the_installed_appearance() {
+    let cli = Cli::new();
+    let home = cli.home.path();
+    let source = home.join("source.mp4");
+    std::fs::write(&source, b"fixed valid appearance fixture").unwrap();
+    let config = home.join("personal.toml");
+    std::fs::write(
+        &config,
+        "background_pool=['source.mp4']\nidle_pool=[]\nlocale='en-US'\n",
+    )
+    .unwrap();
+    let state = home.join("login");
+    let library = home.join("shared");
+    let target = home.join("greetd.toml");
+    let args = [
+        "setup",
+        "greeter",
+        "--target",
+        target.to_str().unwrap(),
+        "--state-dir",
+        state.to_str().unwrap(),
+        "--user-config",
+        config.to_str().unwrap(),
+        "--media-dir",
+        library.to_str().unwrap(),
+    ];
+    cli.run(&args, true);
+    let appearance = state.join("appearance.toml");
+    let before = std::fs::read(&appearance).unwrap();
+    let before_command = std::fs::read(&target).unwrap();
+    let old = state.join(format!("appearance-{}", "c".repeat(64)));
+    std::fs::create_dir_all(&old).unwrap();
+    let unrelated = home.join("unrelated.mp4");
+    std::fs::write(&unrelated, b"fixed unrelated hard-link fixture").unwrap();
+    let legacy = old.join("media-000000.mp4");
+    std::fs::hard_link(&unrelated, &legacy).unwrap();
+    let mut document: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+    document["locale"] = "pt-BR".into();
+    std::fs::write(&config, toml::to_string(&document).unwrap()).unwrap();
+    cli.run(&args, false);
+    assert_eq!(
+        std::fs::read(&appearance).unwrap(),
+        before,
+        "Rejected legacy media replaced the valid login appearance"
+    );
+    assert_eq!(std::fs::read(&target).unwrap(), before_command);
+    assert!(!legacy.is_symlink());
+    assert_eq!(
+        std::fs::read(&unrelated).unwrap(),
+        b"fixed unrelated hard-link fixture"
+    );
+}
+
+#[test]
 fn shared_setup_recovers_an_interrupted_legacy_snapshot_conversion() {
     let cli = Cli::new();
     let home = cli.home.path();

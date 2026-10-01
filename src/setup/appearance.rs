@@ -571,6 +571,23 @@ impl Plan {
                 .set_permissions(fs::Permissions::from_mode(0o750))
                 .map_err(|e| e.to_string())?;
         }
+        // Complete legacy conversion and labelling before publishing the new
+        // appearance. A rejected old generation must preserve the valid pointer.
+        super::prepare_greeter_dirs(dir, system, false, user)?;
+        super::shared_media::retire_snapshots(
+            dir,
+            &shared,
+            owner.map_or(export_uid, |(uid, _)| uid),
+            export_uid,
+        )?;
+        if system {
+            super::shared_media::prepare(
+                &shared,
+                export_uid,
+                super::caller_by_uid(export_uid)?.gid,
+                true,
+            )?;
+        }
         appearance.resolve_paths(&destination);
         let text = toml::to_string_pretty(&appearance).map_err(|e| e.to_string())?;
         let pointer = dir.join("appearance.toml");
@@ -594,21 +611,6 @@ impl Plan {
             Ok(()) => (),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
             Err(e) => return Err(e.to_string()),
-        }
-        super::prepare_greeter_dirs(dir, system, false, user)?;
-        super::shared_media::retire_snapshots(
-            dir,
-            &shared,
-            owner.map_or(export_uid, |(uid, _)| uid),
-            export_uid,
-        )?;
-        if system {
-            super::shared_media::prepare(
-                &shared,
-                export_uid,
-                super::caller_by_uid(export_uid)?.gid,
-                true,
-            )?;
         }
         Ok(())
     }
