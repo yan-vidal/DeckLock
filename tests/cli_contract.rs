@@ -16,6 +16,9 @@ impl Cli {
         Self { home, file }
     }
     fn run(&self, args: &[&str], success: bool) -> Output {
+        self.run_env(args, success, &[])
+    }
+    fn run_env(&self, args: &[&str], success: bool, env: &[(&str, &Path)]) -> Output {
         let mut child = Command::new(env!("CARGO_BIN_EXE_decklock"))
             .args(args)
             .env("HOME", self.home.path())
@@ -27,6 +30,9 @@ impl Cli {
             .env_remove("WAYLAND_DISPLAY")
             .env_remove("WAYLAND_SOCKET")
             .env_remove("DBUS_SESSION_BUS_ADDRESS")
+            .env_remove("GREETD_SOCK")
+            .env_remove("DECKLOCK_GREETER_APPEARANCE")
+            .envs(env.iter().copied())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -55,6 +61,187 @@ impl Cli {
         self.run(&full, success)
     }
 }
+#[test]
+fn greeter_loads_the_installed_appearance_before_opening_a_display() {
+    let cli = Cli::new();
+    let appearance = cli.home.path().join("appearance.toml");
+    std::fs::write(&appearance, "invalid_greeter_appearance_fixture=true\n").unwrap();
+    let result = cli.run_env(
+        &["--greeter"],
+        false,
+        &[("DECKLOCK_GREETER_APPEARANCE", &appearance)],
+    );
+    assert!(!result.status.success());
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains("invalid_greeter_appearance_fixture"),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let result = cli.run_env(
+        &["--greeter"],
+        false,
+        &[("XDG_CONFIG_HOME", cli.home.path())],
+    );
+    assert!(String::from_utf8_lossy(&result.stderr).contains("invalid_greeter_appearance_fixture"));
+    decklock::config::Config::default().save(&cli.file).unwrap();
+    let result = cli.run_env(
+        &["--greeter", "--config", cli.file.to_str().unwrap()],
+        false,
+        &[("DECKLOCK_GREETER_APPEARANCE", &appearance)],
+    );
+    assert!(
+        !String::from_utf8_lossy(&result.stderr).contains("invalid_greeter_appearance_fixture")
+    );
+    std::fs::write(cli.home.path().join("appearance.disabled"), "").unwrap();
+    let result = cli.run_env(
+        &["--greeter"],
+        false,
+        &[("DECKLOCK_GREETER_APPEARANCE", &appearance)],
+    );
+    assert!(
+        !String::from_utf8_lossy(&result.stderr).contains("invalid_greeter_appearance_fixture")
+    );
+    cli.run_env(
+        &["--check-config"],
+        true,
+        &[("DECKLOCK_GREETER_APPEARANCE", &appearance)],
+    );
+}
+
+#[test]
+fn sharing_appearance_preserves_the_existing_hyprland_command_and_private_storage() {
+    let cli = Cli::new();
+    let home = cli.home.path();
+    let storage = home.join("greeter's private data");
+    let command = format!(
+        "env XDG_CONFIG_HOME='{}' start-hyprland -- -c greeter.lua",
+        storage.to_str().unwrap().replace('\'', "'\\''")
+    );
+    let target = home.join("greetd.toml");
+    std::fs::write(
+        &target,
+        format!(
+            "[default_session]\nuser='greeter'\ncommand={}\n",
+            serde_json::to_string(&command).unwrap()
+        ),
+    )
+    .unwrap();
+    let config = home.join("personal.toml");
+    std::fs::write(&config, "background_pool=[]\nidle_pool=[]\n").unwrap();
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            target.to_str().unwrap(),
+            "--user-config",
+            config.to_str().unwrap(),
+        ],
+        true,
+    );
+    let after: toml::Value = toml::from_str(&std::fs::read_to_string(&target).unwrap()).unwrap();
+    assert_eq!(
+        after["default_session"]["command"].as_str().unwrap(),
+        command
+    );
+    assert!(storage.join("appearance.toml").is_file());
+}
+
+#[test]
+fn greeter_setup_copies_private_media_and_theme_without_opening_the_user_home() {
+    let cli = Cli::new();
+    let home = cli.home.path();
+    let source = home.join("private");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let photo = source.join("photo.svg");
+    let video = source.join("video.mp4");
+    std::fs::write(
+        &photo,
+        "<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8'/>",
+    )
+    .unwrap();
+    std::fs::write(&video, b"fixed video-copy fixture").unwrap();
+    let theme = source.join("theme");
+    std::fs::create_dir(&theme).unwrap();
+    std::fs::write(
+        theme.join("theme.toml"),
+        "name='private theme'\ncss='style.css'\n[layout]\nkeyboard_scale=0.9\n",
+    )
+    .unwrap();
+    std::fs::write(theme.join("style.css"), "#clock { color: red; }").unwrap();
+    let config = source.join("config.toml");
+    std::fs::write(&config, "theme='theme'\nbackground_pool=['photo.svg','video.mp4','procedural:starfield']\nidle_pool=[]\npam_service='custom-private'\nswitch_user_command='private-action'\n[layout]\npadding=55\n").unwrap();
+    let original = std::fs::read(&config).unwrap();
+    let greetd = home.join("greetd.toml");
+    let storage = home.join("login-storage");
+    let args = [
+        "setup",
+        "greeter",
+        "--target",
+        greetd.to_str().unwrap(),
+        "--state-dir",
+        storage.to_str().unwrap(),
+        "--user-config",
+        config.to_str().unwrap(),
+    ];
+    let mut dry = args.to_vec();
+    dry.push("--dry-run");
+    cli.run(&dry, true);
+    assert!(!storage.exists());
+    assert!(!greetd.exists());
+    cli.run(&args, true);
+    let saved = decklock::config::Config::load(Some(&storage.join("appearance.toml"))).unwrap();
+    assert_eq!(saved.pam_service, "decklock");
+    assert!(saved.switch_user_command.is_none());
+    assert_eq!(saved.layout.as_ref().unwrap().padding, 55);
+    assert_eq!(saved.idle_pool, Some(vec![]));
+    let pool = saved.background_pool.as_ref().unwrap();
+    assert_eq!(pool.len(), 3);
+    assert_eq!(
+        std::fs::read(&pool[0]).unwrap(),
+        std::fs::read(&photo).unwrap()
+    );
+    assert_eq!(
+        std::fs::read(&pool[1]).unwrap(),
+        std::fs::read(&video).unwrap()
+    );
+    assert_eq!(pool[2], std::path::PathBuf::from("procedural:starfield"));
+    assert!(pool[..2].iter().all(|p| p.starts_with(&storage)));
+    assert!(
+        decklock::config::Theme::from_config(&saved)
+            .unwrap()
+            .css
+            .contains("color: red")
+    );
+    let command = std::fs::read_to_string(&greetd).unwrap();
+    assert!(
+        command.contains("DECKLOCK_GREETER_APPEARANCE="),
+        "{command}"
+    );
+    let snapshot = std::fs::read(storage.join("appearance.toml")).unwrap();
+    let count = std::fs::read_dir(&storage).unwrap().count();
+    cli.run(&args, true);
+    assert_eq!(
+        std::fs::read(storage.join("appearance.toml")).unwrap(),
+        snapshot
+    );
+    assert_eq!(std::fs::read_dir(&storage).unwrap().count(), count);
+    std::fs::remove_file(&video).unwrap();
+    cli.run(&args, false);
+    assert_eq!(std::fs::read_to_string(&greetd).unwrap(), command);
+    assert_eq!(
+        std::fs::read(storage.join("appearance.toml")).unwrap(),
+        snapshot
+    );
+    assert_eq!(std::fs::read(&config).unwrap(), original);
+    assert_eq!(
+        source.metadata().unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    assert!(photo.exists());
+}
+
 #[test]
 fn setup_all_configures_both_targets_and_preserves_them_on_invalid_options() {
     let cli = Cli::new();

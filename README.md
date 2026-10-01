@@ -262,7 +262,7 @@ The visual editor's live preview follows that editor's unsaved controls.
 
 ## Login and screen lock automation (`decklock setup`)
 
-DeckLock can serve as a greetd login greeter and compositor screen locker (`hypridle`) with the same UI and on-screen keyboard. The greeter runs as the configured greetd service account (`greeter` on Arch, `greetd` on Fedora), with separate configuration. To use a shared theme, put its configuration and media in a location readable by that account and add `--config /path/to/shared-config.toml` to greetd's command. `--greeter` without a greetd socket is a safe preview: it cannot log in or run power actions.
+DeckLock can serve as a greetd login greeter and compositor screen locker (`hypridle`) with the same UI and on-screen keyboard. The greeter runs as the configured greetd service account (`greeter` on Arch, `greetd` on Fedora), with its own storage. Setup publishes selected personal media/theme as private copies, so login does not need permission to traverse your HOME. A manually configured shared `--config` still requires readable files. `--greeter` without a greetd socket is a safe preview: it cannot log in or run power actions.
 
 Inspect your system's current integration:
 
@@ -300,7 +300,7 @@ preserves the packaged `default_session.user` (`greeter` on Arch, `greetd` on Fe
 storage, ancestor-access or ownership failure leaves the existing greetd command intact. With
 `--target`, only that target is written unless `--state-dir` is also supplied.
 Dry runs create nothing. The greeter reads media without creating user folders;
-optional media-folder errors in preview/lock mode are warnings that name the path. A service account with `HOME=/` does not need `/.config/midias`. Existing readable media, video looping, photo slideshows and rest pools keep working. Personal media is not copied to login automatically; a shared configuration needs files readable by the service account, outside a private user HOME.
+optional media-folder errors in preview/lock mode are warnings that name the path. A service account with `HOME=/` does not need `/.config/midias`. When run through `sudo` from your desktop account, `setup greeter` and `setup all` copy your selected normal/rest media and appearance to private login storage automatically. Export reads as that desktop user, without changing HOME permissions or deleting originals. The greeter reads its own copies even before the user HOME is available; videos, photo slideshows, intentionally empty pools and procedurals retain their behavior. Repeat setup after changing your selection; these are snapshots, not live access to your files. Use `--user-config PATH` for a custom XDG/config location, or `--no-user-appearance` to keep independent login appearance. Explicit `decklock --greeter --config PATH` overrides the snapshot. Unrelated greeter authentication/session options and remembered choices are preserved. Invalid or unreadable selected inputs leave the saved login command and appearance intact. Content-addressed old snapshots remain available for recovery.
 
 On SELinux systems, greeter setup uses the existing display-manager policy path, runs `restorecon`, and requires `xdm_var_lib_t` on the storage directory before changing greetd. Custom `--state-dir` paths need that permanent file-context mapping. Enforcement stays enabled. Fullscreen is requested after the initial surface frame so older Cage/wlroots versions can initialize the login window.
 

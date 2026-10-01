@@ -263,7 +263,7 @@ carregá-lo. O preview ao vivo da interface acompanha os controles não salvos d
 
 ## Automação de login e bloqueio de tela (`decklock setup`)
 
-O DeckLock pode atuar como greeter de login do `greetd` e bloqueador de sessão do compositor (`hypridle`), com a mesma interface e teclado virtual. O greeter roda na conta de serviço configurada no greetd (`greeter` no Arch, `greetd` no Fedora), com configuração separada. Para compartilhar um tema, coloque a configuração e as mídias num local legível por essa conta e acrescente `--config /caminho/para/config-compartilhada.toml` ao comando do greetd. `--greeter` sem socket do greetd é uma prévia segura: não faz login nem executa ações de energia.
+O DeckLock pode atuar como greeter de login do `greetd` e bloqueador de sessão do compositor (`hypridle`), com a mesma interface e teclado virtual. O greeter roda na conta de serviço configurada no greetd (`greeter` no Arch, `greetd` no Fedora), com armazenamento próprio. O setup publica cópias privadas das mídias/tema selecionados, então o login não precisa atravessar sua HOME. Uma configuração compartilhada manual com `--config` continua exigindo arquivos legíveis. `--greeter` sem socket do greetd é uma prévia segura: não faz login nem executa ações de energia.
 
 Inspecione o estado atual de integração do sistema:
 
@@ -304,7 +304,7 @@ do greetd. `--target` só altera o arquivo indicado, exceto quando também receb
 usuário; falhas nas pastas opcionais de mídia do preview/bloqueio viram avisos com
 o caminho que falhou.
 
-Uma conta de serviço com `HOME=/` não precisa de `/.config/midias`. Mídias existentes e legíveis, vídeos em repetição, apresentações de fotos e pools de repouso continuam funcionando. Suas mídias pessoais não são copiadas automaticamente para o login; uma configuração compartilhada precisa apontar para arquivos legíveis pela conta de serviço, fora de uma HOME privada.
+Uma conta de serviço com `HOME=/` não precisa de `/.config/midias`. Executados com `sudo` pela conta do desktop, `setup greeter` e `setup all` copiam automaticamente as mídias selecionadas de bloqueio/repouso e a aparência para o armazenamento privado do login. A exportação lê como esse usuário, sem mudar permissões da HOME nem apagar originais. O greeter lê suas próprias cópias mesmo antes de a HOME estar disponível; vídeos, apresentações de fotos, pools intencionalmente vazios e procedurais mantêm seu comportamento. Repita o setup depois de mudar a seleção: são cópias, sem acesso permanente aos arquivos pessoais. Use `--user-config CAMINHO` para um XDG/config personalizado ou `--no-user-appearance` para manter aparência independente no login. `decklock --greeter --config CAMINHO` explícito prevalece sobre a cópia. Opções de autenticação/sessão do greeter e escolhas lembradas são preservadas. Entradas selecionadas inválidas ou ilegíveis mantêm intactos o comando de login e a aparência salva. Cópias antigas identificadas pelo conteúdo ficam disponíveis para recuperação.
 
 Em sistemas com SELinux, o setup usa o caminho da política existente do gerenciador de login, executa `restorecon` e exige o tipo `xdm_var_lib_t` no armazenamento antes de mudar o greetd. Um `--state-dir` customizado precisa desse mapeamento permanente de contexto. A proteção continua ativa. A tela cheia é solicitada após o primeiro frame da superfície, para versões antigas do Cage/wlroots inicializarem a janela de login.
 

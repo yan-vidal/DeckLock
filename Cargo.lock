@@ -241,6 +241,7 @@ dependencies = [
  "pkg-config",
  "serde",
  "serde_json",
+ "shlex",
  "socket2",
  "tempfile",
  "toml 0.8.23",

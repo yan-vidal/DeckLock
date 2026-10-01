@@ -180,6 +180,16 @@ fn run(args: Args) -> Result<(), String> {
         .map(|p| p.join("decklock/config.toml"))
         .filter(|p| p.is_file());
     let mut config = config::Config::load(args.config.as_deref().or(default_config.as_deref()))?;
+    if args.greeter
+        && args.config.is_none()
+        && let Some(path) = std::env::var_os("DECKLOCK_GREETER_APPEARANCE")
+            .map(PathBuf::from)
+            .or_else(|| shortcut::config_dir().map(|p| p.join("appearance.toml")))
+            .filter(|p| p.is_file())
+        && !path.with_file_name("appearance.disabled").exists()
+    {
+        config.apply_appearance(config::Config::load(Some(&path))?);
+    }
     if let Some(theme) = args.theme {
         config.theme = Some(theme);
     }

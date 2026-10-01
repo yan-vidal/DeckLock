@@ -58,6 +58,26 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Apply only presentation settings from an installed greeter snapshot.
+    /// Authentication, controller and session commands stay with this account.
+    pub fn apply_appearance(&mut self, appearance: Self) {
+        self.procedurals = appearance.procedurals;
+        self.theme = appearance.theme;
+        self.theme_preset = appearance.theme_preset;
+        self.locale = appearance.locale;
+        self.idle_seconds = appearance.idle_seconds;
+        self.idle_enabled = appearance.idle_enabled;
+        self.idle_reuse_background = appearance.idle_reuse_background;
+        self.background_pool = appearance.background_pool;
+        self.idle_pool = appearance.idle_pool;
+        self.slideshow_seconds = appearance.slideshow_seconds;
+        self.idle_slideshow_seconds = appearance.idle_slideshow_seconds;
+        self.background = appearance.background;
+        self.idle_background = appearance.idle_background;
+        self.system_keyboard = appearance.system_keyboard;
+        self.layout = appearance.layout;
+    }
+
     // Unreleased overlay drafts migrate to media items without deleting existing media.
     fn migrate_overlays(&mut self) {
         for (old, pool) in [
