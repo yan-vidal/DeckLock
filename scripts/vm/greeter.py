@@ -331,8 +331,13 @@ try:
     assert tomllib.loads(volume_config.read_text())['media_library'] == str(Path('/var/lib/decklock/media') / str(volume_account.pw_uid))
     assert os.getxattr(volume, 'system.posix_acl_access') == acl
     assert volume.stat().st_mode & 0o777 == 0o755
-    assert subprocess.run(['setpriv', '--reuid', str(greeter.pw_uid), '--regid', str(greeter.pw_gid),
-        '--init-groups', '--', '/usr/bin/test', '-x', str(volume)], timeout=10 * SLOW).returncode != 0
+    # Ubuntu's packaged test -x reports mode bits even when a named ACL
+    # denies traversal. Assert a real kernel operation as the service account.
+    acl_probe = subprocess.run(['setpriv', '--reuid', str(greeter.pw_uid), '--regid', str(greeter.pw_gid),
+        '--init-groups', '--', 'python3', '-c',
+        'import os, sys\ntry: os.chdir(sys.argv[1])\nexcept PermissionError: sys.exit(23)\n', str(volume)],
+        timeout=10 * SLOW, capture_output=True)
+    assert acl_probe.returncode == 23, f'Named ACL did not deny actual traversal: {acl_probe}'
     run(['setpriv', '--reuid', str(greeter.pw_uid), '--regid', str(greeter.pw_gid),
         '--init-groups', '--', '/usr/bin/test', '-r', str(volume_photo.resolve())])
     # A root-group writable mode must not hide a named ordinary writer.

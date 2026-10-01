@@ -190,3 +190,12 @@ Root stacking notifications use a separate X connection, watched by GLib at high
 ### X11 VM display readiness
 
 The VM Xvfb uses `-noreset` and waits for an actual client connection before GTK starts. A probe disconnecting as the final client otherwise resets the server generation; the Arch VM failed GTK initialization during that race before the X11 backend ran. `scripts/test-vm-x11-fixture.py` runs the exact fixture arguments on a private dynamically allocated display and checks a protocol marker survives closing the last client. Missing Xvfb/xdotool now fails the guest gate instead of skipping X11; PAM and input assertions are unchanged.
+
+### Named ancestor ACL verification
+
+The packaged guest asserts denial by attempting an actual `chdir` as the login
+account and requiring `PermissionError`, while retaining the original ACL and
+public mode bits. Ubuntu's packaged Rust `test -x` reports success from the mode
+bits for this fixture even though the kernel denies traversal; it cannot serve
+as the denial oracle. Library fallback and the other media assertions remain
+required on every VM target.
