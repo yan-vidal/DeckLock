@@ -297,6 +297,19 @@ try:
         '--init-groups', '--', '/usr/bin/test', '-r', str(volume_photo.resolve())])
     assert tomllib.loads(appearance_path.read_text())['background_pool'] == volume_doc['background_pool']
     record('separate common HOME volume is selected automatically without copying payloads onto the system partition')
+    # A common volume with untrusted/publicly writable ancestors is ineligible.
+    # This is the real CLI boundary that failed on the Fedora Cloud image.
+    volume.chmod(0o777)
+    volume_config.write_text('background_pool=["photo.png"]\nidle_pool=[]\n')
+    run(['decklock', 'setup', 'greeter', '--user-config', str(volume_config)], env=volume_env)
+    fallback_doc = tomllib.loads(volume_config.read_text())
+    assert Path(fallback_doc['media_library']) == Path('/var/lib/decklock/media') / str(volume_account.pw_uid)
+    assert volume.stat().st_mode & 0o777 == 0o777 and volume.stat().st_uid == 0
+    assert volume_home.stat().st_mode & 0o777 == 0o700
+    assert volume_photo.is_symlink() and volume_photo.read_bytes() == personal_photo.read_bytes()
+    run(['setpriv', '--reuid', str(greeter.pw_uid), '--regid', str(greeter.pw_gid),
+        '--init-groups', '--', '/usr/bin/test', '-r', str(volume_photo.resolve())])
+    record('ineligible common HOME ancestors fall back to public system storage without changing their permissions')
 finally:
     config.write_bytes(saved_volume_command)
     appearance_path.write_bytes(saved_volume_appearance)

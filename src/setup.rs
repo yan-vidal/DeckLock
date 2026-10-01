@@ -44,7 +44,7 @@ pub enum Action {
         #[arg(long)]
         user_config: Option<PathBuf>,
         /// Publicly readable media library. Defaults outside HOME on its common
-        /// volume when separate, otherwise /var/lib/decklock/media/<uid>.
+        /// public volume when separate, otherwise /var/lib/decklock/media/<uid>.
         #[arg(long)]
         media_dir: Option<PathBuf>,
         /// Keep independent greeter appearance instead of sharing the sudo user's.
@@ -96,7 +96,7 @@ pub enum Action {
         #[arg(long)]
         user_config: Option<PathBuf>,
         /// Publicly readable media library. Defaults outside HOME on its common
-        /// volume when separate, otherwise /var/lib/decklock/media/<uid>.
+        /// public volume when separate, otherwise /var/lib/decklock/media/<uid>.
         #[arg(long)]
         media_dir: Option<PathBuf>,
         /// Keep independent greeter appearance instead of sharing the sudo user's.

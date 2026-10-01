@@ -314,7 +314,9 @@ and locking, or `sudo decklock setup greeter` for login only. Setup migrates
 selected normal/rest media and existing user-library media to one dedicated
 library outside your personal HOME. Its default is `/var/lib/decklock/media/UID`.
 If HOME is on a separate, common volume, setup prefers `PARENT/.decklock-media/UID`
-(e.g. `/home/.decklock-media/1000`) on that volume. This avoids filling the system
+(e.g. `/home/.decklock-media/1000`) on that volume, provided its existing parents
+are publicly traversable and root-controlled; otherwise it falls back to
+`/var/lib/decklock/media/UID`. This avoids filling the system
 partition with large videos. Use `--media-dir /absolute/dedicated/path` to choose
 another location; its parents must be root-owned and not writable by other
 accounts. The volume must be mounted before login. Private/encrypted home mounts

@@ -393,3 +393,10 @@ HOME mounts available before login, establish device UAT or publish a release.
 The appearance pointer is published only after legacy conversion and label
 verification succeed; rejected unrelated hard links preserve the valid installed
 appearance and login command, with a real-CLI regression.
+
+Fedora Cloud CI exposed an ineligible common HOME parent: automatic selection
+must check existing ancestor ownership/access before preferring that volume.
+It now falls back to /var/lib rather than changing HOME/parent permissions.
+The public packaged CLI fixture also makes a common volume ancestor writable
+and asserts system-library fallback, unchanged parent modes and readable aliases;
+VM evidence records root/HOME/system ancestor mode, UID, GID and device.

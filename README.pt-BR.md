@@ -320,8 +320,10 @@ migra as mídias selecionadas de bloqueio/repouso e a biblioteca existente do
 usuário para uma pasta dedicada fora da HOME pessoal. O padrão é
 `/var/lib/decklock/media/UID`. Se a HOME estiver em um volume comum separado,
 prefere `PASTA_PAI/.decklock-media/UID` nesse volume (por exemplo,
-`/home/.decklock-media/1000`), evitando ocupar a partição do sistema com vídeos
-grandes. Use `--media-dir /caminho/absoluto/dedicado` para escolher outra pasta;
+`/home/.decklock-media/1000`), se os pais existentes forem públicos para
+travessia e controlados pelo root; caso contrário, usa
+`/var/lib/decklock/media/UID`. Isso evita ocupar a partição do sistema com vídeos
+grandes quando o volume comum for adequado. Use `--media-dir /caminho/absoluto/dedicado` para escolher outra pasta;
 os diretórios pais precisam pertencer ao root e impedir escrita de outras
 contas. O volume precisa estar montado antes do login. Montagens privadas ou
 criptografadas da HOME não são escolhidas automaticamente; o setup não passa a

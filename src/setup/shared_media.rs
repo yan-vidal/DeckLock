@@ -21,7 +21,10 @@ pub(super) fn default_library(home: &Path, uid: u32) -> Result<PathBuf, String> 
     // A private home mount (pam_mount, for example) cannot supply pre-login media.
     // Prefer the common volume only when it also contains the public parent.
     if home_info.dev() != system_info.dev() && parent_info.dev() == home_info.dev() {
-        return Ok(parent.join(".decklock-media").join(uid.to_string()));
+        let common = parent.join(".decklock-media").join(uid.to_string());
+        if public_ancestors(&common).is_ok() {
+            return Ok(common);
+        }
     }
     Ok(PathBuf::from("/var/lib/decklock/media").join(uid.to_string()))
 }
@@ -88,18 +91,7 @@ pub(super) fn prepare(path: &Path, uid: u32, gid: u32, system: bool) -> Result<(
         if path.starts_with(&home) || home.starts_with(path) {
             return Err("Shared media must be outside the desktop HOME".into());
         }
-        // Privileged labelling must operate only beneath root-controlled ancestors.
-        for parent in path.ancestors().skip(1) {
-            if let Ok(dir) = directory(parent, false) {
-                let info = dir.metadata().map_err(|e| e.to_string())?;
-                if info.uid() != 0 || info.mode() & 0o022 != 0 || info.mode() & 0o001 == 0 {
-                    return Err(
-                        "Shared media needs publicly traversable root-owned ancestors without group/other write access"
-                            .into(),
-                    );
-                }
-            }
-        }
+        public_ancestors(path)?;
     }
     let existed = directory(path, false).is_ok();
     let dir = directory(path, true)?;
@@ -116,6 +108,31 @@ pub(super) fn prepare(path: &Path, uid: u32, gid: u32, system: bool) -> Result<(
         .map_err(|e| e.to_string())?;
     if system && Path::new("/sys/fs/selinux/enforce").exists() {
         label(path)?;
+    }
+    Ok(())
+}
+
+// Privileged labelling must stay beneath root-controlled public ancestors.
+// A common HOME volume is only a preference: do not change its ownership or
+// permissions to make it eligible. Fall back to the system library instead.
+fn public_ancestors(path: &Path) -> Result<(), String> {
+    for parent in path.ancestors().skip(1) {
+        match fs::symlink_metadata(parent) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e.to_string()),
+            Ok(_) => (),
+        }
+        let info = directory(parent, false)?
+            .metadata()
+            .map_err(|e| e.to_string())?;
+        if info.uid() != 0 || info.mode() & 0o022 != 0 || info.mode() & 0o001 == 0 {
+            return Err(format!(
+                "Shared media ancestor {} has UID {} and mode {:04o}; it needs root ownership, public traversal and no group/other write access",
+                parent.display(),
+                info.uid(),
+                info.mode() & 0o7777
+            ));
+        }
     }
     Ok(())
 }
