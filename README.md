@@ -262,6 +262,8 @@ The visual editor's live preview follows that editor's unsaved controls.
 
 ## Login and screen lock automation (`decklock setup`)
 
+These installation improvements are in source/candidate builds; the published 0.3.2 packages predate them. Use a verified updated candidate or build from source for the commands below until the next public release.
+
 DeckLock can serve as a greetd login greeter and compositor screen locker (`hypridle`) with the same UI and on-screen keyboard. The greeter runs as the configured greetd service account (`greeter` on Arch, `greetd` on Fedora), with its own storage. Setup publishes selected personal media/theme as private copies, so login does not need permission to traverse your HOME. A manually configured shared `--config` still requires readable files. `--greeter` without a greetd socket is a safe preview: it cannot log in or run power actions.
 
 Inspect your system's current integration:

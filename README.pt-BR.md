@@ -263,6 +263,8 @@ carregá-lo. O preview ao vivo da interface acompanha os controles não salvos d
 
 ## Automação de login e bloqueio de tela (`decklock setup`)
 
+Estas melhorias de instalação estão no código/artefatos candidatos; os pacotes públicos 0.3.2 ainda são anteriores aos fixes. Para os comandos abaixo, use um candidato atualizado e verificado ou compile o código, até o próximo release público.
+
 O DeckLock pode atuar como greeter de login do `greetd` e bloqueador de sessão do compositor (`hypridle`), com a mesma interface e teclado virtual. O greeter roda na conta de serviço configurada no greetd (`greeter` no Arch, `greetd` no Fedora), com armazenamento próprio. O setup publica cópias privadas das mídias/tema selecionados, então o login não precisa atravessar sua HOME. Uma configuração compartilhada manual com `--config` continua exigindo arquivos legíveis. `--greeter` sem socket do greetd é uma prévia segura: não faz login nem executa ações de energia.
 
 Inspecione o estado atual de integração do sistema:
