@@ -51,6 +51,40 @@ fn data_home() -> PathBuf {
 pub fn user_dir() -> PathBuf {
     data_home().join("decklock/library")
 }
+pub fn directory(config: &crate::config::Config) -> PathBuf {
+    config.media_library.clone().unwrap_or_else(user_dir)
+}
+#[derive(clap::Subcommand)]
+pub enum Action {
+    /// Print the configured library directory.
+    Path,
+    /// Import a photo/video. Shared libraries migrate it and preserve its old path as a link.
+    Import { file: PathBuf },
+}
+pub fn execute(config: &crate::config::Config, action: Action) -> Result<String, String> {
+    let root = directory(config);
+    match action {
+        Action::Path => Ok(root.display().to_string()),
+        Action::Import { file } => import_configured(&file, &root, config.media_library.is_some())
+            .map(|p| p.display().to_string()),
+    }
+}
+pub fn import_configured(source: &Path, root: &Path, shared: bool) -> Result<PathBuf, String> {
+    if !shared {
+        return import(source, root);
+    }
+    if !matches!(kind(source), Some(Kind::Image | Kind::Video)) {
+        return Err("Unsupported media format".into());
+    }
+    let info = std::fs::metadata(root)
+        .map_err(|e| format!("Shared library is unavailable: {e}; run setup before importing"))?;
+    use std::os::unix::fs::MetadataExt;
+    if !info.is_dir() || info.uid() != unsafe { libc::geteuid() } {
+        return Err("Only the shared library owner may import media".into());
+    }
+    crate::setup::shared_media::preflight(&[source.to_path_buf()], root)?;
+    crate::setup::shared_media::migrate(source, root)
+}
 pub fn bundled() -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = std::env::split_paths(
         &std::env::var_os("XDG_DATA_DIRS").unwrap_or_else(|| "/usr/local/share:/usr/share".into()),
@@ -109,7 +143,7 @@ pub fn pool(
 pub fn catalog(config: &crate::config::Config, theme: &crate::config::Theme) -> Vec<PathBuf> {
     let mut result = bundled();
     result.extend(crate::procedural::ITEMS.map(crate::procedural::path));
-    result.extend(files(&user_dir()));
+    result.extend(files(&directory(config)));
     for paths in [&config.background_pool, &config.idle_pool]
         .into_iter()
         .flatten()
@@ -124,11 +158,21 @@ pub fn catalog(config: &crate::config::Config, theme: &crate::config::Theme) -> 
             result.extend(files(&home.join("midias").join(mode)));
         }
     }
+    let mut result: Vec<_> = result
+        .into_iter()
+        .map(|path| {
+            if crate::procedural::id(&path).is_some() {
+                path
+            } else {
+                std::fs::canonicalize(&path).unwrap_or(path)
+            }
+        })
+        .collect();
     result.sort();
     result.dedup();
     result
 }
-/// Imports never overwrite an existing file and never remove the source.
+/// Private-library imports never overwrite an existing file or remove the source.
 pub fn import(source: &Path, root: &Path) -> Result<PathBuf, String> {
     let folder = match kind(source) {
         Some(Kind::Image) => "images",

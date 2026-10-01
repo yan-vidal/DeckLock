@@ -27,6 +27,7 @@ Requires:       gstreamer1-plugins-base
 Requires:       gstreamer1-plugins-good
 Requires:       gstreamer1-libav
 Requires:       pam
+Requires:       policycoreutils-python-utils
 Recommends:     gstreamer1-plugins-bad-free
 Recommends:     systemd
 Recommends:     greetd

@@ -93,6 +93,7 @@ media-library = Biblioteca de mídias
 media-images = Imagens
 media-videos = Vídeos
 media-import = Importar mídias…
+media-import-shared-help = Move as mídias para sua biblioteca compartilhada, mantendo links nos caminhos originais. Qualquer conta local pode ler; só você pode escrever.
 media-add = Adicionar →
 media-pool = Pool selecionado
 media-remove = Remover do pool

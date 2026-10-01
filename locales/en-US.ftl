@@ -93,6 +93,7 @@ media-library = Media library
 media-images = Images
 media-videos = Videos
 media-import = Import media…
+media-import-shared-help = Moves media to your shared library, keeping links at the original paths. All local accounts can read it; only you can write it.
 media-add = Add →
 media-pool = Selected pool
 media-remove = Remove from pool

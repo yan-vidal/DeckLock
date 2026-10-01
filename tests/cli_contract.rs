@@ -62,6 +62,333 @@ impl Cli {
     }
 }
 #[test]
+fn shared_media_import_reuses_identical_content_with_different_names() {
+    let cli = Cli::new();
+    let root = cli.home.path().join("library");
+    std::fs::create_dir(&root).unwrap();
+    cli.config(&["set", "media_library", root.to_str().unwrap()], true);
+    for name in ["one.mp4", "two.mp4"] {
+        let source = cli.home.path().join(name);
+        std::fs::write(&source, b"fixed identical video fixture").unwrap();
+        cli.run(
+            &[
+                "--config",
+                cli.file.to_str().unwrap(),
+                "media",
+                "import",
+                source.to_str().unwrap(),
+            ],
+            true,
+        );
+        assert!(source.is_symlink());
+    }
+    assert_eq!(
+        std::fs::read_dir(&root).unwrap().count(),
+        1,
+        "The shared library duplicated identical video bytes"
+    );
+}
+
+#[test]
+fn shared_media_import_recovers_a_published_hard_link_before_alias_replacement() {
+    let cli = Cli::new();
+    let root = cli.home.path().join("library");
+    std::fs::create_dir(&root).unwrap();
+    cli.config(&["set", "media_library", root.to_str().unwrap()], true);
+    let source = cli.home.path().join("recover.mp4");
+    std::fs::write(&source, b"fixed interrupted migration fixture").unwrap();
+    let args = [
+        "--config",
+        cli.file.to_str().unwrap(),
+        "media",
+        "import",
+        source.to_str().unwrap(),
+    ];
+    let result = cli.run(&args, true);
+    let canonical = PathBuf::from(String::from_utf8(result.stdout).unwrap().trim());
+    std::fs::remove_file(&source).unwrap();
+    std::fs::hard_link(&canonical, &source).unwrap();
+    cli.run(&args, true);
+    assert!(source.is_symlink());
+    assert_eq!(std::fs::canonicalize(&source).unwrap(), canonical);
+    assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+}
+
+#[test]
+fn shared_setup_verifies_cross_filesystem_transfer_before_replacing_source() {
+    use std::os::unix::fs::MetadataExt;
+    let cli = Cli::new();
+    let other_fs =
+        tempfile::tempdir_in("/dev/shm").expect("Linux shared-memory fixture is required");
+    assert_ne!(
+        cli.home.path().metadata().unwrap().dev(),
+        other_fs.path().metadata().unwrap().dev()
+    );
+    let home = cli.home.path();
+    let source = home.join("cross.mp4");
+    let bytes: Vec<u8> = (0..262144).map(|i| (i % 251) as u8).collect();
+    std::fs::write(&source, &bytes).unwrap();
+    let config = home.join("personal.toml");
+    std::fs::write(&config, "background_pool=['cross.mp4']\nidle_pool=[]\n").unwrap();
+    let library = other_fs.path().join("library");
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            home.join("greetd.toml").to_str().unwrap(),
+            "--state-dir",
+            home.join("login").to_str().unwrap(),
+            "--user-config",
+            config.to_str().unwrap(),
+            "--media-dir",
+            library.to_str().unwrap(),
+        ],
+        true,
+    );
+    let saved = decklock::config::Config::load(Some(&config)).unwrap();
+    let canonical = &saved.background_pool.as_ref().unwrap()[0];
+    assert!(source.is_symlink());
+    assert_eq!(
+        canonical.metadata().unwrap().dev(),
+        other_fs.path().metadata().unwrap().dev()
+    );
+    assert_eq!(std::fs::read(&source).unwrap(), bytes);
+    assert_eq!(std::fs::read(canonical).unwrap(), bytes);
+    assert_eq!(canonical.metadata().unwrap().nlink(), 1);
+    assert_eq!(std::fs::read_dir(&library).unwrap().count(), 1);
+}
+
+#[test]
+fn shared_setup_rejects_bad_inputs_before_migrating_a_valid_file() {
+    let cli = Cli::new();
+    let home = cli.home.path();
+    let source = home.join("valid.mp4");
+    std::fs::write(&source, b"fixed preflight fixture").unwrap();
+    let config = home.join("personal.toml");
+    std::fs::write(&config, "background_pool=['valid.mp4','missing.mp4']\n").unwrap();
+    let saved = std::fs::read(&config).unwrap();
+    let library = home.join("shared");
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            home.join("greetd.toml").to_str().unwrap(),
+            "--state-dir",
+            home.join("login").to_str().unwrap(),
+            "--user-config",
+            config.to_str().unwrap(),
+            "--media-dir",
+            library.to_str().unwrap(),
+        ],
+        false,
+    );
+    assert!(!library.exists());
+    assert!(!source.is_symlink());
+    assert_eq!(std::fs::read(&source).unwrap(), b"fixed preflight fixture");
+    assert_eq!(std::fs::read(&config).unwrap(), saved);
+}
+
+#[test]
+fn shared_setup_recovers_an_interrupted_legacy_snapshot_conversion() {
+    let cli = Cli::new();
+    let home = cli.home.path();
+    let source = home.join("recover-legacy.mp4");
+    std::fs::write(&source, b"fixed legacy recovery fixture").unwrap();
+    let config = home.join("personal.toml");
+    std::fs::write(
+        &config,
+        "background_pool=['recover-legacy.mp4']\nidle_pool=[]\n",
+    )
+    .unwrap();
+    let state = home.join("login");
+    let library = home.join("shared");
+    let target = home.join("greetd.toml");
+    let args = [
+        "setup",
+        "greeter",
+        "--target",
+        target.to_str().unwrap(),
+        "--state-dir",
+        state.to_str().unwrap(),
+        "--user-config",
+        config.to_str().unwrap(),
+        "--media-dir",
+        library.to_str().unwrap(),
+    ];
+    cli.run(&args, true);
+    let old = state.join(format!("appearance-{}", "b".repeat(64)));
+    std::fs::create_dir_all(&old).unwrap();
+    let pending = old.join("media-000000.mp4");
+    std::fs::hard_link(std::fs::canonicalize(&source).unwrap(), &pending).unwrap();
+    cli.run(&args, true);
+    assert!(pending.is_symlink());
+    assert_eq!(
+        pending.canonicalize().unwrap(),
+        source.canonicalize().unwrap()
+    );
+    assert_eq!(std::fs::read_dir(&library).unwrap().count(), 1);
+}
+
+#[test]
+fn shared_setup_replaces_legacy_snapshot_media_with_links_to_the_canonical_file() {
+    let cli = Cli::new();
+    let home = cli.home.path();
+    let source = home.join("old-private.mp4");
+    std::fs::write(&source, b"fixed legacy snapshot video").unwrap();
+    let config = home.join("personal.toml");
+    std::fs::write(
+        &config,
+        "background_pool=['old-private.mp4']\nidle_pool=[]\n",
+    )
+    .unwrap();
+    let state = home.join("login");
+    let old = state.join(format!("appearance-{}", "a".repeat(64)));
+    std::fs::create_dir_all(&old).unwrap();
+    let duplicate = old.join("media-000000.mp4");
+    std::fs::copy(&source, &duplicate).unwrap();
+    let library = home.join("shared");
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            home.join("greetd.toml").to_str().unwrap(),
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--user-config",
+            config.to_str().unwrap(),
+            "--media-dir",
+            library.to_str().unwrap(),
+        ],
+        true,
+    );
+    assert!(
+        duplicate.is_symlink(),
+        "Legacy snapshot still stores a second video"
+    );
+    assert_eq!(
+        std::fs::canonicalize(&duplicate).unwrap(),
+        std::fs::canonicalize(&source).unwrap()
+    );
+    assert_eq!(
+        std::fs::read(&duplicate).unwrap(),
+        b"fixed legacy snapshot video"
+    );
+}
+
+#[test]
+fn shared_media_import_uses_the_configured_library_and_preserves_source_access() {
+    let cli = Cli::new();
+    let root = cli.home.path().join("public-library");
+    std::fs::create_dir(&root).unwrap();
+    let source = cli.home.path().join("new.svg");
+    std::fs::write(&source, b"fixed shared import fixture").unwrap();
+    cli.config(&["set", "media_library", root.to_str().unwrap()], true);
+    let result = cli.run(
+        &[
+            "--config",
+            cli.file.to_str().unwrap(),
+            "media",
+            "import",
+            source.to_str().unwrap(),
+        ],
+        true,
+    );
+    let destination = PathBuf::from(String::from_utf8(result.stdout).unwrap().trim());
+    assert!(destination.starts_with(&root));
+    assert!(source.is_symlink());
+    assert_eq!(
+        std::fs::read(&source).unwrap(),
+        b"fixed shared import fixture"
+    );
+    assert_eq!(std::fs::canonicalize(&source).unwrap(), destination);
+    let count = std::fs::read_dir(&root).unwrap().count();
+    cli.run(
+        &[
+            "--config",
+            cli.file.to_str().unwrap(),
+            "media",
+            "import",
+            source.to_str().unwrap(),
+        ],
+        true,
+    );
+    assert_eq!(std::fs::read_dir(&root).unwrap().count(), count);
+}
+
+#[test]
+fn shared_setup_migrates_media_once_and_keeps_old_paths_and_private_options() {
+    use std::os::unix::fs::MetadataExt;
+    let cli = Cli::new();
+    let home = cli.home.path();
+    let private = home.join("private");
+    std::fs::create_dir(&private).unwrap();
+    std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let media = private.join("large.mp4");
+    std::fs::write(&media, b"fixed shared video fixture").unwrap();
+    let inode = media.metadata().unwrap().ino();
+    let config = private.join("config.toml");
+    std::fs::write(&config, "background_pool=['large.mp4']\nidle_pool=['large.mp4']\npam_service='private-pam'\nswitch_user_command='private-session'\n").unwrap();
+    let original_config = std::fs::read(&config).unwrap();
+    let library = home.join("shared-library");
+    let state = home.join("greeter-state");
+    let target = home.join("greetd.toml");
+    let args = [
+        "setup",
+        "greeter",
+        "--target",
+        target.to_str().unwrap(),
+        "--state-dir",
+        state.to_str().unwrap(),
+        "--user-config",
+        config.to_str().unwrap(),
+        "--media-dir",
+        library.to_str().unwrap(),
+    ];
+    let mut dry = args.to_vec();
+    dry.push("--dry-run");
+    cli.run(&dry, true);
+    assert!(!library.exists());
+    assert_eq!(std::fs::read(&config).unwrap(), original_config);
+    cli.run(&args, true);
+    let user = decklock::config::Config::load(Some(&config)).unwrap();
+    let login = decklock::config::Config::load(Some(&state.join("appearance.toml"))).unwrap();
+    let canonical = &login.background_pool.as_ref().unwrap()[0];
+    assert!(canonical.starts_with(&library));
+    assert_eq!(
+        canonical.metadata().unwrap().ino(),
+        inode,
+        "Same-filesystem migration copied the video"
+    );
+    assert!(media.is_symlink());
+    assert_eq!(std::fs::canonicalize(&media).unwrap(), *canonical);
+    assert_eq!(user.background_pool, login.background_pool);
+    assert_eq!(login.background_pool, login.idle_pool);
+    assert_eq!(user.pam_service, "private-pam");
+    assert_eq!(user.switch_user_command.as_deref(), Some("private-session"));
+    let count = std::fs::read_dir(&library).unwrap().count();
+    cli.run(&args, true);
+    assert_eq!(std::fs::read_dir(&library).unwrap().count(), count);
+    let mut files = vec![state.clone()];
+    while let Some(dir) = files.pop() {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                files.push(path);
+            } else {
+                assert_ne!(
+                    path.extension().and_then(|s| s.to_str()),
+                    Some("mp4"),
+                    "Login storage duplicated the video"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn greeter_loads_the_installed_appearance_before_opening_a_display() {
     let cli = Cli::new();
     let appearance = cli.home.path().join("appearance.toml");
@@ -176,7 +503,7 @@ fn sharing_appearance_preserves_the_existing_hyprland_command_and_private_storag
 }
 
 #[test]
-fn greeter_setup_copies_private_media_and_theme_without_opening_the_user_home() {
+fn greeter_setup_shares_media_and_theme_without_opening_the_user_home() {
     let cli = Cli::new();
     let home = cli.home.path();
     let source = home.join("private");
@@ -235,7 +562,22 @@ fn greeter_setup_copies_private_media_and_theme_without_opening_the_user_home() 
         std::fs::read(&video).unwrap()
     );
     assert_eq!(pool[2], std::path::PathBuf::from("procedural:starfield"));
-    assert!(pool[..2].iter().all(|p| p.starts_with(&storage)));
+    let user = decklock::config::Config::load(Some(&config)).unwrap();
+    let library = user.media_library.as_ref().unwrap();
+    assert!(pool[..2].iter().all(|p| p.starts_with(library)));
+    assert_eq!(user.pam_service, "custom-private");
+    assert_eq!(user.switch_user_command.as_deref(), Some("private-action"));
+    assert!(
+        std::fs::read_dir(&source)
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|e| e
+                .file_name()
+                .to_string_lossy()
+                .starts_with("config.toml.bak.")
+                && std::fs::read(e.path()).unwrap() == original)
+    );
+    assert!(photo.is_symlink() && video.is_symlink());
     assert!(
         decklock::config::Theme::from_config(&saved)
             .unwrap()
@@ -255,14 +597,15 @@ fn greeter_setup_copies_private_media_and_theme_without_opening_the_user_home() 
         snapshot
     );
     assert_eq!(std::fs::read_dir(&storage).unwrap().count(), count);
-    std::fs::remove_file(&video).unwrap();
+    let saved_user = std::fs::read(&config).unwrap();
+    std::fs::remove_file(&pool[1]).unwrap();
     cli.run(&args, false);
     assert_eq!(std::fs::read_to_string(&greetd).unwrap(), command);
     assert_eq!(
         std::fs::read(storage.join("appearance.toml")).unwrap(),
         snapshot
     );
-    assert_eq!(std::fs::read(&config).unwrap(), original);
+    assert_eq!(std::fs::read(&config).unwrap(), saved_user);
     assert_eq!(
         source.metadata().unwrap().permissions().mode() & 0o777,
         0o700

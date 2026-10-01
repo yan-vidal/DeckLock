@@ -409,6 +409,7 @@ pub fn build(
             .unwrap_or_else(|| crate::library::pool(&original, &theme, false)),
         strings.clone(),
         "settings-background",
+        original.media_library.clone(),
     );
     background_page.append(&background.widget);
     let slideshow = spin(
@@ -528,6 +529,7 @@ pub fn build(
             .unwrap_or_else(|| crate::library::pool(&original, &theme, true)),
         strings.clone(),
         "settings-idle-background",
+        original.media_library.clone(),
     );
     idle_group.append(&idle_background.widget);
     let idle_slideshow = spin(

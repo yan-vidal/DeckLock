@@ -1,5 +1,6 @@
 //! System setup and configuration automation for greetd and compositor screen locks.
 mod appearance;
+pub(crate) mod shared_media;
 
 use std::{
     fs,
@@ -39,10 +40,14 @@ pub enum Action {
         /// Wayland output/input transform, 0..7 (Steam Deck OLED: 3).
         #[arg(long, value_parser = clap::value_parser!(u8).range(0..=7), requires = "output")]
         transform: Option<u8>,
-        /// User configuration whose appearance/media are copied for login.
+        /// User configuration whose appearance and shared media are used for login.
         #[arg(long)]
         user_config: Option<PathBuf>,
-        /// Keep independent greeter appearance instead of copying the sudo user's.
+        /// Publicly readable media library. Defaults outside HOME on its common
+        /// volume when separate, otherwise /var/lib/decklock/media/<uid>.
+        #[arg(long)]
+        media_dir: Option<PathBuf>,
+        /// Keep independent greeter appearance instead of sharing the sudo user's.
         #[arg(long, conflicts_with = "user_config")]
         no_user_appearance: bool,
         /// Dry-run mode: show what would be written without modifying files.
@@ -87,10 +92,14 @@ pub enum Action {
         /// Also replace custom screen-lock wrappers.
         #[arg(long)]
         replace_custom: bool,
-        /// User configuration whose appearance/media are copied for login.
+        /// User configuration whose appearance and shared media are used for login.
         #[arg(long)]
         user_config: Option<PathBuf>,
-        /// Keep independent greeter appearance instead of copying the sudo user's.
+        /// Publicly readable media library. Defaults outside HOME on its common
+        /// volume when separate, otherwise /var/lib/decklock/media/<uid>.
+        #[arg(long)]
+        media_dir: Option<PathBuf>,
+        /// Keep independent greeter appearance instead of sharing the sudo user's.
         #[arg(long, conflicts_with = "user_config")]
         no_user_appearance: bool,
         /// Dry-run mode: show what would be written without modifying files.
@@ -104,6 +113,10 @@ pub enum Action {
         source: Option<PathBuf>,
         #[arg(long)]
         target: PathBuf,
+        #[arg(long)]
+        media_dir: Option<PathBuf>,
+        #[arg(long)]
+        prefer_saved_library: bool,
         #[arg(long)]
         dry_run: bool,
     },
@@ -967,6 +980,7 @@ struct GreeterOptions {
     dry_run: bool,
     user_config: Option<PathBuf>,
     no_user_appearance: bool,
+    media_dir: Option<PathBuf>,
 }
 
 fn setup_greeter_with_storage(
@@ -1052,12 +1066,13 @@ fn setup_greeter_with_storage(
         verify_hyprland_config(lua)?;
     }
     let user = configured_greeter_user(path)?;
-    let appearance = appearance::prepare(
+    let (appearance, sharing_report) = appearance::prepare(
         dir.as_deref(),
         target.is_none(),
         options.user_config.as_deref(),
         options.no_user_appearance,
         dry_run,
+        options.media_dir.as_deref(),
     )?;
     let preparation = match &dir {
         Some(dir) => prepare_greeter_dirs(dir, target.is_none(), dry_run, &user)?,
@@ -1068,7 +1083,9 @@ fn setup_greeter_with_storage(
             .as_ref()
             .map(|lua| format!("\nDry-run: would write {}\n{lua}", lua_path.display()))
             .unwrap_or_default();
-        return Ok(format!("{review}\n{preparation}{compositor_report}"));
+        return Ok(format!(
+            "{review}\n{preparation}\n{sharing_report}{compositor_report}"
+        ));
     }
     if let Some(appearance) = appearance {
         appearance.install(dir.as_deref().unwrap(), target.is_none(), &user)?;
@@ -1094,7 +1111,7 @@ fn setup_greeter_with_storage(
     };
 
     Ok(format!(
-        "{report}\n{preparation}\nLogin changes take effect at the next logout or boot; greetd was not restarted."
+        "{report}\n{preparation}\n{sharing_report}\nLogin changes take effect at the next logout or boot; greetd was not restarted."
     ))
 }
 
@@ -1334,8 +1351,16 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
         Action::ExportAppearance {
             source,
             target,
+            media_dir,
+            prefer_saved_library,
             dry_run,
-        } => appearance::export(source.as_deref(), &target, dry_run),
+        } => appearance::export(
+            source.as_deref(),
+            &target,
+            dry_run,
+            media_dir.as_deref(),
+            prefer_saved_library,
+        ),
         Action::Greeter {
             target,
             no_keyboard,
@@ -1345,6 +1370,7 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
             transform,
             user_config,
             no_user_appearance,
+            media_dir,
             dry_run,
         } => setup_greeter_with_storage(
             target.as_deref(),
@@ -1354,6 +1380,7 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
                 dry_run,
                 user_config,
                 no_user_appearance,
+                media_dir,
             },
             compositor,
             output.as_deref(),
@@ -1376,6 +1403,7 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
             replace_custom,
             user_config,
             no_user_appearance,
+            media_dir,
             dry_run,
         } => {
             let mut options = GreeterOptions {
@@ -1384,6 +1412,7 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
                 dry_run: true,
                 user_config,
                 no_user_appearance,
+                media_dir,
             };
             // Validate both configurations before writing either. Configure the
             // user's lock first so a failure cannot replace their working login.

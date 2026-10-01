@@ -173,8 +173,14 @@ visualizador reutilizável para imagens e vídeos sem som.
 
 Cada bloqueio sorteia um item do pool. Um vídeo permanece em loop naquela sessão;
 uma foto inicia um slideshow com transições entre as fotos do pool, no intervalo
-configurado. **Importar mídias** copia arquivos para `~/.local/share/decklock/library`
-(ou `$XDG_DATA_HOME/decklock/library`) sem sobrescrever nomes existentes.
+configurado. Após configurar o login, **Importar mídias** e `decklock media import
+ARQUIVO` usam a mesma biblioteca compartilhada do bloqueio e do greeter: os
+arquivos são movidos e os caminhos antigos viram links, sem uma segunda mídia
+armazenada. `decklock media path` mostra a pasta. Qualquer conta local pode ler;
+somente o proprietário pode escrever. Remover um item do pool continua sem
+apagar o arquivo. Sem esse compartilhamento, a importação mantém as cópias na
+biblioteca privada `$XDG_DATA_HOME/decklock/library` (por padrão,
+`~/.local/share/decklock/library`).
 
 ## Mídias incluídas
 
@@ -265,7 +271,7 @@ carregá-lo. O preview ao vivo da interface acompanha os controles não salvos d
 
 Estas melhorias de instalação estão no código/artefatos candidatos; os pacotes públicos 0.3.2 ainda são anteriores aos fixes. Para os comandos abaixo, use um candidato atualizado e verificado ou compile o código, até o próximo release público.
 
-O DeckLock pode atuar como greeter de login do `greetd` e bloqueador de sessão do compositor (`hypridle`), com a mesma interface e teclado virtual. O greeter roda na conta de serviço configurada no greetd (`greeter` no Arch, `greetd` no Fedora), com armazenamento próprio. O setup publica cópias privadas das mídias/tema selecionados, então o login não precisa atravessar sua HOME. Uma configuração compartilhada manual com `--config` continua exigindo arquivos legíveis. `--greeter` sem socket do greetd é uma prévia segura: não faz login nem executa ações de energia.
+O DeckLock pode atuar como greeter de login do `greetd` e bloqueador de sessão do compositor (`hypridle`), com a mesma interface e teclado virtual. O greeter roda na conta de serviço configurada no greetd (`greeter` no Arch, `greetd` no Fedora), com configuração/estado privados. O setup usa uma única biblioteca de mídias com leitura pública, compartilhada com o bloqueio; o login não precisa atravessar sua HOME. Uma configuração compartilhada manual com `--config` continua exigindo arquivos legíveis. `--greeter` sem socket do greetd é uma prévia segura: não faz login nem executa ações de energia.
 
 Inspecione o estado atual de integração do sistema:
 
@@ -306,7 +312,45 @@ do greetd. `--target` só altera o arquivo indicado, exceto quando também receb
 usuário; falhas nas pastas opcionais de mídia do preview/bloqueio viram avisos com
 o caminho que falhou.
 
-Uma conta de serviço com `HOME=/` não precisa de `/.config/midias`. Executados com `sudo` pela conta do desktop, `setup greeter` e `setup all` copiam automaticamente as mídias selecionadas de bloqueio/repouso e a aparência para o armazenamento privado do login. A exportação lê como esse usuário, sem mudar permissões da HOME nem apagar originais. O greeter lê suas próprias cópias mesmo antes de a HOME estar disponível; vídeos, apresentações de fotos, pools intencionalmente vazios e procedurais mantêm seu comportamento. Repita o setup depois de mudar a seleção: são cópias, sem acesso permanente aos arquivos pessoais. Use `--user-config CAMINHO` para um XDG/config personalizado ou `--no-user-appearance` para manter aparência independente no login. `decklock --greeter --config CAMINHO` explícito prevalece sobre a cópia. Opções de autenticação/sessão do greeter e escolhas lembradas são preservadas. Entradas selecionadas inválidas ou ilegíveis mantêm intactos o comando de login e a aparência salva. Cópias antigas identificadas pelo conteúdo ficam disponíveis para recuperação.
+Uma conta de serviço com `HOME=/` não precisa de `/.config/midias`.
+
+Execute `sudo decklock setup all` pela conta do desktop para configurar bloqueio
+e login juntos, ou `sudo decklock setup greeter` somente para o login. O setup
+migra as mídias selecionadas de bloqueio/repouso e a biblioteca existente do
+usuário para uma pasta dedicada fora da HOME pessoal. O padrão é
+`/var/lib/decklock/media/UID`. Se a HOME estiver em um volume comum separado,
+prefere `PASTA_PAI/.decklock-media/UID` nesse volume (por exemplo,
+`/home/.decklock-media/1000`), evitando ocupar a partição do sistema com vídeos
+grandes. Use `--media-dir /caminho/absoluto/dedicado` para escolher outra pasta;
+os diretórios pais precisam pertencer ao root e impedir escrita de outras
+contas. O volume precisa estar montado antes do login. Montagens privadas ou
+criptografadas da HOME não são escolhidas automaticamente; o setup não passa a
+disponibilizá-las antes do login.
+
+**Qualquer conta local pode ler as mídias compartilhadas.** Só o proprietário do
+desktop pode escrever na biblioteca e nos arquivos (pastas 0755, arquivos 0644).
+A migração lê como esse usuário, preserva as permissões da HOME e substitui os
+caminhos originais por links para os arquivos únicos. No mesmo sistema de
+arquivos, preserva o inode; entre sistemas de arquivos, verifica e sincroniza uma
+transferência temporária antes de substituir o original. Não há uma segunda
+mídia permanente; a transferência temporária precisa de espaço no destino.
+Cópias antigas geradas para o login também viram links. As pequenas gerações de
+configuração/tema continuam privadas para recuperação. Mídias públicas do pacote
+permanecem onde foram instaladas.
+
+Vídeos, apresentações de fotos, pools intencionalmente vazios e procedurais
+mantêm o comportamento. Repita o setup depois de mudar os pools/tema; as
+importações já usam a biblioteca compartilhada. A configuração do usuário recebe
+backup antes da migração. Use `--user-config CAMINHO` para um XDG/config
+personalizado ou `--no-user-appearance` para aparência independente no login.
+`decklock --greeter --config CAMINHO` explícito prevalece sobre a aparência do
+setup. Opções de autenticação/sessão e escolhas lembradas ficam privadas e
+preservadas. Entradas selecionadas inválidas ou ilegíveis falham antes da
+migração e mantêm o comando de login e a aparência salva. Em sistemas SELinux, o
+setup verifica e persiste o contexto `xdm_var_lib_t` da pasta dedicada, sem
+desativar a política; o pacote Fedora passa a exigir `semanage` para isso.
+Poder ler a pasta não cria integração com outros gerenciadores: o backend de
+login do DeckLock continua sendo greetd.
 
 Em sistemas com SELinux, o setup usa o caminho da política existente do gerenciador de login, executa `restorecon` e exige o tipo `xdm_var_lib_t` no armazenamento antes de mudar o greetd. Um `--state-dir` customizado precisa desse mapeamento permanente de contexto. A proteção continua ativa. A tela cheia é solicitada após o primeiro frame da superfície, para versões antigas do Cage/wlroots inicializarem a janela de login.
 
