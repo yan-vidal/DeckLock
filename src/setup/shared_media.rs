@@ -122,19 +122,73 @@ fn public_ancestors(path: &Path) -> Result<(), String> {
             Err(e) => return Err(e.to_string()),
             Ok(_) => (),
         }
-        let info = directory(parent, false)?
-            .metadata()
-            .map_err(|e| e.to_string())?;
-        if info.uid() != 0 || info.mode() & 0o022 != 0 || info.mode() & 0o001 == 0 {
+        let dir = directory(parent, false)?;
+        let info = dir.metadata().map_err(|e| e.to_string())?;
+        // Fedora's filesystem root is 0775 root:root. Group 0 is the existing
+        // administrative group; this does not grant it new rights. Other
+        // groups/users, including named ACL entries, must not control a parent.
+        if info.uid() != 0 || info.mode() & 0o002 != 0 || info.mode() & 0o001 == 0 {
             return Err(format!(
-                "Shared media ancestor {} has UID {} and mode {:04o}; it needs root ownership, public traversal and no group/other write access",
+                "Shared media ancestor {} has UID {}, GID {} and mode {:04o}; it needs root ownership, public traversal and no unprivileged write access",
                 parent.display(),
                 info.uid(),
+                info.gid(),
                 info.mode() & 0o7777
+            ));
+        }
+        if !acl_public(&dir, &info)? {
+            return Err(format!(
+                "Shared media ancestor {} restricts public traversal or allows unprivileged writes through its permissions/ACL; they were preserved",
+                parent.display()
             ));
         }
     }
     Ok(())
+}
+
+fn acl_public(dir: &File, info: &fs::Metadata) -> Result<bool, String> {
+    let mut bytes = [0u8; 65536];
+    let length = unsafe {
+        libc::fgetxattr(
+            dir.as_raw_fd(),
+            c"system.posix_acl_access".as_ptr(),
+            bytes.as_mut_ptr().cast(),
+            bytes.len(),
+        )
+    };
+    if length < 0 {
+        let error = std::io::Error::last_os_error();
+        return if matches!(error.raw_os_error(), Some(libc::ENODATA | libc::EOPNOTSUPP)) {
+            Ok(info.mode() & 0o020 == 0 || info.gid() == 0)
+        } else {
+            Err(error.to_string())
+        };
+    }
+    let bytes = &bytes[..length as usize];
+    // Linux POSIX ACL xattr v2: little-endian u32 header, then 8-byte
+    // tag/permission/id entries. Named classes override the "other" mode bits.
+    if bytes.len() < 4 || bytes[..4] != 2u32.to_le_bytes() || !(bytes.len() - 4).is_multiple_of(8) {
+        return Err("Cannot validate ancestor ACL; permissions were preserved".into());
+    }
+    let entries: Vec<_> = bytes[4..]
+        .chunks_exact(8)
+        .map(|entry| {
+            (
+                u16::from_le_bytes([entry[0], entry[1]]),
+                u16::from_le_bytes([entry[2], entry[3]]),
+                u32::from_le_bytes([entry[4], entry[5], entry[6], entry[7]]),
+            )
+        })
+        .collect();
+    let mask = entries
+        .iter()
+        .find(|(tag, _, _)| *tag == 16)
+        .map_or(7, |(_, perm, _)| *perm);
+    Ok(entries.iter().all(|(tag, perm, id)| {
+        perm & 1 != 0
+            && !(perm & mask & 2 != 0
+                && ((matches!(tag, 2 | 8) && *id != 0) || (*tag == 4 && info.gid() != 0)))
+    }))
 }
 
 fn command(program: &str, args: &[&std::ffi::OsStr]) -> Result<(), String> {

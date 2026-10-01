@@ -325,7 +325,8 @@ travessia e controlados pelo root; caso contrário, usa
 `/var/lib/decklock/media/UID`. Isso evita ocupar a partição do sistema com vídeos
 grandes quando o volume comum for adequado. Use `--media-dir /caminho/absoluto/dedicado` para escolher outra pasta;
 os diretórios pais precisam pertencer ao root e impedir escrita de outras
-contas. O volume precisa estar montado antes do login. Montagens privadas ou
+contas sem privilégios (o grupo administrativo 0 mantém as permissões existentes).
+O volume precisa estar montado antes do login. Montagens privadas ou
 criptografadas da HOME não são escolhidas automaticamente; o setup não passa a
 disponibilizá-las antes do login.
 

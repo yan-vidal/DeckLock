@@ -150,7 +150,8 @@ assert normal_media.read_bytes() == personal_photo.read_bytes()
 assert idle_media.read_bytes() == personal_video.read_bytes()
 shared_config = tomllib.loads(personal_config.read_text())
 shared_dir = Path(shared_config['media_library'])
-assert shared_dir == Path('/var/lib/decklock/media') / str(caller.pw_uid)
+expected_library = Path('/home/.decklock-media') if Path('/home').stat().st_dev != Path('/var/lib').stat().st_dev else Path('/var/lib/decklock/media')
+assert shared_dir == expected_library / str(caller.pw_uid)
 assert shared_dir.stat().st_uid == caller.pw_uid
 assert shared_dir.stat().st_mode & 0o777 == 0o755
 assert appearance_path.stat().st_uid == greeter.pw_uid
@@ -310,6 +311,40 @@ try:
     run(['setpriv', '--reuid', str(greeter.pw_uid), '--regid', str(greeter.pw_gid),
         '--init-groups', '--', '/usr/bin/test', '-r', str(volume_photo.resolve())])
     record('ineligible common HOME ancestors fall back to public system storage without changing their permissions')
+    # Group 0 remains the existing administrator group (Fedora's / is 0775).
+    # A writable ordinary group is not allowed to control privileged parents.
+    os.chown(volume, 0, volume_account.pw_gid)
+    volume.chmod(0o775)
+    volume_config.write_text('background_pool=["photo.png"]\nidle_pool=[]\n')
+    run(['decklock', 'setup', 'greeter', '--user-config', str(volume_config)], env=volume_env)
+    assert tomllib.loads(volume_config.read_text())['media_library'] == str(Path('/var/lib/decklock/media') / str(volume_account.pw_uid))
+    assert volume.stat().st_gid == volume_account.pw_gid and volume.stat().st_mode & 0o777 == 0o775
+    os.chown(volume, 0, 0)
+    # Named ACL denial overrides public mode bits. Keep that ACL unchanged.
+    volume.chmod(0o755)
+    acl = struct.pack('<I', 2) + b''.join(struct.pack('<HHI', tag, perm, uid) for tag, perm, uid in [
+        (1, 7, 0xffffffff), (2, 0, greeter.pw_uid), (4, 5, 0xffffffff),
+        (16, 5, 0xffffffff), (32, 5, 0xffffffff)])
+    os.setxattr(volume, 'system.posix_acl_access', acl)
+    volume_config.write_text('background_pool=["photo.png"]\nidle_pool=[]\n')
+    run(['decklock', 'setup', 'greeter', '--user-config', str(volume_config)], env=volume_env)
+    assert tomllib.loads(volume_config.read_text())['media_library'] == str(Path('/var/lib/decklock/media') / str(volume_account.pw_uid))
+    assert os.getxattr(volume, 'system.posix_acl_access') == acl
+    assert volume.stat().st_mode & 0o777 == 0o755
+    assert subprocess.run(['setpriv', '--reuid', str(greeter.pw_uid), '--regid', str(greeter.pw_gid),
+        '--init-groups', '--', '/usr/bin/test', '-x', str(volume)], timeout=10 * SLOW).returncode != 0
+    run(['setpriv', '--reuid', str(greeter.pw_uid), '--regid', str(greeter.pw_gid),
+        '--init-groups', '--', '/usr/bin/test', '-r', str(volume_photo.resolve())])
+    # A root-group writable mode must not hide a named ordinary writer.
+    write_acl = struct.pack('<I', 2) + b''.join(struct.pack('<HHI', tag, perm, uid) for tag, perm, uid in [
+        (1, 7, 0xffffffff), (2, 7, greeter.pw_uid), (4, 7, 0xffffffff),
+        (16, 7, 0xffffffff), (32, 5, 0xffffffff)])
+    os.setxattr(volume, 'system.posix_acl_access', write_acl)
+    volume_config.write_text('background_pool=["photo.png"]\nidle_pool=[]\n')
+    run(['decklock', 'setup', 'greeter', '--user-config', str(volume_config)], env=volume_env)
+    assert tomllib.loads(volume_config.read_text())['media_library'] == str(Path('/var/lib/decklock/media') / str(volume_account.pw_uid))
+    assert os.getxattr(volume, 'system.posix_acl_access') == write_acl
+    record('ordinary group writes and named ancestor ACL denial/writes cause fallback while original permissions remain intact')
 finally:
     config.write_bytes(saved_volume_command)
     appearance_path.write_bytes(saved_volume_appearance)

@@ -400,3 +400,11 @@ It now falls back to /var/lib rather than changing HOME/parent permissions.
 The public packaged CLI fixture also makes a common volume ancestor writable
 and asserts system-library fallback, unchanged parent modes and readable aliases;
 VM evidence records root/HOME/system ancestor mode, UID, GID and device.
+
+Further Fedora evidence identified filesystem root / as 0775 root:root, not an
+inaccessible HOME directory. Ancestor validation preserves existing group-0
+administrator access while rejecting ordinary group/other/named ACL writes.
+Named ancestor ACL traversal denial also causes automatic system-library
+fallback; a real CLI/container regression failed before this correction.
+The guest now asserts ordinary-group writes and named ACL denial/writes are
+rejected for automatic HOME-volume selection without editing those ACLs.

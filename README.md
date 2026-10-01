@@ -318,8 +318,8 @@ If HOME is on a separate, common volume, setup prefers `PARENT/.decklock-media/U
 are publicly traversable and root-controlled; otherwise it falls back to
 `/var/lib/decklock/media/UID`. This avoids filling the system
 partition with large videos. Use `--media-dir /absolute/dedicated/path` to choose
-another location; its parents must be root-owned and not writable by other
-accounts. The volume must be mounted before login. Private/encrypted home mounts
+another location; its parents must be root-owned and not writable by unprivileged
+users/groups. Existing administrator group 0 permissions are preserved. The volume must be mounted before login. Private/encrypted home mounts
 are not selected automatically; setup does not make them available before login.
 
 **Shared media is readable by any local account.** Only the desktop owner can
