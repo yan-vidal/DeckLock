@@ -467,12 +467,9 @@ impl Plan {
                         &gid.to_string(),
                         "--init-groups",
                         "--",
-                        "/usr/bin/test",
-                        "-r",
                     ])
-                    .arg(path)
-                    .arg("-a")
-                    .arg("-f")
+                    .arg(std::env::current_exe().map_err(|e| e.to_string())?)
+                    .args(["setup", "probe-access", "--path"])
                     .arg(path);
                 let mut child = probe.spawn().map_err(|e| e.to_string())?;
                 let deadline = Instant::now() + Duration::from_secs(30);

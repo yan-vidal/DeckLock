@@ -62,6 +62,64 @@ impl Cli {
     }
 }
 #[test]
+fn installation_access_probe_uses_real_filesystem_operations() {
+    let cli = Cli::new();
+    let media = cli.home.path().join("media.mp4");
+    std::fs::write(&media, b"fixed access fixture").unwrap();
+    let alias = cli.home.path().join("media-alias.mp4");
+    std::os::unix::fs::symlink(&media, &alias).unwrap();
+    for path in [&media, &alias] {
+        cli.run(
+            &["setup", "probe-access", "--path", path.to_str().unwrap()],
+            true,
+        );
+    }
+    let storage = cli.home.path().join("storage");
+    std::fs::create_dir(&storage).unwrap();
+    cli.run(
+        &[
+            "setup",
+            "probe-access",
+            "--path",
+            storage.to_str().unwrap(),
+            "--storage",
+        ],
+        true,
+    );
+    assert_eq!(
+        std::fs::read_dir(&storage).unwrap().count(),
+        0,
+        "Access probe left state behind"
+    );
+    cli.run(
+        &["setup", "probe-access", "--path", storage.to_str().unwrap()],
+        false,
+    );
+    cli.run(
+        &[
+            "setup",
+            "probe-access",
+            "--path",
+            media.to_str().unwrap(),
+            "--storage",
+        ],
+        false,
+    );
+    std::fs::remove_file(&media).unwrap();
+    cli.run(
+        &["setup", "probe-access", "--path", alias.to_str().unwrap()],
+        false,
+    );
+    let fifo = cli.home.path().join("media-fifo");
+    let name = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    cli.run(
+        &["setup", "probe-access", "--path", fifo.to_str().unwrap()],
+        false,
+    );
+}
+
+#[test]
 fn shared_media_import_reuses_identical_content_with_different_names() {
     let cli = Cli::new();
     let root = cli.home.path().join("library");

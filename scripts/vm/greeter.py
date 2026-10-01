@@ -338,6 +338,11 @@ try:
         'import os, sys\ntry: os.chdir(sys.argv[1])\nexcept PermissionError: sys.exit(23)\n', str(volume)],
         timeout=10 * SLOW, capture_output=True)
     assert acl_probe.returncode == 23, f'Named ACL did not deny actual traversal: {acl_probe}'
+    # The installer's own probe must also reject this real ACL boundary.
+    installer_probe = subprocess.run(['setpriv', '--reuid', str(greeter.pw_uid), '--regid', str(greeter.pw_gid),
+        '--init-groups', '--', 'decklock', 'setup', 'probe-access', '--storage', '--path', str(volume)],
+        timeout=10 * SLOW, capture_output=True)
+    assert installer_probe.returncode != 0, 'Installer accepted ACL-denied storage'
     run(['setpriv', '--reuid', str(greeter.pw_uid), '--regid', str(greeter.pw_gid),
         '--init-groups', '--', '/usr/bin/test', '-r', str(volume_photo.resolve())])
     # A root-group writable mode must not hide a named ordinary writer.
@@ -383,6 +388,20 @@ assert blocked.returncode != 0, 'Setup accepted storage beneath a root-only ance
 assert 'cannot access greeter storage' in blocked.stderr, blocked.stderr
 assert config.read_bytes() == saved_config, 'Rejected storage changed the working greetd command'
 record('setup rejects inaccessible ancestors before replacing the greetd command')
+# Public mode bits can conceal named ACL denial; the real installer must fail
+# before replacing the active login command or appearance, on every distro.
+private_parent.chmod(0o755)
+os.setxattr(private_parent, 'system.posix_acl_access', acl)
+saved_appearance = appearance_path.read_bytes()
+blocked_acl = subprocess.run(
+    ['decklock', 'setup', 'greeter', '--state-dir', str(blocked_storage)],
+    capture_output=True, text=True, timeout=30 * SLOW)
+assert blocked_acl.returncode != 0, 'Setup accepted ACL-denied greeter storage'
+assert 'cannot access greeter storage' in blocked_acl.stderr, blocked_acl.stderr
+assert config.read_bytes() == saved_config
+assert appearance_path.read_bytes() == saved_appearance
+assert os.getxattr(private_parent, 'system.posix_acl_access') == acl
+record('setup rejects named ancestor ACL denial without changing valid login/appearance or original ACL')
 state = state_dir / 'greeter-state.toml'
 state.write_text('last_user = "locktest"\nlast_session = "00-decklock-vm"\n')
 os.chown(state, greeter.pw_uid, greeter.pw_gid)

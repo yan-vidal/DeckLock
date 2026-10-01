@@ -199,3 +199,14 @@ public mode bits. Ubuntu's packaged Rust `test -x` reports success from the mode
 bits for this fixture even though the kernel denies traversal; it cannot serve
 as the denial oracle. Library fallback and the other media assertions remain
 required on every VM target.
+
+The installer's own headless probe opens selected regular media and reads/creates
+a private temporary entry in state storage after dropping to the configured
+account. It removes that entry immediately; no PAM or display is used. A public
+CLI regression covers aliases, missing/nonregular paths, nonblocking FIFO
+rejection and absence of leftover entries. The VM additionally requires the
+installer's probe to reject the ACL-denied directory.
+
+The packaged setup command must also reject named ACL denial in a custom state
+ancestor before replacing the active login command or appearance, preserving the
+original ACL. This covers the installer boundary beyond the standalone probe.
