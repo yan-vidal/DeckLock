@@ -55,6 +55,7 @@ fn main() {
         vec![a.clone()],
         Rc::new(I18n::new(Some("en-US"), None).unwrap()),
         "media-test",
+        None,
     );
     window.set_child(Some(&editor.widget));
     window.present();

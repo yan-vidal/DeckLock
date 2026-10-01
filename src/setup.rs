@@ -1,5 +1,6 @@
 //! System setup and configuration automation for greetd and compositor screen locks.
 mod appearance;
+pub(crate) mod shared_media;
 
 use std::{
     fs,
@@ -39,10 +40,14 @@ pub enum Action {
         /// Wayland output/input transform, 0..7 (Steam Deck OLED: 3).
         #[arg(long, value_parser = clap::value_parser!(u8).range(0..=7), requires = "output")]
         transform: Option<u8>,
-        /// User configuration whose appearance/media are copied for login.
+        /// User configuration whose appearance and shared media are used for login.
         #[arg(long)]
         user_config: Option<PathBuf>,
-        /// Keep independent greeter appearance instead of copying the sudo user's.
+        /// Publicly readable media library. Defaults outside HOME on its common
+        /// public volume when separate, otherwise /var/lib/decklock/media/<uid>.
+        #[arg(long)]
+        media_dir: Option<PathBuf>,
+        /// Keep independent greeter appearance instead of sharing the sudo user's.
         #[arg(long, conflicts_with = "user_config")]
         no_user_appearance: bool,
         /// Dry-run mode: show what would be written without modifying files.
@@ -87,15 +92,27 @@ pub enum Action {
         /// Also replace custom screen-lock wrappers.
         #[arg(long)]
         replace_custom: bool,
-        /// User configuration whose appearance/media are copied for login.
+        /// User configuration whose appearance and shared media are used for login.
         #[arg(long)]
         user_config: Option<PathBuf>,
-        /// Keep independent greeter appearance instead of copying the sudo user's.
+        /// Publicly readable media library. Defaults outside HOME on its common
+        /// public volume when separate, otherwise /var/lib/decklock/media/<uid>.
+        #[arg(long)]
+        media_dir: Option<PathBuf>,
+        /// Keep independent greeter appearance instead of sharing the sudo user's.
         #[arg(long, conflicts_with = "user_config")]
         no_user_appearance: bool,
         /// Dry-run mode: show what would be written without modifying files.
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Internal access verification executed as the configured service account.
+    #[command(hide = true)]
+    ProbeAccess {
+        #[arg(long)]
+        path: PathBuf,
+        #[arg(long)]
+        storage: bool,
     },
     /// Internal unprivileged exporter used by installation.
     #[command(hide = true)]
@@ -104,6 +121,10 @@ pub enum Action {
         source: Option<PathBuf>,
         #[arg(long)]
         target: PathBuf,
+        #[arg(long)]
+        media_dir: Option<PathBuf>,
+        #[arg(long)]
+        prefer_saved_library: bool,
         #[arg(long)]
         dry_run: bool,
     },
@@ -907,8 +928,10 @@ fn prepare_greeter_dirs(
         // without invoking PAM or mutating the caller's credentials. Correct leaf
         // ownership is insufficient when an ancestor rejects traversal.
         let mut probe = ProcessCommand::new("setpriv")
-            .args(["--reuid", &uid.to_string(), "--regid", &gid.to_string(), "--init-groups", "--", "/usr/bin/test", "-r"])
-            .arg(dir).arg("-a").arg("-w").arg(dir).arg("-a").arg("-x").arg(dir)
+            .args(["--reuid", &uid.to_string(), "--regid", &gid.to_string(), "--init-groups", "--"])
+            .arg(std::env::current_exe().map_err(|e| e.to_string())?)
+            .args(["setup", "probe-access", "--storage", "--path"])
+            .arg(dir)
             .spawn().map_err(|e| format!("Cannot verify greeter storage access with setpriv (util-linux): {e}; greetd was not changed"))?;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
@@ -967,6 +990,7 @@ struct GreeterOptions {
     dry_run: bool,
     user_config: Option<PathBuf>,
     no_user_appearance: bool,
+    media_dir: Option<PathBuf>,
 }
 
 fn setup_greeter_with_storage(
@@ -1052,12 +1076,13 @@ fn setup_greeter_with_storage(
         verify_hyprland_config(lua)?;
     }
     let user = configured_greeter_user(path)?;
-    let appearance = appearance::prepare(
+    let (appearance, sharing_report) = appearance::prepare(
         dir.as_deref(),
         target.is_none(),
         options.user_config.as_deref(),
         options.no_user_appearance,
         dry_run,
+        options.media_dir.as_deref(),
     )?;
     let preparation = match &dir {
         Some(dir) => prepare_greeter_dirs(dir, target.is_none(), dry_run, &user)?,
@@ -1068,7 +1093,9 @@ fn setup_greeter_with_storage(
             .as_ref()
             .map(|lua| format!("\nDry-run: would write {}\n{lua}", lua_path.display()))
             .unwrap_or_default();
-        return Ok(format!("{review}\n{preparation}{compositor_report}"));
+        return Ok(format!(
+            "{review}\n{preparation}\n{sharing_report}{compositor_report}"
+        ));
     }
     if let Some(appearance) = appearance {
         appearance.install(dir.as_deref().unwrap(), target.is_none(), &user)?;
@@ -1094,7 +1121,7 @@ fn setup_greeter_with_storage(
     };
 
     Ok(format!(
-        "{report}\n{preparation}\nLogin changes take effect at the next logout or boot; greetd was not restarted."
+        "{report}\n{preparation}\n{sharing_report}\nLogin changes take effect at the next logout or boot; greetd was not restarted."
     ))
 }
 
@@ -1331,11 +1358,47 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
             let report = inspect_system(None, None);
             Ok(format_status(&report))
         }
+        Action::ProbeAccess { path, storage } => {
+            use std::os::unix::fs::OpenOptionsExt;
+            let info = fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NONBLOCK)
+                .open(&path)
+                .map_err(|e| format!("Cannot open {} as the login account: {e}", path.display()))?
+                .metadata()
+                .map_err(|e| e.to_string())?;
+            if storage {
+                if !info.is_dir() {
+                    return Err("Greeter storage must be a directory".into());
+                }
+                fs::read_dir(&path).map_err(|e| e.to_string())?;
+                // Creating a private temporary entry requires real ancestor
+                // traversal and directory write access, including ACL/SELinux.
+                // RAII removes it on success and failure; no media is read.
+                let _probe = tempfile::Builder::new()
+                    .prefix(".decklock-access-")
+                    .tempfile_in(&path)
+                    .map_err(|e| {
+                        format!("Cannot write {} as the login account: {e}", path.display())
+                    })?;
+            } else if !info.is_file() {
+                return Err("Login media must be a regular file".into());
+            }
+            Ok(String::new())
+        }
         Action::ExportAppearance {
             source,
             target,
+            media_dir,
+            prefer_saved_library,
             dry_run,
-        } => appearance::export(source.as_deref(), &target, dry_run),
+        } => appearance::export(
+            source.as_deref(),
+            &target,
+            dry_run,
+            media_dir.as_deref(),
+            prefer_saved_library,
+        ),
         Action::Greeter {
             target,
             no_keyboard,
@@ -1345,6 +1408,7 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
             transform,
             user_config,
             no_user_appearance,
+            media_dir,
             dry_run,
         } => setup_greeter_with_storage(
             target.as_deref(),
@@ -1354,6 +1418,7 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
                 dry_run,
                 user_config,
                 no_user_appearance,
+                media_dir,
             },
             compositor,
             output.as_deref(),
@@ -1376,6 +1441,7 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
             replace_custom,
             user_config,
             no_user_appearance,
+            media_dir,
             dry_run,
         } => {
             let mut options = GreeterOptions {
@@ -1384,6 +1450,7 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
                 dry_run: true,
                 user_config,
                 no_user_appearance,
+                media_dir,
             };
             // Validate both configurations before writing either. Configure the
             // user's lock first so a failure cannot replace their working login.

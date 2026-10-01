@@ -79,6 +79,12 @@ struct Args {
 
 #[derive(clap::Subcommand)]
 enum Command {
+    /// Import media or inspect the configured library without opening a window.
+    #[command(arg_required_else_help = true)]
+    Media {
+        #[command(subcommand)]
+        action: decklock::library::Action,
+    },
     /// Inspect or edit configuration without opening a window.
     #[command(
         arg_required_else_help = true,
@@ -161,6 +167,44 @@ fn run(args: Args) -> Result<(), String> {
     }
     if let Some(Command::Setup { action }) = args.command {
         println!("{}", decklock::setup::execute(action)?);
+        return Ok(());
+    }
+    if let Some(Command::Media { action }) = args.command {
+        if args.preview
+            || args.settings
+            || args.lock
+            || args.greeter
+            || args.controller
+            || args.controller_socket.is_some()
+            || args.toggle_keyboard
+            || args.check_config
+            || args.theme.is_some()
+            || args.locale.is_some()
+            || args.translations.is_some()
+            || args.background.is_some()
+            || args.keyboard
+            || args.preview_idle
+            || args.preview_fullscreen
+            || args.preview_exit_after.is_some()
+        {
+            return Err(
+                "The media command accepts --config PATH; use display options without a subcommand"
+                    .into(),
+            );
+        }
+        let default = shortcut::config_dir().map(|p| p.join("decklock/config.toml"));
+        let path = args.config.as_deref().or(default.as_deref());
+        let config = match path {
+            Some(path) => match std::fs::metadata(path) {
+                Ok(_) => config::Config::load(Some(path))?,
+                Err(e) if args.config.is_none() && e.kind() == std::io::ErrorKind::NotFound => {
+                    config::Config::default()
+                }
+                Err(e) => return Err(e.to_string()),
+            },
+            None => config::Config::default(),
+        };
+        println!("{}", decklock::library::execute(&config, action)?);
         return Ok(());
     }
     if args.toggle_keyboard {

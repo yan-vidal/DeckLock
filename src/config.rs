@@ -22,6 +22,9 @@ pub struct Config {
     pub idle_slideshow_seconds: u32,
     pub background: Option<PathBuf>,
     pub idle_background: Option<PathBuf>,
+    /// Canonical shared library prepared by setup; private XDG library otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_library: Option<PathBuf>,
     pub controller_socket: Option<PathBuf>,
     pub system_keyboard: bool,
     pub window_decorations: bool,
@@ -48,6 +51,7 @@ impl Default for Config {
             idle_slideshow_seconds: 30,
             background: None,
             idle_background: None,
+            media_library: None,
             controller_socket: None,
             system_keyboard: true,
             window_decorations: true,
@@ -134,6 +138,7 @@ impl Config {
             &mut self.theme,
             &mut self.background,
             &mut self.idle_background,
+            &mut self.media_library,
             &mut self.controller_socket,
         ]
         .into_iter()
@@ -177,6 +182,11 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        if self.media_library.as_ref().is_some_and(|p| {
+            p.as_os_str().is_empty() || p.to_string_lossy().starts_with("procedural:")
+        }) {
+            return Err("media_library must be a filesystem directory path".into());
+        }
         self.procedurals.validate()?;
         for path in [&self.background_pool, &self.idle_pool]
             .into_iter()

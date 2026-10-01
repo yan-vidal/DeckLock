@@ -25,6 +25,7 @@ collect_evidence() {
     mkdir -p "$out"
     cp /var/tmp/cloud-init-status.txt "$out/" 2>/dev/null || true
     cp /var/log/cloud-init.log "$out/" 2>/dev/null || true
+    stat -c '%a %u %g %d %n' / /home /var/lib > "$out/storage-ancestors.txt" 2>&1 || true
     journalctl -b --no-pager > "$out/journal.log" 2>&1 || true
     command -v getenforce >/dev/null && getenforce > "$out/selinux.txt" 2>&1 || true
     [[ -r /var/log/audit/audit.log ]] && grep -a 'avc:' /var/log/audit/audit.log > "$out/avc.log" 2>&1 || true

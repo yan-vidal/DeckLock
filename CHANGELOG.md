@@ -6,7 +6,7 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 ### Fixed
 
-- Login setup publishes selected normal/rest media and appearance as private service-account copies, reading as the sudo caller rather than root. Private or encrypted user HOME access is no longer needed by the greeter. Invalid/unreadable selections preserve the prior login/appearance; repeating setup refreshes the snapshot without changing source files or HOME permissions.
+- Login setup shares one canonical media library between the locker and greeter, readable by all local accounts and writable only by its desktop owner. Selected normal/rest media and user-library media are migrated as that owner; original paths and old generated media copies become links. Same-filesystem migration preserves the inode; cross-filesystem transfer is verified before replacing the source. Setup prefers the common HOME volume outside the personal HOME when it differs from the system volume, or `/var/lib/decklock/media/UID` otherwise, supports `--media-dir`, and persists SELinux labels. Private appearance/theme/config generations remain for recovery, and invalid/unreadable selections preserve the prior login/appearance.
 - Greeter startup with service-account `HOME=/` no longer fails while trying to create optional personal media directories. Existing readable media and packaged fallback backgrounds remain available; lock/preview report optional directory failures as warnings.
 - Login setup prepares private storage owned by the configured greetd account, checks ancestor access and preserves enforcing SELinux labels before changing its login command. Cage fullscreen is requested after the initial surface frame.
 - Hyprland login setup supports the Steam Deck OLED panel/touch rotation through verified Lua configuration, preserves an existing Hyprland greeter on repeat and keeps backups.
@@ -17,7 +17,7 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 ### Compatibility and limitations
 
-- Desktop zoom and existing theme/layout configuration remain unchanged. The greeter has its own storage; setup copies selected personal media without changing source permissions. Repeat setup to refresh those copies; manually supplied shared config paths still need readable files.
+- Desktop zoom and existing theme/layout configuration remain unchanged. The greeter keeps private configuration/state; shared media deliberately becomes public to local readers (0755 directories, 0644 files). HOME permissions stay unchanged. Repeat setup to refresh selected pools/theme, not duplicate media; CLI/GUI imports use the saved `media_library`. Private/encrypted HOME mounts are not made available before login, and manually supplied config paths still need readable files.
 - Controlled GTK and packaged VM checks do not establish physical touchscreen/controller ergonomics, every compositor or real GPU behavior on a Steam Deck.
 
 ## [0.3.2] - 2026-09-24

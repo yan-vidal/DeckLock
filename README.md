@@ -172,8 +172,13 @@ The eye opens one reusable viewer for images and muted videos.
 
 Each lock randomly selects a pool item. A video loops for that session; a photo
 starts a crossfading slideshow of the pool's photos, using the configured interval.
-**Import media** copies your files to `~/.local/share/decklock/library` (or
-`$XDG_DATA_HOME/decklock/library`) without overwriting existing names.
+After login setup, **Import media** (and `decklock media import FILE`) uses the
+same shared library as the locker and greeter. Your files move there; their old
+paths become links, so there is one stored payload. `decklock media path` prints
+the directory. All local accounts can read shared media; only its owner can write
+it. Removing a pool entry still leaves the file intact. Without login sharing,
+imports keep the private-library behavior: copies under
+`$XDG_DATA_HOME/decklock/library` (default `~/.local/share/decklock/library`).
 
 ## Included media
 
@@ -264,7 +269,7 @@ The visual editor's live preview follows that editor's unsaved controls.
 
 These installation improvements are in source/candidate builds; the published 0.3.2 packages predate them. Use a verified updated candidate or build from source for the commands below until the next public release.
 
-DeckLock can serve as a greetd login greeter and compositor screen locker (`hypridle`) with the same UI and on-screen keyboard. The greeter runs as the configured greetd service account (`greeter` on Arch, `greetd` on Fedora), with its own storage. Setup publishes selected personal media/theme as private copies, so login does not need permission to traverse your HOME. A manually configured shared `--config` still requires readable files. `--greeter` without a greetd socket is a safe preview: it cannot log in or run power actions.
+DeckLock can serve as a greetd login greeter and compositor screen locker (`hypridle`) with the same UI and on-screen keyboard. The greeter runs as the configured greetd service account (`greeter` on Arch, `greetd` on Fedora), with private configuration/state storage. Setup uses one publicly readable media library shared with the locker, so login does not need permission to traverse your HOME. A manually configured shared `--config` still requires readable files. `--greeter` without a greetd socket is a safe preview: it cannot log in or run power actions.
 
 Inspect your system's current integration:
 
@@ -302,9 +307,44 @@ preserves the packaged `default_session.user` (`greeter` on Arch, `greetd` on Fe
 storage, ancestor-access or ownership failure leaves the existing greetd command intact. With
 `--target`, only that target is written unless `--state-dir` is also supplied.
 Dry runs create nothing. The greeter reads media without creating user folders;
-optional media-folder errors in preview/lock mode are warnings that name the path. A service account with `HOME=/` does not need `/.config/midias`. When run through `sudo` from your desktop account, `setup greeter` and `setup all` copy your selected normal/rest media and appearance to private login storage automatically. Export reads as that desktop user, without changing HOME permissions or deleting originals. The greeter reads its own copies even before the user HOME is available; videos, photo slideshows, intentionally empty pools and procedurals retain their behavior. Repeat setup after changing your selection; these are snapshots, not live access to your files. Use `--user-config PATH` for a custom XDG/config location, or `--no-user-appearance` to keep independent login appearance. Explicit `decklock --greeter --config PATH` overrides the snapshot. Unrelated greeter authentication/session options and remembered choices are preserved. Invalid or unreadable selected inputs leave the saved login command and appearance intact. Content-addressed old snapshots remain available for recovery.
+optional media-folder errors in preview/lock mode are warnings that name the path. A service account with `HOME=/` does not need `/.config/midias`.
 
-On SELinux systems, greeter setup uses the existing display-manager policy path, runs `restorecon`, and requires `xdm_var_lib_t` on the storage directory before changing greetd. Custom `--state-dir` paths need that permanent file-context mapping. Enforcement stays enabled. Fullscreen is requested after the initial surface frame so older Cage/wlroots versions can initialize the login window.
+Run `sudo decklock setup all` from your desktop account to configure both login
+and locking, or `sudo decklock setup greeter` for login only. Setup migrates
+selected normal/rest media and existing user-library media to one dedicated
+library outside your personal HOME. Its default is `/var/lib/decklock/media/UID`.
+If HOME is on a separate, common volume, setup prefers `PARENT/.decklock-media/UID`
+(e.g. `/home/.decklock-media/1000`) on that volume, provided its existing parents
+are publicly traversable and root-controlled; otherwise it falls back to
+`/var/lib/decklock/media/UID`. This avoids filling the system
+partition with large videos. Use `--media-dir /absolute/dedicated/path` to choose
+another location; its parents must be root-owned and not writable by unprivileged
+users/groups. Existing administrator group 0 permissions are preserved. The volume must be mounted before login. Private/encrypted home mounts
+are not selected automatically; setup does not make them available before login.
+
+**Shared media is readable by any local account.** Only the desktop owner can
+write the library/files (directories 0755, files 0644). The migration reads as
+that owner, preserves HOME permissions, and replaces original file paths with
+links to the canonical files. On the same filesystem it preserves the inode;
+between filesystems it verifies and syncs a temporary transfer before replacing
+the original. There is no permanent second media payload. Temporary transfers
+need free space on the destination. Existing generated login media copies also
+become links; small appearance/config/theme generations remain private for
+recovery. Already-public packaged media stays in place.
+
+Videos, photo slideshows, intentionally empty pools and procedurals retain their
+behavior. Repeat setup after changing the selected pools/theme; imports already
+use the shared library. User configuration is backed up before migration.
+`--user-config PATH` selects a custom XDG/config file;
+`--no-user-appearance` keeps independent login appearance.
+Explicit `decklock --greeter --config PATH` overrides the setup appearance.
+Authentication/session options and remembered choices remain private and are
+preserved. Invalid/unreadable selected inputs fail before media migration and
+leave the saved login command and appearance intact. On SELinux systems setup
+uses a persistent `xdm_var_lib_t` mapping for this dedicated directory and verifies
+it without disabling enforcement; Fedora packages require `semanage` for that.
+Reading the library does not add login-manager integrations: DeckLock's login
+backend is greetd. Fullscreen is requested after the initial surface frame so older Cage/wlroots versions can initialize the login window.
 
 The login window is always fullscreen and undecorated. Until a session choice is
 remembered, an installed uwsm-managed session is preferred; a remembered choice

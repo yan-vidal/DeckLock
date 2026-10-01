@@ -241,6 +241,7 @@ pub fn build(
     initial: Vec<PathBuf>,
     strings: Rc<I18n>,
     name: &str,
+    library_root: Option<PathBuf>,
 ) -> Editor {
     catalog.parent.replace(window.downgrade());
     catalog.strings.replace(Some(strings.clone()));
@@ -290,6 +291,9 @@ pub fn build(
     }
     catalog.refresh();
     let import = gtk::Button::with_label(&strings.text("media-import"));
+    if library_root.is_some() {
+        import.set_tooltip_text(Some(&strings.text("media-import-shared-help")));
+    }
     left.append(&import);
     card.append(&left);
     let add = gtk::Button::with_label(&strings.text("media-add"));
@@ -397,6 +401,7 @@ pub fn build(
             .build();
         let catalog = catalog.clone();
         let message = weak_message.clone();
+        let library_root = library_root.clone();
         dialog.open_multiple(Some(&window), None::<&gio::Cancellable>, move |result| {
             let Ok(files) = result else {
                 return;
@@ -409,12 +414,13 @@ pub fn build(
                         .and_then(|file| file.path())
                 })
                 .collect();
-            let root = library::user_dir();
+            let shared = library_root.is_some();
+            let root = library_root.clone().unwrap_or_else(library::user_dir);
             let (send, receive) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
                 let results: Vec<_> = paths
                     .iter()
-                    .map(|path| library::import(path, &root))
+                    .map(|path| library::import_configured(path, &root, shared))
                     .collect();
                 let _ = send.send(results);
             });

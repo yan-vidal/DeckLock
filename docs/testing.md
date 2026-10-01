@@ -80,7 +80,7 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | Greeter arrow keys | `examples/greeter_keys_check.rs`, X11 gate | Left/Right from an empty password entry select accounts through GTK's own key dispatch, wrap at both ends, keep entry focus, and still move the cursor while a password is being typed |
 | Greeter setup command | `tests/cli_contract.rs` | The command `setup greeter` writes starts when run as greetd runs it (`sh -c "exec <command>"`), with a fake Cage. Replacing a greetd config keeps its mode (0644 for a file setup creates), and `config set` keeps the mode of the config it replaces, because the atomic write goes through a private temporary file |
 | Greeter state directory and default session | `src/greeter.rs` unit tests, `src/setup.rs` unit tests, `tests/cli_contract.rs` | Under greetd the state file goes to the system directory when it exists (an explicit path and `XDG_STATE_HOME` still win, and outside greetd it is ignored); a uwsm-managed session is preselected over the bare one only when `uwsm` exists; `setup greeter --state-dir` creates the directory with mode 0750, does nothing in a dry run, and a custom `--target` alone creates nothing. The packaged service account is preserved; traversal/writing as that account, rejection of inaccessible ancestors before changing greetd, ownership, HOME=/ startup and the enforcing SELinux display-manager storage label are additionally asserted by the packaged VM gate |
-| Private greeter appearance | `tests/cli_contract.rs`, `scripts/vm/greeter.py` | Real CLI copies media/theme, empty pools/procedurals, dry-run/repeat, failed-input preservation and snapshot loading/override. Packaged guest asserts UID/mode, unreadable originals, copied video bytes and a cyan photo rendered by real Cage with HOME=/; root-only selected input is rejected before replacing saved login/appearance |
+| Shared login media and private appearance | `tests/cli_contract.rs`, `scripts/vm/greeter.py` | Real CLI migrates one canonical library, checks inode/aliases, cross-filesystem bytes, deduplication/recovery, old snapshot conversion/rejection preserving installed appearance, CLI import, empty pools/procedurals, dry-run/repeat, failed-input preservation and appearance override. Packaged guest asserts owner-write/world-read modes, private HOME traversal denial, shared pool paths, SELinux mapping, separate common HOME volume selection/ineligible-parent or named-ACL fallback and a cyan photo rendered by real Cage with HOME=/; root-only selected input is rejected before replacing saved login/appearance |
 | Greeter startup and kiosk | `tests/cli_contract.rs`, `examples/preview_check.rs` | Unwritable HOME reaches GTK rather than aborting on media preparation; optional media failures name their path; greeter windows are undecorated; fullscreen is requested after the initial surface frame and acknowledged by a private xfwm4 in the GTK gate |
 | Hyprland greeter setup | `tests/cli_contract.rs` | Generated Lua rotates output and touchscreen, closes the compositor after DeckLock, preserves a working Hyprland command on repeat, refuses invalid rotation and passes custom storage paths through greetd shell quoting. Installed Hyprland Lua parsing is a separate local check; this does not prove GPU or real Hyprland login |
 | Lock setup command | `src/setup.rs` unit tests, `tests/cli_contract.rs` | Editing an existing `hypridle.conf`: exact key matching (`on_lock_cmd` untouched), known lockers replaced in `general` and `listener` blocks, trailing comments kept, custom wrappers and compound commands kept and reported until `--replace-custom` (including shell parameter braces and guards for unrelated processes), listeners that are not the lock command never replaced, inserting missing keys without corrupting shell expressions or losing listener edits, idempotence, atomic replacement preserving file mode, and a failed backup preserving the original. Never touches the real `~/.config`: every case uses `--target` in a temporary directory |
@@ -190,3 +190,23 @@ Root stacking notifications use a separate X connection, watched by GLib at high
 ### X11 VM display readiness
 
 The VM Xvfb uses `-noreset` and waits for an actual client connection before GTK starts. A probe disconnecting as the final client otherwise resets the server generation; the Arch VM failed GTK initialization during that race before the X11 backend ran. `scripts/test-vm-x11-fixture.py` runs the exact fixture arguments on a private dynamically allocated display and checks a protocol marker survives closing the last client. Missing Xvfb/xdotool now fails the guest gate instead of skipping X11; PAM and input assertions are unchanged.
+
+### Named ancestor ACL verification
+
+The packaged guest asserts denial by attempting an actual `chdir` as the login
+account and requiring `PermissionError`, while retaining the original ACL and
+public mode bits. Ubuntu's packaged Rust `test -x` reports success from the mode
+bits for this fixture even though the kernel denies traversal; it cannot serve
+as the denial oracle. Library fallback and the other media assertions remain
+required on every VM target.
+
+The installer's own headless probe opens selected regular media and reads/creates
+a private temporary entry in state storage after dropping to the configured
+account. It removes that entry immediately; no PAM or display is used. A public
+CLI regression covers aliases, missing/nonregular paths, nonblocking FIFO
+rejection and absence of leftover entries. The VM additionally requires the
+installer's probe to reject the ACL-denied directory.
+
+The packaged setup command must also reject named ACL denial in a custom state
+ancestor before replacing the active login command or appearance, preserving the
+original ACL. This covers the installer boundary beyond the standalone probe.

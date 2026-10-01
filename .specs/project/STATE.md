@@ -374,3 +374,37 @@ input/focus/authentication stay on GTK, and the worker stops before unlock.
 The targeted full X11 gate and X11 clippy passed; the new commit still needs the
 complete local suite and required package/VM CI. Native Xlib/XCB build/runtime
 dependencies are explicit. No release, installation or active session changed.
+
+
+2026-10-01 shared-media follow-up: the user rejected duplicate media snapshots
+and chose read access for every local account, with write access retained by
+the desktop owner. Setup shares a dedicated canonical library outside personal
+HOME, prefers its common volume when separate from /var/lib, and saves
+media_library for CLI/GUI parity. Owned sources and old generated snapshot media
+become links; same-filesystem migration keeps the inode, cross-filesystem
+transfer is verified/fsynced before replacement, and original config receives a
+backup. Small private appearance/theme/state generations remain. The shared
+folder uses 0755/0644 with selected-file ACL normalization; HOME permissions
+remain unchanged. SELinux uses a persistent xdm_var_lib_t mapping rather than
+disabling policy. Source/isolated/packaged checks must still be reported
+separately; this change does not add login backends beyond greetd, make encrypted
+HOME mounts available before login, establish device UAT or publish a release.
+
+The appearance pointer is published only after legacy conversion and label
+verification succeed; rejected unrelated hard links preserve the valid installed
+appearance and login command, with a real-CLI regression.
+
+Fedora Cloud CI exposed an ineligible common HOME parent: automatic selection
+must check existing ancestor ownership/access before preferring that volume.
+It now falls back to /var/lib rather than changing HOME/parent permissions.
+The public packaged CLI fixture also makes a common volume ancestor writable
+and asserts system-library fallback, unchanged parent modes and readable aliases;
+VM evidence records root/HOME/system ancestor mode, UID, GID and device.
+
+Further Fedora evidence identified filesystem root / as 0775 root:root, not an
+inaccessible HOME directory. Ancestor validation preserves existing group-0
+administrator access while rejecting ordinary group/other/named ACL writes.
+Named ancestor ACL traversal denial also causes automatic system-library
+fallback; a real CLI/container regression failed before this correction.
+The guest now asserts ordinary-group writes and named ACL denial/writes are
+rejected for automatic HOME-volume selection without editing those ACLs.
