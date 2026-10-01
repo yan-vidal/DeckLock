@@ -62,6 +62,27 @@ impl Cli {
     }
 }
 #[test]
+fn greeter_setup_explains_that_logout_does_not_reload_the_daemon() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let result = cli.run(
+        &["setup", "greeter", "--target", target.to_str().unwrap()],
+        true,
+    );
+    let output = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        !output.contains("next logout"),
+        "Setup promised an effect that greetd's cached configuration cannot provide: {output}"
+    );
+    assert!(
+        output.contains("reboot")
+            && output.contains("restart")
+            && output.contains("greetd was not restarted"),
+        "Setup must explain how to activate login changes without restarting the active session: {output}"
+    );
+}
+
+#[test]
 fn installation_access_probe_uses_real_filesystem_operations() {
     let cli = Cli::new();
     let media = cli.home.path().join("media.mp4");

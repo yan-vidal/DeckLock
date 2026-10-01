@@ -44,7 +44,7 @@ The Rest tab previews this state. Choose its own pool and slideshow interval, ke
 
 ## Login, locking and interface size
 
-With greetd, Cage and hypridle installed, `sudo decklock setup all` configures login and locking in one command. The lock configuration and backups belong to the invoking sudo user, under ~/.config/hypr/hypridle.conf; use --lock-target for another location. --dry-run reviews both configurations without writing. Setup preserves unrelated options and does not restart services; login changes take effect at the next logout or boot.
+With greetd, Cage and hypridle installed, `sudo decklock setup all` configures login and locking in one command. The lock configuration and backups belong to the invoking sudo user, under ~/.config/hypr/hypridle.conf; use --lock-target for another location. --dry-run reviews both configurations without writing. Setup preserves unrelated options and does not restart services; activate a changed login command by rebooting, or by ending the managed desktop session and restarting greetd from a separate TTY. greetd caches its configuration at startup; logout alone does not reload it.
 
 On a Steam Deck OLED with Hyprland 0.55 or newer, use:
 
