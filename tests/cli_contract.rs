@@ -109,6 +109,34 @@ fn greeter_loads_the_installed_appearance_before_opening_a_display() {
 }
 
 #[test]
+fn greeter_snapshot_keeps_explicit_pool_priority_over_unused_background_paths() {
+    let cli = Cli::new();
+    let home = cli.home.path();
+    let config = home.join("personal.toml");
+    std::fs::write(&config, "background='missing-unused.mp4'\nidle_background='missing-unused-idle.mp4'\nbackground_pool=['procedural:starfield']\nidle_pool=[]\n").unwrap();
+    let storage = home.join("login");
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            home.join("greetd.toml").to_str().unwrap(),
+            "--state-dir",
+            storage.to_str().unwrap(),
+            "--user-config",
+            config.to_str().unwrap(),
+        ],
+        true,
+    );
+    let copied = decklock::config::Config::load(Some(&storage.join("appearance.toml"))).unwrap();
+    assert_eq!(
+        copied.background_pool.unwrap(),
+        vec![PathBuf::from("procedural:starfield")]
+    );
+    assert_eq!(copied.idle_pool, Some(vec![]));
+}
+
+#[test]
 fn sharing_appearance_preserves_the_existing_hyprland_command_and_private_storage() {
     let cli = Cli::new();
     let home = cli.home.path();

@@ -21,8 +21,13 @@ fn selected(config: &Config, theme: &Theme, idle: bool) -> Result<Vec<PathBuf>, 
     } else {
         config.background.as_ref().or(theme.background.as_ref())
     };
-    // Explicit missing inputs must not silently become an empty login pool.
-    for path in pool.as_ref().into_iter().flatten().chain(background) {
+    // An explicit pool (including an empty one) overrides the legacy background.
+    // Only selected inputs may prevent exporting the login appearance.
+    let inputs: Vec<&PathBuf> = match pool {
+        Some(paths) => paths.iter().collect(),
+        None => background.into_iter().collect(),
+    };
+    for path in inputs {
         if crate::procedural::id(path).is_some() {
             continue;
         }
