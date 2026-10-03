@@ -269,6 +269,7 @@ def check_native_wiring():
             ("vm_native.try_native(", "test-vm.py does not call vm_native.try_native"),
             ("report['provisioning']", "the report does not record how the guest was provisioned"),
             ("fallback_reason", "a fallback does not record its reason"),
+            ("package=package", "the candidate is not handed to the native provisioning"),
             ("::warning", "a fallback does not raise a visible warning")):
         if needle not in source:
             failures.append(why)
@@ -319,6 +320,66 @@ def check_sway_readiness():
     if marker > first_call:
         return ["exercise.py calls swaymsg before waiting for Sway to report that it is running"]
     return []
+
+
+def check_candidate_dependencies(native):
+    """The candidate's dependency closure is installed on the host and the candidate itself is
+    purged again, so setup.sh still installs it in the booted guest, from a system that never
+    had it. Without this the guest spent about 40 minutes installing 98 dependencies under
+    emulation, which was most of what was left after the harness packages moved to the host.
+    """
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="decklock-native-") as directory:
+        env = Path(directory) / "target.env"
+        base = ("PRE_SYNC=''\nSYNC_AND_INSTALL='echo install'\nHARNESS_PACKAGES='a b'\n"
+                "INSTALL_CANDIDATE='echo candidate-install'\n")
+        purge = "PURGE_CANDIDATE='echo candidate-purge'\n"
+        cases = ((base + purge, "/x/c.deb", "install a b\ncandidate-install /x/c.deb\ncandidate-purge\n"),
+                 (base, "/x/c.deb", "install a b\n"),
+                 (base + purge, None, "install a b\n"))
+        for manifest, candidate, expected in cases:
+            env.write_text(manifest)
+            try:
+                script = native.provisioning_script(str(env), candidate)
+            except TypeError:
+                return ["provisioning_script does not take the candidate yet"]
+            result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20)
+            if result.stdout != expected or result.returncode:
+                failures.append(f"candidate {candidate!r} with purge={'PURGE' in manifest} printed "
+                                f"{result.stdout!r}, exit {result.returncode}: {result.stderr}")
+    for failing in (None, "chroot"):
+        with tempfile.TemporaryDirectory(prefix="decklock-native-") as directory:
+            bin_dir, log = stubs(directory, failing)
+            try:
+                script = native.chroot_script("/dev/loop7p1", Path(directory) / "root", "/x/ubuntu.env",
+                                              Path(directory) / "policy-rc.d",
+                                              candidate="/x/decklock_0.3.2-1_arm64.deb")
+            except TypeError:
+                return failures + ["chroot_script does not take the candidate yet"]
+            env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
+            subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, timeout=20)
+            calls = log.read_text().splitlines()
+            order = next((i for i, call in enumerate(calls) if call.startswith("chroot")), len(calls))
+            label = f"(chroot {'fails' if failing else 'succeeds'})"
+            if not any(call.startswith("cp /x/decklock_0.3.2-1_arm64.deb")
+                       and call.endswith("/tmp/decklock-candidate.deb") for call in calls[:order]):
+                failures.append(f"the candidate was not copied in before the chroot {label}")
+            if not any(call.startswith("rm -f") and "decklock-candidate.deb" in call for call in calls[order + 1:]):
+                failures.append(f"the candidate's copy was left in the guest {label}")
+    with tempfile.TemporaryDirectory(prefix="decklock-native-") as directory:
+        work = Path(directory)
+        (work / "base.img").write_bytes(b"")
+        runner = FakeRun()
+        native.provision(work / "base.img", work / "ubuntu.env", work, work / "provision.log",
+                         package=work / "decklock_0.3.2-1_arm64.deb", run=runner, geteuid=lambda: 1000,
+                         settle=lambda _: None, leftover=lambda mount: [])
+        script = next(command[-1] for command in runner.commands if "unshare" in command)
+        if "decklock-candidate.deb" not in script:
+            failures.append("provision does not hand the candidate to the chroot")
+    manifest = (ROOT / "scripts/vm/distros/ubuntu.env").read_text()
+    if "PURGE_CANDIDATE='dpkg --purge decklock'" not in manifest:
+        failures.append("the Ubuntu manifest does not name how to purge the candidate after its dependencies")
+    return failures
 
 
 def main():
@@ -418,7 +479,8 @@ def main():
     failures.extend(problems)
     if native is not None:
         for check in (check_provisioning_script, check_native_preconditions, check_chroot_script,
-                      check_native_orchestration, check_native_fallback, check_mounts_under):
+                      check_native_orchestration, check_native_fallback, check_mounts_under,
+                      check_candidate_dependencies):
             failures.extend(check(native))
 
     failures.extend(check_native_wiring())

@@ -177,7 +177,8 @@ def main():
         disk = f'file={work}/disk.qcow2,if=virtio,format=qcow2'
         if args.provision_native:
             raw, reason = vm_native.try_native(
-                base, ROOT / 'scripts/vm/distros' / f'{args.target}.env', work, logs, args.arch)
+                base, ROOT / 'scripts/vm/distros' / f'{args.target}.env', work, logs, args.arch,
+                package=package)
             if raw is not None:
                 disk = f'file={raw},if=virtio,format=raw'
                 report['provisioning'] = 'native'
