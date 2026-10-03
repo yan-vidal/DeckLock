@@ -257,7 +257,7 @@ def main():
                     # about 14 minutes apiece under emulation, to report nothing a disposable guest needs.
                     quiet = 'NEEDRESTART_SUSPEND=1 ' if slowdown > 1 else ''
                     result = subprocess.run([*ssh, f'{quiet}DECKLOCK_VM_SLOWDOWN={slowdown} bash /root/decklock-fixture/setup.sh {args.target}'],
-                                            stdout=guest_log, stderr=subprocess.STDOUT, timeout=1200 * slowdown)
+                                            stdout=guest_log, stderr=subprocess.STDOUT, timeout=(600 if report['provisioning'] == 'native' else 1200) * slowdown)
                 if result.returncode:
                     raise RuntimeError(f'Guest test failed ({result.returncode}); see guest.log')
                 report['status'] = 'passed'

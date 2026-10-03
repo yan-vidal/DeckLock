@@ -274,6 +274,8 @@ def check_native_wiring():
             ("DISABLE_UNITS", "the units to disable after an offline install are not read from the manifest"),
             ("/var/log/dpkg.log", "the guest's dpkg log, which times each install step, is not collected"),
             ("NEEDRESTART_SUSPEND=1 ' if slowdown > 1", "an emulated guest still runs needrestart after every apt install"),
+            ("(600 if report['provisioning'] == 'native' else 1200)",
+             "the guest phase is not bounded more tightly on the native path"),
             ("::warning", "a fallback does not raise a visible warning")):
         if needle not in source:
             failures.append(why)

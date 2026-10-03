@@ -1,6 +1,6 @@
 # Faster aarch64 VM gate: native provisioning before boot
 
-Status: spec approved on 2026-10-02; amended on 2026-10-03 for the private mount namespace (R5, R8, Design); plan in plan.md.
+Status: implemented; the measured result and what the probes changed are recorded in STATE.md.
 Scope: CI and the VM harness only. No application code, package or release change.
 
 ## Problem
@@ -40,7 +40,7 @@ baseline run, 3.67 s in the probe), leaving a margin of about 0.6 s that the pro
 
 ## Goals
 
-- The aarch64 gate finishes in about 30 minutes (target, not yet measured).
+- The aarch64 gate finishes in about 30 minutes (measured: 31.0 min, run 37107328791).
 - No assertion is removed, skipped, weakened or reordered, and no required check is relaxed.
 - The guest keeps installing the latest Ubuntu archive packages on every run. No cache, no
   frozen image, no published artifact, no self-hosted runner.
