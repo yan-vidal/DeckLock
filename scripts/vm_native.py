@@ -62,7 +62,7 @@ def provisioning_script(env_path=ENV_IN_GUEST, candidate=None):
     return script
 
 
-def chroot_script(partition, mount, manifest, policy, candidate=None):
+def chroot_script(partition, mount, manifest, policy, candidate=None, disable=()):
     """Runs under `unshare --mount --propagation private`: mount, prepare, install, restore.
 
     The EXIT trap is installed before anything is prepared and undoes only what was done,
@@ -73,6 +73,7 @@ def chroot_script(partition, mount, manifest, policy, candidate=None):
     inside = f'/tmp/decklock-candidate{Path(str(candidate)).suffix}' if candidate else None
     copy_candidate = f'cp {q(str(candidate))} "$root{inside}"\n' if candidate else ''
     drop_candidate = f' "$root{inside}"' if candidate else ''
+    disabled = ''.join(f'systemctl --root="$root" disable {q(unit)}\n' for unit in disable)
     return (
         'set -euo pipefail\n'
         f'root={q(str(mount))}\n'
@@ -93,7 +94,21 @@ def chroot_script(partition, mount, manifest, policy, candidate=None):
         'mv "$root/etc/resolv.conf" "$root/etc/resolv.conf.decklock-orig"\n'
         'moved=1\n'
         'cp /etc/resolv.conf "$root/etc/resolv.conf"\n'
-        f'chroot "$root" /bin/bash -c {q(provisioning_script(candidate=inside))}\n')
+        f'chroot "$root" /bin/bash -c {q(provisioning_script(candidate=inside))}\n'
+        + disabled)
+
+
+def guest_manifest(path):
+    """The manifest the guest sees when its packages were installed on the host.
+
+    setup.sh is not edited: it sources this file, and later assignments win, so its
+    `apt-get update` and its install of already-installed harness packages become no-ops.
+    The copy in the evidence directory shows exactly this.
+    """
+    return (Path(path).read_text().rstrip('\n') + '\n'
+            '# Appended by test-vm.py: the harness packages were installed on the host (provision.log).\n'
+            "PRE_SYNC=''\n"
+            "SYNC_AND_INSTALL='true'\n")
 
 
 def check_preconditions(*, guest_arch, host_arch, privileged, free_bytes, which):
@@ -166,7 +181,7 @@ def root_partition(host, loop, settle=time.sleep):
     raise NativeUnavailable(f'no partition labelled {ROOT_LABEL} on {loop}')
 
 
-def provision(base_image, manifest, work, log_path, *, package=None, run=subprocess.run,
+def provision(base_image, manifest, work, log_path, *, package=None, disable=(), run=subprocess.run,
               geteuid=os.geteuid, size_gib=GUEST_DISK_GIB, settle=time.sleep,
               leftover=lambda mount: mounts_under(mount, Path('/proc/self/mountinfo').read_text())):
     """Copy the pinned image into `work`, install the harness packages into the copy, return its path.
@@ -195,7 +210,8 @@ def provision(base_image, manifest, work, log_path, *, package=None, run=subproc
                     raise subprocess.CalledProcessError(4, ['e2fsck', '-fy', partition])
                 host(['resize2fs', partition], timeout=600)
                 host(['unshare', '--mount', '--propagation', 'private', 'bash', '-c',
-                      chroot_script(partition, mount, manifest, policy, candidate=package)], timeout=1800)
+                      chroot_script(partition, mount, manifest, policy, candidate=package,
+                                    disable=disable)], timeout=1800)
             finally:
                 host(['sync'], timeout=120, check=False)
                 host(['losetup', '-d', loop], timeout=60)

@@ -90,7 +90,7 @@ def stubs(directory, failing=None):
     bin_dir = Path(directory) / "bin"
     bin_dir.mkdir()
     log = Path(directory) / "calls.log"
-    for name in ("mount", "install", "cp", "mv", "rm", "chroot"):
+    for name in ("mount", "install", "cp", "mv", "rm", "chroot", "systemctl"):
         stub = bin_dir / name
         code = 1 if name == failing else 0
         stub.write_text(f'#!/bin/bash\necho "{name} $*" >> "{log}"\nexit {code}\n')
@@ -270,6 +270,9 @@ def check_native_wiring():
             ("report['provisioning']", "the report does not record how the guest was provisioned"),
             ("fallback_reason", "a fallback does not record its reason"),
             ("package=package", "the candidate is not handed to the native provisioning"),
+            ("vm_native.guest_manifest(", "the guest is not given the manifest for a host-installed guest"),
+            ("DISABLE_UNITS", "the units to disable after an offline install are not read from the manifest"),
+            ("/var/log/dpkg.log", "the guest's dpkg log, which times each install step, is not collected"),
             ("::warning", "a fallback does not raise a visible warning")):
         if needle not in source:
             failures.append(why)
@@ -382,6 +385,48 @@ def check_candidate_dependencies(native):
     return failures
 
 
+def check_offline_guest_state(native):
+    """Installing offline is not the same as installing in a running guest. The packages'
+    enabled services start at the guest's first boot, which an online install never reaches
+    because the guest is not rebooted: greetd did, and `usermod` on its account then failed
+    in greeter.py. The units a suite needs stopped are disabled after the install, and the
+    guest gets a manifest whose package-install step is a no-op, since apt took about seven
+    minutes per call under emulation even with nothing to do.
+    """
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="decklock-native-") as directory:
+        bin_dir, log = stubs(directory)
+        try:
+            script = native.chroot_script("/dev/loop7p1", Path(directory) / "root", "/x/ubuntu.env",
+                                          Path(directory) / "policy-rc.d", disable=("greetd.service",))
+        except TypeError:
+            failures.append("chroot_script does not take units to disable yet")
+        else:
+            env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
+            subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, timeout=20)
+            calls = log.read_text().splitlines()
+            order = next((i for i, call in enumerate(calls) if call.startswith("chroot")), len(calls))
+            if not any(call.startswith("systemctl --root=") and call.endswith("disable greetd.service")
+                       for call in calls[order + 1:]):
+                failures.append("greetd.service was not disabled after the install")
+    with tempfile.TemporaryDirectory(prefix="decklock-native-") as directory:
+        manifest = Path(directory) / "ubuntu.env"
+        manifest.write_text("PRE_SYNC='apt-get update'\nSYNC_AND_INSTALL='apt-get install -y'\n"
+                            "INSTALL_CANDIDATE='apt-get install -y'\n")
+        if not hasattr(native, "guest_manifest"):
+            failures.append("vm_native has no guest_manifest yet")
+        else:
+            shell = ("source /dev/stdin <<'MANIFEST'\n" + native.guest_manifest(manifest) +
+                     "\nMANIFEST\nprintf '%s|%s|%s' \"$PRE_SYNC\" \"$SYNC_AND_INSTALL\" \"$INSTALL_CANDIDATE\"")
+            result = subprocess.run(["bash", "-c", shell], capture_output=True, text=True, timeout=20)
+            if result.stdout != "|true|apt-get install -y":
+                failures.append(f"the guest's manifest sources to {result.stdout!r}: {result.stderr}")
+    ubuntu = (ROOT / "scripts/vm/distros/ubuntu.env").read_text()
+    if "DISABLE_UNITS='greetd.service'" not in ubuntu:
+        failures.append("the Ubuntu manifest does not name the units to disable after an offline install")
+    return failures
+
+
 def main():
     failures = []
 
@@ -480,7 +525,7 @@ def main():
     if native is not None:
         for check in (check_provisioning_script, check_native_preconditions, check_chroot_script,
                       check_native_orchestration, check_native_fallback, check_mounts_under,
-                      check_candidate_dependencies):
+                      check_candidate_dependencies, check_offline_guest_state):
             failures.extend(check(native))
 
     failures.extend(check_native_wiring())

@@ -175,12 +175,16 @@ def main():
         (seed / 'user-data').write_text('#cloud-config\ndisable_root: false\nssh_pwauth: false\nusers:\n  - name: root\n    ssh_authorized_keys:\n      - ' + public + '\nwrite_files:\n  - path: /etc/decklock-test-vm\n    content: disposable-qemu-fixture\nruncmd:\n  - [systemctl, enable, --now, sshd]\n')
         subprocess.run(['genisoimage', '-quiet', '-output', str(work / 'seed.iso'), '-volid', 'cidata', '-joliet', '-rock', str(seed)], check=True)
         disk = f'file={work}/disk.qcow2,if=virtio,format=qcow2'
+        guest_env = ROOT / 'scripts/vm/distros' / f'{args.target}.env'
         if args.provision_native:
+            manifest = ROOT / 'scripts/vm/distros' / f'{args.target}.env'
             raw, reason = vm_native.try_native(
-                base, ROOT / 'scripts/vm/distros' / f'{args.target}.env', work, logs, args.arch,
-                package=package)
+                base, manifest, work, logs, args.arch, package=package,
+                disable=vm_native.read_manifest(manifest).get('DISABLE_UNITS', '').split())
             if raw is not None:
                 disk = f'file={raw},if=virtio,format=raw'
+                guest_env = work / f'{args.target}.env'
+                guest_env.write_text(vm_native.guest_manifest(manifest))
                 report['provisioning'] = 'native'
             else:
                 report['fallback_reason'] = reason
@@ -245,7 +249,7 @@ def main():
                     time.sleep(2)
                 subprocess.run([*ssh, 'mkdir -p /root/decklock-fixture /var/tmp/decklock-evidence'], check=True, timeout=15 * slowdown)
                 fixture = sorted(p for p in (ROOT / 'scripts/vm').iterdir() if p.suffix in {'.py', '.sh'})
-                fixture.append(ROOT / 'scripts/vm/distros' / f'{args.target}.env')
+                fixture.append(guest_env)
                 subprocess.run(['scp', *ssh_options, '-P', str(port), str(package), *map(str, fixture), 'root@127.0.0.1:/root/decklock-fixture/'], check=True, timeout=60 * slowdown)
                 print('Guest ready; installing dependencies and exercising the candidate.', flush=True)
                 with (logs / 'guest.log').open('w') as guest_log:
@@ -262,6 +266,8 @@ def main():
                 if vm.poll() is None:
                     try:
                         transfer = subprocess.run(['scp', *ssh_options, '-P', str(port), '-r', 'root@127.0.0.1:/var/tmp/decklock-evidence', str(logs)], timeout=30 * slowdown, check=False)
+                        # Not evidence the suites need: they time each install step, which apt does not put in the journal.
+                        subprocess.run(['scp', *ssh_options, '-P', str(port), 'root@127.0.0.1:/var/log/dpkg.log', 'root@127.0.0.1:/var/log/apt/history.log', str(logs)], timeout=30 * slowdown, check=False)
                         if transfer.returncode:
                             report['evidence_error'] = f'Guest evidence transfer failed ({transfer.returncode})'
                     except subprocess.TimeoutExpired:
