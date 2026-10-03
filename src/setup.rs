@@ -1121,7 +1121,7 @@ fn setup_greeter_with_storage(
     };
 
     Ok(format!(
-        "{report}\n{preparation}\n{sharing_report}\nLogin changes take effect at the next logout or boot; greetd was not restarted."
+        "{report}\n{preparation}\n{sharing_report}\nLogin changes require a reboot or restarting greetd after leaving its managed session; logout alone does not reload greetd. greetd was not restarted."
     ))
 }
 

@@ -210,3 +210,13 @@ installer's probe to reject the ACL-denied directory.
 The packaged setup command must also reject named ACL denial in a custom state
 ancestor before replacing the active login command or appearance, preserving the
 original ACL. This covers the installer boundary beyond the standalone probe.
+
+### Login configuration activation
+
+The real CLI contract requires setup to explain reboot/service restart instead
+of promising that logout reloads greetd. Upstream greetd 0.10.3 reads config once
+in [main](https://github.com/kennylevinsen/greetd/blob/0.10.3/greetd/src/main.rs)
+and retains the configured greeter command in
+[Context](https://github.com/kennylevinsen/greetd/blob/0.10.3/greetd/src/context.rs).
+Packaged VM startup uses a fresh service; it does not establish configuration
+hot reload. Setup still leaves services running, preserving the active session.

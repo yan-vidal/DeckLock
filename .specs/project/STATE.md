@@ -408,3 +408,10 @@ Named ancestor ACL traversal denial also causes automatic system-library
 fallback; a real CLI/container regression failed before this correction.
 The guest now asserts ordinary-group writes and named ACL denial/writes are
 rejected for automatic HOME-volume selection without editing those ACLs.
+
+2026-10-01 activation guidance: greetd 0.10.3 caches the login command at daemon
+startup and does not reload it on logout. Setup output and the bilingual guides
+now require a reboot, or service restart from a separate TTY after leaving the
+managed session. A public CLI regression failed on the old logout promise. No
+automatic service restart, session termination, authentication or power action
+was added; existing packaged VM tests start a fresh service.

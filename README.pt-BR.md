@@ -379,9 +379,11 @@ Executar novamente sem escolher compositor preserva um greeter Hyprland existent
 do Hyprland do desktop. Alinhamento do toque/painel, GPU e login real com Hyprland
 ainda exigem validação no hardware.
 
-As mudanças valem no próximo logout ou boot. Guarde o backup e tenha uma TTY
-funcional para recuperação; não reinicie o greetd pela sessão de desktop que ele
-iniciou. Para testar bloqueio, instale o pacote candidato com seu arquivo PAM.
+Reinicie o sistema para ativar o novo comando de login, ou encerre a sessão
+gerenciada e reinicie o greetd por outra TTY. O greetd guarda a configuração
+carregada na inicialização; um logout sozinho não a recarrega. Guarde o backup
+e tenha uma TTY funcional para recuperação; reiniciar o greetd dentro da sessão
+que ele gerencia pode encerrar essa sessão. Para testar bloqueio, instale o pacote candidato com seu arquivo PAM.
 
 Os controles se adaptam automaticamente quando a área lógica é menor que 1280×800, no bloqueio, login e preview. No Steam Deck de 1280×800 com zoom de 160% (800×500 lógicos), a interface reduz por um fator de 0,625 para ficar do tamanho do login em escala 1. O zoom do desktop permanece; mídias e gradiente continuam ocupando toda a tela. O toque no teclado acompanha a transformação. Áreas maiores mantêm o tamanho atual, e temas e opções de layout existentes continuam válidos.
 

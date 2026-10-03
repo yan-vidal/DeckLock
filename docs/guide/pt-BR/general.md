@@ -44,7 +44,7 @@ A aba Repouso mostra uma prévia desse estado. Escolha um pool e intervalo próp
 
 ## Login, bloqueio e tamanho da interface
 
-Com greetd, Cage e hypridle instalados, `sudo decklock setup all` configura login e bloqueio em um comando. A configuração do bloqueio e seus backups pertencem ao usuário que invocou o sudo, em ~/.config/hypr/hypridle.conf; use --lock-target para outro caminho. --dry-run revisa as duas configurações sem gravar. O setup preserva opções não relacionadas e não reinicia serviços; alterações no login passam a valer no próximo logout ou boot.
+Com greetd, Cage e hypridle instalados, `sudo decklock setup all` configura login e bloqueio em um comando. A configuração do bloqueio e seus backups pertencem ao usuário que invocou o sudo, em ~/.config/hypr/hypridle.conf; use --lock-target para outro caminho. --dry-run revisa as duas configurações sem gravar. O setup preserva opções não relacionadas e não reinicia serviços; ative um novo comando de login reiniciando o sistema, ou encerrando a sessão gerenciada e reiniciando o greetd por outra TTY. O greetd guarda a configuração carregada na inicialização; um logout sozinho não a recarrega.
 
 No Steam Deck OLED com Hyprland 0.55 ou mais novo, use:
 

@@ -368,9 +368,12 @@ an existing Hyprland greeter. `--compositor cage` explicitly returns to Cage.
 This does not migrate your desktop Hyprland configuration. Panel/touch alignment,
 GPU behavior and an actual Hyprland login still need hardware validation.
 
-Changes take effect at the next logout or boot. Keep the printed backup and a
-working TTY available for recovery; do not restart greetd from its live desktop
-session. Install the packaged candidate with its PAM file for lock testing.
+Reboot to activate a changed login command, or end the managed desktop session
+and restart greetd from a separate TTY. greetd caches its configuration at
+startup; logout alone does not reload it. Keep the printed backup and a working
+TTY available for recovery; restarting greetd from its live desktop session
+can terminate that session. Install the packaged candidate with its PAM file for
+lock testing.
 
 Controls automatically fit logical viewports smaller than 1280×800, in lock, login and preview. On a 1280×800 Steam Deck at desktop scale 1.6 (800×500 logical), they shrink by 0.625 to match the scale-1 login size. Desktop zoom stays unchanged; media and its gradient still fill the surface. Keyboard hit testing follows the same transform. Larger viewports retain their current control size, and existing theme/layout options remain valid.
 
