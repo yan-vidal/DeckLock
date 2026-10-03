@@ -30,6 +30,14 @@ Package installation is about three quarters of the job. Splitting the suites in
 jobs would save little (13 min of suites against roughly 10 min of boot and candidate
 install repeated per shard) and is out of scope.
 
+The first CI probe (PR #56, run 37092747097) refined the split of those 70 minutes: the
+harness packages (about 287) installed in 36 s on the host, while the candidate's own 98
+dependency and recommendation packages still took about 40 minutes in the guest. It also
+exposed a latent race in `exercise.py`: the first `swaymsg` started about 0.6 s after Sway
+and gives up after 3 s, but Sway accepts IPC only once it is fully running (2.95 s in the
+baseline run, 3.67 s in the probe), leaving a margin of about 0.6 s that the probe lost by
+0.06 s. `exercise.py` now waits for Sway's own report before its first `swaymsg`.
+
 ## Goals
 
 - The aarch64 gate finishes in about 30 minutes (target, not yet measured).
@@ -49,10 +57,18 @@ the suite; changing what the VM proves.
   the same `PRE_SYNC` and `SYNC_AND_INSTALL` commands from `scripts/vm/distros/<target>.env`
   in a chroot of the work copy of the pinned image. It requires host architecture equal to
   guest architecture and root. The package list has a single source: the `.env` file.
+  When the manifest also names `PURGE_CANDIDATE`, the same step installs the candidate with
+  the manifest's `INSTALL_CANDIDATE` and purges it again, dependencies staying, so the
+  candidate's own dependency closure (98 packages on Ubuntu, about 40 minutes under
+  emulation in the first probe) is not left to the guest. The first probe showed that
+  prebaking only `HARNESS_PACKAGES` would have saved about 27 of the 94 minutes.
 - **R2 Everything else stays in the booted guest.** `scripts/vm/setup.sh` is unchanged.
-  Installing the candidate, the reinstall-preserves-configuration check, the PAM fixtures
-  and every suite run in the booted guest. Reinstalling already-installed harness packages
-  there is an idempotent no-op, which is also what makes the slow path a valid fallback.
+  Installing the candidate itself, the reinstall-preserves-configuration check, the PAM
+  fixtures and every suite run in the booted guest, and the candidate is installed there
+  from a system that never had it. Where apt's resolution of the candidate's dependencies
+  is evidenced moves from `guest.log` to `provision.log`: same command, same archive, same
+  minute, run on the host. Reinstalling already-installed harness packages in the guest is
+  an idempotent no-op, which is also what makes the slow path a valid fallback.
 - **R3 Evidence.** `result.json` records `provisioning` as `native` or `in-guest`, and
   `fallback_reason` when it is `in-guest`. The native phase writes `provision.log` into the
   evidence directory. `packages.txt` keeps being read from inside the guest.
