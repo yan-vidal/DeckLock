@@ -1,6 +1,6 @@
 # Faster aarch64 VM gate: native provisioning before boot
 
-Status: design approved by the user on 2026-10-02; written spec awaiting review.
+Status: spec approved on 2026-10-02; amended on 2026-10-03 for the private mount namespace (R5, R8, Design); plan in plan.md.
 Scope: CI and the VM harness only. No application code, package or release change.
 
 ## Problem
@@ -60,11 +60,14 @@ the suite; changing what the VM proves.
   the job emits a visible `::warning::` annotation, records the reason, and continues on
   the in-guest path with the same assertions. A guest that fails its suite still fails the
   job.
-- **R5 Containment.** The host only loop-mounts and chroots the harness's own work copy of
-  the pinned image, under the work directory, never the base cache image or any host path.
-  Mounts and loop devices are released on every exit path, including failure and timeout.
-  No host home, desktop socket, credential or device is exposed. The base image SHA256 is
-  verified before use, as today.
+- **R5 Containment.** The host only loop-attaches the harness's own work copy of the pinned
+  image, never the base cache image or any host path. All mounting happens inside a private
+  mount namespace (`unshare --mount --propagation private`), so nothing propagates to the
+  host and nothing survives the namespace. The mount point is a fresh directory outside the
+  work directory that is only ever removed with `rmdir`, so a recursive delete of the work
+  directory cannot reach a mounted filesystem. The loop device is detached on every exit
+  path, including failure and timeout. No host home, desktop socket, credential or device
+  is exposed. The base image SHA256 is verified before use, as today.
 - **R6 Fixture-only tuning, each measured.** After the native phase is working, boot and
   install tuning is added one change at a time, and kept only with a measured gain and no
   change in assertion behavior: masking `snapd` seeding, `apt-daily`, `apt-news`,
@@ -72,30 +75,38 @@ the suite; changing what the VM proves.
   `cache=unsafe` on the disposable guest disk. These touch the test fixture only.
 - **R7 Disk guard.** The native path checks free space on the host before converting the
   image and falls back (R4) when it is insufficient, rather than failing halfway.
-- **R8 Tests.** Command construction, `.env` parsing, the fallback decision, mount cleanup
-  ordering (with injected runners) and the `result.json` fields are covered by the existing
-  `vm-fixture` gate without root. The loop mount and chroot themselves are covered by the
-  CI job, which is the integration test.
-- **R9 Timeout and docs.** `timeout-minutes` drops from 300 to the measured duration plus a
-  margin, with the figure and its source written next to it. `docs/vm-testing.md`,
+- **R8 Tests.** Command construction, `.env` parsing, the fallback decision, the order of
+  the host steps and the `result.json` fields are covered by the existing `vm-fixture` gate
+  without root, with an injected runner. The chroot script's cleanup contract is covered by
+  running the real script against logging stand-ins for `mount`, `chroot` and the file
+  tools, including when a step fails early. The loop attach and the real chroot are covered
+  by the CI job, which is the integration test.
+- **R9 Timeout and docs.** On the native path the guest phase is bounded at 600 s times the
+  slowdown instead of 1200, and `timeout-minutes` drops from 300 to just above the sum of
+  `test-vm.py`'s own bounds, so a stuck guest still ends in its own log. The comment beside
+  it states the sum and the measured duration with its run. `docs/vm-testing.md`,
   `docs/testing.md`, `docs/ROADMAP.md` and `.specs/project/STATE.md` describe the new flow
-  and its limits.
+  and its limits. The timeout is only the ceiling for a hang; the speed-up is the typical run.
 
 ## Design
 
-Host side (new module `scripts/vm/provision_native.py`, called from `scripts/test-vm.py`):
+Host side (new module `scripts/vm_native.py`, called from `scripts/test-vm.py`; it lives
+outside `scripts/vm/` because every file there is copied into the guest):
 
-1. Preconditions: native architecture, root (or passwordless sudo), `losetup`, `mount`,
-   `chroot`, `sfdisk` or `growpart`, `e2fsck`, `resize2fs`, free space (R7).
+1. Preconditions: native architecture, root (or passwordless sudo), `losetup`, `lsblk`,
+   `unshare`, `chroot`, `growpart`, `e2fsck`, `resize2fs`, free space (R7).
 2. `qemu-img convert -O raw` of the verified base into the work directory; extend the file
    to the guest disk size (12 GiB, sparse); grow the root partition and filesystem
-   (`cloudimg-rootfs`).
-3. `losetup --find --show -P`, mount the root, bind `/dev`, `/dev/pts`, mount `/proc`, copy
-   in `resolv.conf`, install a `policy-rc.d` that refuses service starts.
+   (`cloudimg-rootfs`). A base image larger than the guest disk is refused rather than truncated.
+3. `losetup --find --show -P` the copy, then run one script under
+   `unshare --mount --propagation private`: mount the root, bind `/dev`, mount `/proc`,
+   install a `policy-rc.d` that refuses service starts, swap in the host's `resolv.conf`,
+   and run the install in a chroot.
 4. In the chroot: `DEBIAN_FRONTEND=noninteractive LC_ALL=C` and the `.env` commands.
 5. Fixture tuning from R6 (only the entries that earned their place).
-6. Unmount in reverse order, detach the loop device, always (`try/finally`, plus a
-   best-effort sweep of anything still mounted under the work directory).
+6. The guest's own files are restored by an `EXIT` trap installed before anything is
+   prepared, so it also runs when a step fails early. The mounts end with the namespace.
+   `sync`, then detach the loop device, always (`try/finally`).
 7. Boot QEMU from the resulting raw disk instead of a qcow2 overlay. The cloud-init seed,
    SSH, memory guard, slowdown scaling and evidence transfer are unchanged.
 
