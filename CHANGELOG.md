@@ -14,11 +14,12 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 - Lock setup preserves shell expressions and unrelated hypridle settings, migrates known lockers and keeps custom wrappers unless explicitly replaced.
 - `setup all` accepts the same login compositor/rotation options and configures the sudo caller's hypridle as that user, preserving file ownership, permissions and backups. It validates both configurations before writes and reports completed lock changes if login setup fails later.
 - Lock, login and preview controls automatically fit logical viewports below 1280×800. At scale 1.6 on a Steam Deck, they match the size of the scale-1 login; media stays fullscreen and keyboard hit testing follows the scaled controls.
+- The controller connection survives a restart of the sc-controller daemon: the keyboard reconnects instead of staying without pad input until DeckLock restarts. The pads are captured again only while the keyboard is still active, and a protocol refusal or an overflowing event queue still ends the connection for good. Connection changes reach every lock surface, and a reconnect restores the pad keyboard geometry and clears the "controller unavailable" notice.
 
 ### Compatibility and limitations
 
 - Desktop zoom and existing theme/layout configuration remain unchanged. The greeter keeps private configuration/state; shared media deliberately becomes public to local readers (0755 directories, 0644 files). HOME permissions stay unchanged. Repeat setup to refresh selected pools/theme, not duplicate media; CLI/GUI imports use the saved `media_library`. Private/encrypted HOME mounts are not made available before login, and manually supplied config paths still need readable files.
-- Controlled GTK and packaged VM checks do not establish physical touchscreen/controller ergonomics, every compositor or real GPU behavior on a Steam Deck.
+- Controlled GTK and packaged VM checks do not establish physical touchscreen/controller ergonomics, every compositor or real GPU behavior on a Steam Deck. Controller reconnection is tested against a fake daemon, not a real sc-controller restart with a physical controller.
 
 ## [0.3.2] - 2026-09-24
 
