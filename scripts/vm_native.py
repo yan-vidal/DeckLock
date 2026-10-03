@@ -131,7 +131,7 @@ def host_facts(guest_arch, directory):
     except (OSError, subprocess.SubprocessError):
         privileged = False
     return dict(guest_arch=guest_arch, host_arch=platform.machine(), privileged=privileged,
-                free_bytes=shutil.disk_usage(directory).free, which=shutil.which)
+                free_bytes=0, which=shutil.which)
 
 
 def mounts_under(directory, mountinfo):
