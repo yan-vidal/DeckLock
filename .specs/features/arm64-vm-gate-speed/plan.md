@@ -42,11 +42,14 @@ The probe (PR #56, run 37092747097) proved the hosted arm64 runner allows the me
 that the harness packages install natively in 36 s, and it found two things the plan did not
 anticipate. Both were ruled on during execution and are now in the spec (R1, R2, baseline):
 
-- The candidate's own 98 dependency packages still cost about 40 minutes in the guest, so
-  the host step also installs the candidate and purges it again (`PURGE_CANDIDATE` in the
-  manifest; `vm_native.provisioning_script(env_path, candidate)` and
-  `chroot_script(..., candidate=)`). Commit `ci: install the candidate's dependencies on the
-  host too`.
+- The candidate's own 98 dependency packages cost about 40 minutes in the guest, so the host
+  step was made to install the candidate and purge it again (`PURGE_CANDIDATE`). The 40
+  minutes included two needrestart runs; with those suspended, installing the dependencies in
+  the guest costs 4.2 minutes, and the whole-branch review pointed out that pre-installing
+  them gave up the evidence that apt resolves them and that their maintainer scripts run on
+  a live system. The user chose to keep them in the guest, so the host step installs the
+  harness packages only (commits `ci: install the candidate's dependencies on the host too`
+  and `ci: install the candidate's dependencies in the guest again`).
 - `exercise.py` raced Sway's start-up against `swaymsg`'s 3 s timeout (margin about 0.6 s)
   and now waits for Sway's report first, with a contract test. Commit `ci: wait for Sway to
   be running before the first swaymsg`.

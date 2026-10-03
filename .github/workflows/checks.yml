@@ -212,8 +212,8 @@ jobs:
     # Above the sum of test-vm.py's own bounds on the native path (host provisioning
     # 76 min, boot 32, copying 10, guest phase 80, evidence 8 = 206), so a stuck guest
     # still ends in its log rather than a cancelled job. A passing run takes about
-    # 31 min (run 37107328791), down from about 94 before the harness packages and the
-    # candidate's dependencies were installed on the host. The timeout only caps a hang.
+    # 35 min (run 37117073212), down from about 94 before the harness packages were
+    # installed on the host. The timeout only caps a hang.
     timeout-minutes: 210
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

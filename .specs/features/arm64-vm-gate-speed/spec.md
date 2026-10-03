@@ -32,7 +32,13 @@ install repeated per shard) and is out of scope.
 
 The first CI probe (PR #56, run 37092747097) refined the split of those 70 minutes: the
 harness packages (about 287) installed in 36 s on the host, while the candidate's own 98
-dependency and recommendation packages still took about 40 minutes in the guest. It also
+dependency and recommendation packages still took about 40 minutes in the guest. That figure
+included two needrestart runs of about 14 minutes each: with needrestart suspended, installing
+them in the guest costs 4.2 minutes (run 37117073212: 35.2 min, against 31.0 when they were
+installed on the host). They stay in the guest on purpose, because apt resolving the
+candidate's dependencies and their maintainer scripts running on a live system are evidence
+worth four minutes; pre-installing them on the host was tried and reversed, and a contract
+keeps it reversed. The probe also
 exposed a latent race in `exercise.py`: the first `swaymsg` started about 0.6 s after Sway
 and gives up after 3 s, but Sway accepts IPC only once it is fully running (2.95 s in the
 baseline run, 3.67 s in the probe), leaving a margin of about 0.6 s that the probe lost by
@@ -40,7 +46,7 @@ baseline run, 3.67 s in the probe), leaving a margin of about 0.6 s that the pro
 
 ## Goals
 
-- The aarch64 gate finishes in about 30 minutes (measured: 31.0 min, run 37107328791).
+- The aarch64 gate finishes in about 30 minutes (measured: 35.2 min, run 37117073212).
 - No assertion is removed, skipped, weakened or reordered, and no required check is relaxed.
 - The guest keeps installing the latest Ubuntu archive packages on every run. No cache, no
   frozen image, no published artifact, no self-hosted runner.
@@ -57,23 +63,14 @@ the suite; changing what the VM proves.
   the same `PRE_SYNC` and `SYNC_AND_INSTALL` commands from `scripts/vm/distros/<target>.env`
   in a chroot of the work copy of the pinned image. It requires host architecture equal to
   guest architecture and root. The package list has a single source: the `.env` file.
-  When the manifest also names `PURGE_CANDIDATE`, the same step installs the candidate with
-  the manifest's `INSTALL_CANDIDATE` and purges it again, dependencies staying, so the
-  candidate's own dependency closure (98 packages on Ubuntu, about 40 minutes under
-  emulation in the first probe) is not left to the guest. The first probe showed that
-  prebaking only `HARNESS_PACKAGES` would have saved about 27 of the 94 minutes. Units named
+  The step installs the harness packages only, never the candidate. Units named
   in `DISABLE_UNITS` are disabled after the install: an offline install enables services
   that start at the guest's first boot, which an online install never reaches because the
   guest is not rebooted (greetd running made `usermod` fail in `greeter.py`).
 - **R2 Everything else stays in the booted guest.** `scripts/vm/setup.sh` is unchanged.
-  Installing the candidate itself, the reinstall-preserves-configuration check, the PAM
-  fixtures and every suite run in the booted guest, and the candidate is installed there
-  from a system on which it is not installed: it was installed and purged in the host
-  chroot, which leaves a filesystem equal to a clean one only because the package has no
-  maintainer scripts (a contract test fails if one is added, so the decision is revisited
-  rather than inherited). Where apt's resolution of the candidate's dependencies
-  is evidenced moves from `guest.log` to `provision.log`: same command, same archive, same
-  minute, run on the host. Reinstalling already-installed harness packages in the guest is
+  Installing the candidate and its dependencies, the reinstall-preserves-configuration
+  check, the PAM fixtures and every suite run in the booted guest, where apt resolves the
+  candidate's dependencies and their maintainer scripts run on a live system. Reinstalling already-installed harness packages in the guest is
   an idempotent no-op, which is also what makes the slow path a valid fallback. Because apt
   took about seven minutes per call under emulation even with nothing to do, a natively
   provisioned guest is given the manifest with `PRE_SYNC=''` and `SYNC_AND_INSTALL='true'`
