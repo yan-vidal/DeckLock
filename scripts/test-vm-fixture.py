@@ -273,6 +273,7 @@ def check_native_wiring():
             ("vm_native.guest_manifest(", "the guest is not given the manifest for a host-installed guest"),
             ("DISABLE_UNITS", "the units to disable after an offline install are not read from the manifest"),
             ("/var/log/dpkg.log", "the guest's dpkg log, which times each install step, is not collected"),
+            ("NEEDRESTART_SUSPEND=1' if slowdown > 1", "an emulated guest still runs needrestart after every apt install"),
             ("::warning", "a fallback does not raise a visible warning")):
         if needle not in source:
             failures.append(why)

@@ -253,7 +253,10 @@ def main():
                 subprocess.run(['scp', *ssh_options, '-P', str(port), str(package), *map(str, fixture), 'root@127.0.0.1:/root/decklock-fixture/'], check=True, timeout=60 * slowdown)
                 print('Guest ready; installing dependencies and exercising the candidate.', flush=True)
                 with (logs / 'guest.log').open('w') as guest_log:
-                    result = subprocess.run([*ssh, f'DECKLOCK_VM_SLOWDOWN={slowdown} bash /root/decklock-fixture/setup.sh {args.target}'],
+                    # needrestart, an apt hook on Ubuntu images, scans every process after each install:
+                    # about 14 minutes apiece under emulation, to report nothing a disposable guest needs.
+                    quiet = 'NEEDRESTART_SUSPEND=1 ' if slowdown > 1 else ''
+                    result = subprocess.run([*ssh, f'{quiet}DECKLOCK_VM_SLOWDOWN={slowdown} bash /root/decklock-fixture/setup.sh {args.target}'],
                                             stdout=guest_log, stderr=subprocess.STDOUT, timeout=1200 * slowdown)
                 if result.returncode:
                     raise RuntimeError(f'Guest test failed ({result.returncode}); see guest.log')
