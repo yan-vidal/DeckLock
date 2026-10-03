@@ -27,7 +27,7 @@ from pathlib import Path
 GUEST_DISK_GIB = 12
 MIN_FREE_GIB = 10
 ROOT_LABEL = 'cloudimg-rootfs'
-REQUIRED_TOOLS = ('qemu-img', 'losetup', 'lsblk', 'unshare', 'chroot',
+REQUIRED_TOOLS = ('qemu-img', 'losetup', 'lsblk', 'unshare', 'chroot', 'timeout',
                   'growpart', 'e2fsck', 'resize2fs')
 ENV_IN_GUEST = '/tmp/decklock-target.env'
 
@@ -46,7 +46,9 @@ def provisioning_script(env_path=ENV_IN_GUEST, candidate=None):
     With a candidate and a manifest that says how to purge it, the candidate's dependency
     closure is installed too: the candidate goes in with the manifest's own command and comes
     out again, dependencies staying. setup.sh then still installs the candidate itself in the
-    booted guest, from a system that never had it, and apt's resolution is in provision.log.
+    booted guest, on a system where it is not installed, and apt's resolution is in
+    provision.log. A purge only matches a clean install while the package has no maintainer
+    scripts, which test-vm-fixture.py checks.
     """
     script = (
         'set -euo pipefail\n'
@@ -158,9 +160,14 @@ class Host:
         self.log.write('$ ' + shlex.join(command) + '\n')
         self.log.flush()
         started = time.monotonic()
-        result = self.run(command, stdout=subprocess.PIPE if capture else self.log,
-                          stderr=self.log if capture else subprocess.STDOUT,
-                          text=True, timeout=timeout)
+        try:
+            result = self.run(command, stdout=subprocess.PIPE if capture else self.log,
+                              stderr=self.log if capture else subprocess.STDOUT,
+                              text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            self.log.write(f'# timed out after {timeout}s\n')
+            self.log.flush()
+            raise
         if capture and result.stdout:
             self.log.write(result.stdout)
         self.log.write(f'# exit {result.returncode} after {time.monotonic() - started:.1f}s\n')
@@ -209,9 +216,11 @@ def provision(base_image, manifest, work, log_path, *, package=None, disable=(),
                 if host(['e2fsck', '-fy', partition], timeout=300, check=False).returncode > 1:
                     raise subprocess.CalledProcessError(4, ['e2fsck', '-fy', partition])
                 host(['resize2fs', partition], timeout=600)
-                host(['unshare', '--mount', '--propagation', 'private', 'bash', '-c',
+                # Bounded by `timeout` as root: the subprocess timeout would only kill sudo and
+                # leave the root-owned unshare, chroot and apt tree running.
+                host(['timeout', '--kill-after=30', '1800', 'unshare', '--mount', '--propagation', 'private', 'bash', '-c',
                       chroot_script(partition, mount, manifest, policy, candidate=package,
-                                    disable=disable)], timeout=1800)
+                                    disable=disable)], timeout=1800 + 90)
             finally:
                 host(['sync'], timeout=120, check=False)
                 host(['losetup', '-d', loop], timeout=60)

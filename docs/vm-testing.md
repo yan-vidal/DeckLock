@@ -114,8 +114,10 @@ the units named in `DISABLE_UNITS` are disabled: an offline install enables serv
 would start at the guest's first boot, which an online install never reaches (greetd did, and
 `greeter.py` could then no longer change its account). The step needs matching host and
 guest architectures, root or passwordless sudo, and about 10 GiB free. The candidate itself
-is still installed in the booted guest, from a system that never had it, then reinstalled,
-and every suite runs there. `setup.sh` is not edited, but the guest is handed the manifest
+is still installed in the booted guest, on a system where it is not installed (it was
+installed and purged in the host chroot, which leaves nothing behind because the package has
+no maintainer scripts; a contract test fails if one is added), then reinstalled, and every
+suite runs there. `setup.sh` is not edited, but the guest is handed the manifest
 with `PRE_SYNC=''` and `SYNC_AND_INSTALL='true'` appended (the copy in the evidence shows
 it), because apt took about seven minutes per call under emulation even with nothing to do.
 Where apt resolves the candidate's dependencies is therefore `provision.log`, not

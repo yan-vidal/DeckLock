@@ -114,8 +114,10 @@ def main():
                              'For disposable CI runners only, never a shared machine')
     parser.add_argument('--provision-native', action='store_true',
                         help='Install the harness packages on the host before the guest boots. '
-                             'Needs the host and guest architectures to match and root; '
-                             'otherwise warns and installs inside the guest as usual')
+                             'Runs loop, growpart, resize2fs and chroot as root through sudo, so it is for '
+                             'disposable CI runners only, never a shared machine. Needs the host and '
+                             'guest architectures to match; without passwordless sudo, or on any failure, '
+                             'it warns and installs inside the guest as usual')
     parser.add_argument('--logs', type=Path, default=ROOT / 'target/vm-logs')
     args = parser.parse_args()
     distro = DISTROS[args.target]

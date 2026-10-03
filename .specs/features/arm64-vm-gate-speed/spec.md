@@ -68,7 +68,10 @@ the suite; changing what the VM proves.
 - **R2 Everything else stays in the booted guest.** `scripts/vm/setup.sh` is unchanged.
   Installing the candidate itself, the reinstall-preserves-configuration check, the PAM
   fixtures and every suite run in the booted guest, and the candidate is installed there
-  from a system that never had it. Where apt's resolution of the candidate's dependencies
+  from a system on which it is not installed: it was installed and purged in the host
+  chroot, which leaves a filesystem equal to a clean one only because the package has no
+  maintainer scripts (a contract test fails if one is added, so the decision is revisited
+  rather than inherited). Where apt's resolution of the candidate's dependencies
   is evidenced moves from `guest.log` to `provision.log`: same command, same archive, same
   minute, run on the host. Reinstalling already-installed harness packages in the guest is
   an idempotent no-op, which is also what makes the slow path a valid fallback. Because apt

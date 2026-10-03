@@ -11,6 +11,7 @@ import ast
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -148,6 +149,14 @@ def check_chroot_script(native):
     return failures
 
 
+def plain(command):
+    """A command as the host meant it, without the sudo and the in-sudo timeout around it."""
+    argv = command[2:] if command[:2] == ["sudo", "-n"] else list(command)
+    if argv[:1] == ["timeout"]:
+        argv = argv[3:]
+    return argv
+
+
 class FakeRun:
     """Records commands; `fail` names a command that exits non-zero."""
 
@@ -156,7 +165,7 @@ class FakeRun:
 
     def __call__(self, command, stdout=None, stderr=None, text=None, timeout=None):
         self.commands.append(list(command))
-        argv = command[2:] if command[:2] == ["sudo", "-n"] else command
+        argv = plain(command)
         output = ""
         if argv[0] == "qemu-img":
             with open(argv[-1], "wb") as image:
@@ -182,9 +191,16 @@ def check_native_orchestration(native):
                 outcome = "ok"
             except Exception as error:  # the contract is about what ran, not the type
                 outcome = type(error).__name__
-            argvs = [c[2:] if c[:2] == ["sudo", "-n"] else c for c in runner.commands]
+            argvs = [plain(c) for c in runner.commands]
             heads = [a[0] for a in argvs]
             label = f"(fail={fail})"
+            privileged = next((c[2:] for c in runner.commands if "unshare" in c), None)
+            if privileged is not None:
+                # A bare subprocess timeout kills sudo and leaves the root-owned tree running.
+                if privileged[:3] != ["timeout", "--kill-after=30", "1800"]:
+                    failures.append(f"the privileged install is not bounded inside sudo {label}")
+                if privileged[3:7] != ["unshare", "--mount", "--propagation", "private"]:
+                    failures.append(f"the privileged install does not run in a private mount namespace {label}")
             if (fail is None) != (outcome == "ok"):
                 failures.append(f"provision outcome {outcome} {label}")
             if not all(c[:2] == ["sudo", "-n"] for c in runner.commands if c[0] != "qemu-img"):
@@ -430,6 +446,95 @@ def check_offline_guest_state(native):
     return failures
 
 
+class PlantingRun(FakeRun):
+    """On the privileged step leaves a file under the mount point, as a mount that failed to
+    release would leave host data there."""
+
+    planted = None
+
+    def __call__(self, command, **kwargs):
+        argv = plain(command)
+        if argv[0] == "unshare":
+            root = re.search(r"^root=(\S+)$", argv[-1], re.MULTILINE).group(1)
+            self.planted = Path(root) / "planted"
+            self.planted.write_text("host data")
+        return super().__call__(command, **kwargs)
+
+
+class StuckRun(FakeRun):
+    """A command that never returns: growpart hits its timeout."""
+
+    def __call__(self, command, **kwargs):
+        if plain(command)[0] == "growpart":
+            self.commands.append(list(command))
+            raise subprocess.TimeoutExpired(command, 120)
+        return super().__call__(command, **kwargs)
+
+
+def check_containment(native):
+    """The mount point is only ever removed with rmdir, and a command that times out says so."""
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="decklock-native-") as directory:
+        work = Path(directory)
+        (work / "base.img").write_bytes(b"")
+        runner = PlantingRun()
+        disk, reason = native.try_native(
+            work / "base.img", work / "e.env", work, work, "aarch64",
+            facts=lambda arch, where: dict(guest_arch=arch, host_arch=arch, privileged=True,
+                                           free_bytes=2**40, which=lambda tool: tool),
+            run=runner, geteuid=lambda: 1000, settle=lambda _: None)
+        if disk is not None:
+            failures.append("provisioning succeeded although something was left under the mount point")
+        if runner.planted is None or not runner.planted.exists():
+            failures.append("the mount point was removed recursively instead of with rmdir")
+        if runner.planted is not None:
+            shutil.rmtree(runner.planted.parent, ignore_errors=True)
+    with tempfile.TemporaryDirectory(prefix="decklock-native-") as directory:
+        work = Path(directory)
+        (work / "base.img").write_bytes(b"")
+        try:
+            native.provision(work / "base.img", work / "ubuntu.env", work, work / "provision.log",
+                             run=StuckRun(), geteuid=lambda: 1000, settle=lambda _: None,
+                             leftover=lambda mount: [])
+        except subprocess.TimeoutExpired:
+            pass
+        else:
+            failures.append("a timed-out command did not stop provisioning")
+        logged = (work / "provision.log").read_text() if (work / "provision.log").exists() else ""
+        if "timed out" not in logged:
+            failures.append("provision.log does not say which command timed out")
+    return failures
+
+
+def check_flag_help_warns():
+    """--provision-native runs loop, growpart, resize2fs and chroot as root through sudo, so its
+    help must say, as --allow-emulation's does, that it is for disposable runners."""
+    result = subprocess.run([sys.executable, str(VM_RUNNER), "--help"], capture_output=True, text=True, timeout=30)
+    start = result.stdout.find("\n  --provision-native")
+    if start < 0:
+        return ["test-vm.py --help does not describe --provision-native"]
+    block = result.stdout[start:].split("\n  --", 2)[1]
+    return [] if "disposable" in block and "root" in block else [
+        "the --provision-native help does not warn that it runs as root and is for disposable runners only"]
+
+
+def check_no_maintainer_scripts():
+    """PURGE_CANDIDATE leaves a filesystem that matches a clean install only because the .deb
+    has no maintainer scripts. If one is added, the in-guest install stops being a clean first
+    install and that decision has to be revisited, not inherited silently."""
+    names = ("preinst", "postinst", "prerm", "postrm")
+    failures = []
+    for path in (ROOT / "packaging").rglob("*"):
+        if path.name in names:
+            failures.append(f"{path.relative_to(ROOT)} adds a maintainer script to a package; revisit PURGE_CANDIDATE")
+    for builder in (ROOT / "scripts/ci-build-package", ROOT / "scripts/package-release.py"):
+        text = builder.read_text()
+        for name in names:
+            if re.search(rf"DEBIAN/{name}\b", text):
+                failures.append(f"{builder.name} builds a {name}; revisit PURGE_CANDIDATE")
+    return failures
+
+
 def main():
     failures = []
 
@@ -528,11 +633,14 @@ def main():
     if native is not None:
         for check in (check_provisioning_script, check_native_preconditions, check_chroot_script,
                       check_native_orchestration, check_native_fallback, check_mounts_under,
-                      check_candidate_dependencies, check_offline_guest_state):
+                      check_candidate_dependencies, check_offline_guest_state,
+                      check_containment):
             failures.extend(check(native))
 
     failures.extend(check_native_wiring())
     failures.extend(check_sway_readiness())
+    failures.extend(check_flag_help_warns())
+    failures.extend(check_no_maintainer_scripts())
     failures.extend(check_native_workflow())
 
     if failures:
