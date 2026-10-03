@@ -75,6 +75,92 @@ mod tests {
     }
 
     #[test]
+    fn daemon_restart_recaptures_only_while_keyboard_remains_active() {
+        use std::io::{BufRead, BufReader};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("daemon.socket");
+        let listener = UnixListener::bind(&path).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let accept = || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            loop {
+                match listener.accept() {
+                    Ok((peer, _)) => {
+                        peer.set_read_timeout(Some(Duration::from_millis(250)))
+                            .unwrap();
+                        return peer;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(
+                            std::time::Instant::now() < deadline,
+                            "client did not reconnect"
+                        );
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("{error}"),
+                }
+            }
+        };
+        let client = ControllerClient::connect(path).unwrap();
+        for id in ["before", "after"] {
+            let mut peer = accept();
+            peer.write_all(format!("Controller: {id} deck 0 None\nReady.\n").as_bytes())
+                .unwrap();
+            assert_eq!(
+                client.events.recv_timeout(Duration::from_secs(2)).unwrap(),
+                ControllerEvent::Connected
+            );
+            if id == "before" {
+                client.set_active(true).unwrap();
+            }
+            let mut reader = BufReader::new(peer.try_clone().unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            assert_eq!(line, format!("Controller: {id}\n"));
+            peer.write_all(b"OK.\n").unwrap();
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            assert!(line.starts_with("Lock: "));
+            peer.write_all(
+                format!("OK.\nEvent: {id} LPADTOUCH 1\nEvent: {id} RPADTOUCH 1\n").as_bytes(),
+            )
+            .unwrap();
+            for name in ["LPADTOUCH", "RPADTOUCH"] {
+                assert_eq!(
+                    client.events.recv_timeout(Duration::from_secs(2)).unwrap(),
+                    ControllerEvent::Button {
+                        name: name.into(),
+                        pressed: true
+                    }
+                );
+            }
+            if id == "after" {
+                client.set_active(false).unwrap();
+                line.clear();
+                reader.read_line(&mut line).unwrap();
+                assert_eq!(line, "Unlock.\n");
+            }
+            drop(reader);
+            drop(peer);
+            assert_eq!(
+                client.events.recv_timeout(Duration::from_secs(2)).unwrap(),
+                ControllerEvent::Disconnected
+            );
+        }
+        let mut peer = accept();
+        peer.write_all(b"Controller: hidden deck 0 None\nReady.\n")
+            .unwrap();
+        assert_eq!(
+            client.events.recv_timeout(Duration::from_secs(2)).unwrap(),
+            ControllerEvent::Connected
+        );
+        assert!(
+            peer.read(&mut [0]).is_err(),
+            "hidden keyboard must not recapture"
+        );
+    }
+
+    #[test]
     fn oversized_daemon_line_is_bounded() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("daemon.socket");
@@ -89,7 +175,7 @@ mod tests {
     }
 }
 
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
@@ -132,27 +218,51 @@ impl ControllerClient {
         let (commands, rx) = mpsc::channel();
         let (tx, events) = mpsc::sync_channel(256);
         let worker = thread::spawn(move || {
-            let result = (|| {
-                let socket =
-                    socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)
-                        .map_err(|e| e.to_string())?;
-                socket
-                    .connect_timeout(&address, Duration::from_secs(1))
-                    .map_err(|e| e.to_string())?;
-                let fd: std::os::fd::OwnedFd = socket.into();
-                let stream = UnixStream::from(fd);
-                stream
-                    .set_read_timeout(Some(Duration::from_millis(50)))
-                    .map_err(|e| e.to_string())?;
-                stream
-                    .set_write_timeout(Some(Duration::from_millis(100)))
-                    .map_err(|e| e.to_string())?;
-                run(stream, rx, &tx)
-            })();
-            if let Err(error) = result {
-                let _ = tx.try_send(ControllerEvent::Error(error));
+            let mut active = false;
+            let mut unavailable = false;
+            loop {
+                while let Ok(command) = rx.try_recv() {
+                    match command {
+                        Command::Active(value) => active = value,
+                        Command::Stop => return,
+                    }
+                }
+                let mut connected = false;
+                let result = (|| {
+                    let socket =
+                        socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)?;
+                    socket.connect_timeout(&address, Duration::from_secs(1))?;
+                    let fd: std::os::fd::OwnedFd = socket.into();
+                    let stream = UnixStream::from(fd);
+                    stream.set_read_timeout(Some(Duration::from_millis(50)))?;
+                    stream.set_write_timeout(Some(Duration::from_millis(100)))?;
+                    connected = true;
+                    run(stream, &rx, &tx, &mut active)
+                })();
+                if matches!(result, Ok(true)) {
+                    return;
+                }
+                let fatal = result
+                    .as_ref()
+                    .is_err_and(|e| e.kind() == io::ErrorKind::InvalidData);
+                if connected || !unavailable {
+                    if let Err(error) = result {
+                        let _ = tx.try_send(ControllerEvent::Error(error.to_string()));
+                    }
+                    let _ = tx.try_send(ControllerEvent::Disconnected);
+                }
+                if fatal {
+                    return;
+                }
+                unavailable = true;
+                // Retry transport loss after daemon restart, but never override a
+                // protocol refusal or keep re-capturing after an overflowing UI queue.
+                match rx.recv_timeout(Duration::from_millis(250)) {
+                    Ok(Command::Active(value)) => active = value,
+                    Ok(Command::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                }
             }
-            let _ = tx.try_send(ControllerEvent::Disconnected);
         });
         Ok(Self {
             events,
@@ -181,43 +291,41 @@ impl Drop for ControllerClient {
     }
 }
 
-fn send(stream: &mut UnixStream, message: &str) -> Result<(), String> {
-    stream
-        .write_all(message.as_bytes())
-        .map_err(|e| e.to_string())
+fn send(stream: &mut UnixStream, message: &str) -> io::Result<()> {
+    stream.write_all(message.as_bytes())
 }
 
 fn run(
     mut stream: UnixStream,
-    commands: Receiver<Command>,
+    commands: &Receiver<Command>,
     events: &SyncSender<ControllerEvent>,
-) -> Result<(), String> {
+    active: &mut bool,
+) -> io::Result<bool> {
     let mut buffer = Vec::new();
     let mut chunk = [0u8; 2048];
     let mut controller: Option<String> = None;
     let mut ready = false;
-    let mut active = false;
     let mut captured = false;
     let mut selecting = false;
     let mut capture_pending = false;
     loop {
         while let Ok(command) = commands.try_recv() {
             match command {
-                Command::Active(value) => active = value,
+                Command::Active(value) => *active = value,
                 Command::Stop => {
                     if captured {
                         send(&mut stream, "Unlock.\n")?;
                     }
-                    return Ok(());
+                    return Ok(true);
                 }
             }
         }
-        if captured && !active {
+        if captured && !*active {
             send(&mut stream, "Unlock.\n")?;
             captured = false;
         }
         if ready
-            && active
+            && *active
             && !captured
             && !selecting
             && !capture_pending
@@ -227,7 +335,7 @@ fn run(
             selecting = true;
         }
         let size = match stream.read(&mut chunk) {
-            Ok(0) => return Ok(()),
+            Ok(0) => return Ok(false),
             Ok(n) => n,
             Err(e)
                 if matches!(
@@ -239,15 +347,20 @@ fn run(
             {
                 continue;
             }
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(e),
         };
         buffer.extend_from_slice(&chunk[..size]);
         while let Some(end) = buffer.iter().position(|b| *b == b'\n') {
             if end > MAX_LINE {
-                return Err("controller protocol line too long".into());
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "controller protocol line too long",
+                ));
             }
             let line = std::str::from_utf8(&buffer[..end])
-                .map_err(|_| "invalid controller UTF-8")?
+                .map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidData, "invalid controller UTF-8")
+                })?
                 .to_owned();
             buffer.drain(..=end);
             if let Some(body) = line.strip_prefix("Controller:") {
@@ -257,7 +370,7 @@ fn run(
                 }
             } else if line == "OK." && selecting {
                 selecting = false;
-                if active {
+                if *active {
                     send(&mut stream, &format!("Lock: {SOURCES}\n"))?;
                     capture_pending = true;
                 }
@@ -277,7 +390,7 @@ fn run(
                     send(&mut stream, "Unlock.\n")?;
                 }
                 captured = false;
-                active = false;
+                *active = false;
                 selecting = false;
                 capture_pending = false;
                 let _ = events.try_send(ControllerEvent::Error(line));
@@ -287,13 +400,19 @@ fn run(
             {
                 // A stalled UI cannot let input accumulate without bounds. Terminating
                 // the connection releases capture, avoiding lost-release stuck keys.
-                events
-                    .try_send(event)
-                    .map_err(|_| "controller event queue overflow")?;
+                events.try_send(event).map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "controller event queue overflow",
+                    )
+                })?;
             }
         }
         if buffer.len() > MAX_LINE {
-            return Err("controller protocol line too long".into());
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "controller protocol line too long",
+            ));
         }
     }
 }

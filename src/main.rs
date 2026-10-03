@@ -358,6 +358,19 @@ fn run(args: Args) -> Result<(), String> {
                 active = should_capture;
             }
             for event in client.events.try_iter().take(128) {
+                // Connection state applies to every output, including temporarily
+                // unfocused lock surfaces during resume. Input stays with the active view.
+                if matches!(
+                    event,
+                    controller::ControllerEvent::Connected
+                        | controller::ControllerEvent::Disconnected
+                        | controller::ControllerEvent::Error(_)
+                ) {
+                    for view in views.iter() {
+                        (view.controller_event)(event.clone());
+                    }
+                    continue;
+                }
                 if let Some(view) = target {
                     if matches!(
                         event,

@@ -12,8 +12,8 @@ Suporte opcional a controles, incluindo dispositivos como o Steam Deck.
 
 ## Instalação
 
-A versão **0.3.2** é publicada no
-[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.2) para Arch,
+A versão **0.3.3** é publicada no
+[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.3) para Arch,
 Fedora 43 e Ubuntu 26.04 em x86_64, e para o Ubuntu 26.04 em aarch64 (arm64). Cada
 pacote instala o aplicativo, o atalho **Configurações do DeckLock**, as mídias
 incluídas e o serviço PAM que o DeckLock usa. O gerenciador de pacotes resolve as
@@ -26,38 +26,38 @@ instalar num GNOME ou KDE Plasma padrão não permite que o DeckLock bloqueie a 
 ### Arch Linux · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/decklock-0.3.2-1-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/decklock-0.3.3-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.3.2-1-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.3.3-1-x86_64.pkg.tar.zst
 ```
 
 ### Fedora 43 · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/decklock-0.3.2-1.fc43.x86_64.rpm
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/decklock-0.3.3-1.fc43.x86_64.rpm
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo dnf install ./decklock-0.3.2-1.fc43.x86_64.rpm
+sudo dnf install ./decklock-0.3.3-1.fc43.x86_64.rpm
 ```
 
 ### Ubuntu 26.04 · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/decklock_0.3.2-1_amd64.deb
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/decklock_0.3.3-1_amd64.deb
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo apt install ./decklock_0.3.2-1_amd64.deb
+sudo apt install ./decklock_0.3.3-1_amd64.deb
 ```
 
 ### Ubuntu 26.04 · aarch64 (arm64)
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/decklock_0.3.2-1_arm64.deb
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.2/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/decklock_0.3.3-1_arm64.deb
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo apt install ./decklock_0.3.2-1_arm64.deb
+sudo apt install ./decklock_0.3.3-1_arm64.deb
 ```
 
 Cada pacote é construído com as bibliotecas da própria distribuição. Derivadas que
@@ -141,7 +141,7 @@ Sem argumentos, `decklock` mostra a ajuda. Use `decklock --help` ou
 `decklock config --help` para comandos e exemplos. O preview não autentica nem
 executa ações de energia. Escape oculta o teclado e, depois, fecha a janela.
 
-**A versão 0.3.2 é experimental.** Preview e configurações foram testados no Hyprland.
+**A versão 0.3.3 é experimental.** Preview e configurações foram testados no Hyprland.
 Testes de protocolo isolados cobrem aquisição do bloqueio, mudanças de monitores e
 encerramento sem desbloquear, e máquinas virtuais descartáveis exercitam cada pacote
 com Sway e Linux-PAM reais no Arch, Fedora e Ubuntu, incluindo negativa, desbloqueio
@@ -269,7 +269,7 @@ carregá-lo. O preview ao vivo da interface acompanha os controles não salvos d
 
 ## Automação de login e bloqueio de tela (`decklock setup`)
 
-Estas melhorias de instalação estão no código/artefatos candidatos; os pacotes públicos 0.3.2 ainda são anteriores aos fixes. Para os comandos abaixo, use um candidato atualizado e verificado ou compile o código, até o próximo release público.
+Estas melhorias de instalação são publicadas a partir da 0.3.3; os pacotes 0.3.2 e anteriores são anteriores a elas. Para os comandos abaixo, use a 0.3.3 ou mais recente, um candidato atualizado e verificado, ou compile o código.
 
 O DeckLock pode atuar como greeter de login do `greetd` e bloqueador de sessão do compositor (`hypridle`), com a mesma interface e teclado virtual. O greeter roda na conta de serviço configurada no greetd (`greeter` no Arch, `greetd` no Fedora), com configuração/estado privados. O setup usa uma única biblioteca de mídias com leitura pública, compartilhada com o bloqueio; o login não precisa atravessar sua HOME. Uma configuração compartilhada manual com `--config` continua exigindo arquivos legíveis. `--greeter` sem socket do greetd é uma prévia segura: não faz login nem executa ações de energia.
 

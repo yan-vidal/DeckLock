@@ -4,6 +4,8 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-10-03
+
 ### Fixed
 
 - Login setup shares one canonical media library between the locker and greeter, readable by all local accounts and writable only by its desktop owner. Selected normal/rest media and user-library media are migrated as that owner; original paths and old generated media copies become links. Same-filesystem migration preserves the inode; cross-filesystem transfer is verified before replacing the source. Setup prefers the common HOME volume outside the personal HOME when it differs from the system volume, or `/var/lib/decklock/media/UID` otherwise, supports `--media-dir`, and persists SELinux labels. Private appearance/theme/config generations remain for recovery, and invalid/unreadable selections preserve the prior login/appearance.
@@ -14,11 +16,17 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 - Lock setup preserves shell expressions and unrelated hypridle settings, migrates known lockers and keeps custom wrappers unless explicitly replaced.
 - `setup all` accepts the same login compositor/rotation options and configures the sudo caller's hypridle as that user, preserving file ownership, permissions and backups. It validates both configurations before writes and reports completed lock changes if login setup fails later.
 - Lock, login and preview controls automatically fit logical viewports below 1280×800. At scale 1.6 on a Steam Deck, they match the size of the scale-1 login; media stays fullscreen and keyboard hit testing follows the scaled controls.
+- The controller connection survives a restart of the sc-controller daemon: the keyboard reconnects instead of staying without pad input until DeckLock restarts. The pads are captured again only while the keyboard is still active, and a protocol refusal or an overflowing event queue still ends the connection for good. Connection changes reach every lock surface, and a reconnect restores the pad keyboard geometry and clears the "controller unavailable" notice.
+- `decklock setup greeter` and `setup all` no longer promise that a changed login command takes effect at the next logout. greetd reads its configuration when the daemon starts and a healthy daemon starts the cached greeter command again after logout, so the new command needs a reboot, or ending the managed desktop session and restarting greetd from a separate TTY. Setup still never restarts services or the active session. The command output, both READMEs and the offline guides say so.
+
+### Changed
+
+- The emulated Ubuntu arm64 VM gate installs its harness packages on the host before the guest boots and finishes in about 35 minutes instead of about 94, with the same 41 assertions. A host step that cannot run falls back to the previous in-guest install with a visible warning, and a latent timing race between the gate's Sway start-up and its first `swaymsg` call was fixed. This affects CI only.
 
 ### Compatibility and limitations
 
 - Desktop zoom and existing theme/layout configuration remain unchanged. The greeter keeps private configuration/state; shared media deliberately becomes public to local readers (0755 directories, 0644 files). HOME permissions stay unchanged. Repeat setup to refresh selected pools/theme, not duplicate media; CLI/GUI imports use the saved `media_library`. Private/encrypted HOME mounts are not made available before login, and manually supplied config paths still need readable files.
-- Controlled GTK and packaged VM checks do not establish physical touchscreen/controller ergonomics, every compositor or real GPU behavior on a Steam Deck.
+- Controlled GTK and packaged VM checks do not establish physical touchscreen/controller ergonomics, every compositor or real GPU behavior on a Steam Deck. Controller reconnection is tested against a fake daemon, not a real sc-controller restart with a physical controller.
 
 ## [0.3.2] - 2026-09-24
 

@@ -452,3 +452,18 @@ script; the collected dpkg.log mixes host-time and guest-time entries; the wirin
 source substrings. Untested: real ARM hardware, and whether the hosted runner's sudoers
 (use_pty) hangs up a SIGKILLed sudo tree (the in-sudo timeout makes that moot). Next: the
 controller reconnection fix, then the 0.3.3 release.
+
+2026-10-03 0.3.3 release PR: version bump with the controller daemon reconnection (the client
+retries transport loss every 250 ms and recaptures the pads only while the keyboard is still
+active; protocol refusals and an overflowing event queue stay final; connection events reach
+every lock surface; a reconnect restores the pad keyboard geometry), the greetd restart guidance
+(#55) and the lock/login installation fixes merged since 0.3.2 (#48-#54). The user approved
+generating 0.3.3 on 2026-10-02 and asked to hold it until the faster aarch64 VM gate (PR #56)
+landed; the changelog carries the release date and `v0.3.3` is tagged after merge. The
+reconnection tests failed first against the previous implementation ('client did not
+reconnect', 'reconnected keyboard must restore pad geometry'). The GTK test's first expected
+value was wrong and was corrected from measurements: the selected key is the one under the pad's
+point (centred pads land on d and k; f and k only light up by proximity), and a left trigger left
+held by an earlier check had to be released explicitly. Untested: a real sc-controller restart
+with a physical controller; the Steam Deck device checks and hardware stay outside what the
+suite establishes.
