@@ -1,0 +1,41 @@
+PASS: candidate reinstallation preserves user configuration on ubuntu
+PASS: ordinary Wayland client receives input before lock
+PASS: wrong password denied by real PAM; underlying client receives no input
+PASS: correct password passes real PAM and releases Sway lock exactly once
+PASS: ordinary client receives input again after unlock
+PASS: real pam_faillock rejects correct password during lockout and supplies visible estimate
+PASS: PAM countdown updates on the real lock screen
+PASS: PAM expiry permits unlock before the rounded UI countdown reaches zero
+PASS: real PAM account policy prevents unlock even with the correct password
+PASS: SIGTERM leaves real compositor locked and input isolated
+PASS: wrong password denied by real PAM under X11 backend
+PASS: correct password passes real PAM and unlocks X11 session
+PASS: SIGTERM under X11 releases the session as Guarantees declares
+PASS: labwc: ordinary Wayland client receives input before lock
+PASS: labwc: wrong password denied by real PAM; underlying client receives no input
+PASS: labwc: correct password passes real PAM and releases the labwc lock exactly once
+PASS: labwc: ordinary client receives input again after unlock
+PASS: labwc: SIGTERM leaves labwc locked and input isolated
+PASS: wayfire: ordinary Wayland client receives input before lock
+PASS: wayfire: wrong password denied by real PAM; underlying client receives no input
+PASS: wayfire: correct password passes real PAM and releases the wayfire lock exactly once
+PASS: wayfire: ordinary client receives input again after unlock
+PASS: wayfire: SIGTERM leaves wayfire locked and input isolated
+PASS: combined packaged setup uses the sudo caller HOME, ownership, mode and backups; dry-run and repeat preserve files
+PASS: packaged setup shares one canonical normal/rest library, preserves HOME aliases/privacy and grants other accounts read-only access
+PASS: root installation rejects unreadable caller media before changing valid login/appearance
+PASS: shared setup rejects personal HOME and existing root-owned directories without changing working files
+PASS: shared imports keep one payload with restrictive umask; package media remains an unchanged public reference
+PASS: legacy selected and unselected media copies become canonical aliases while private recovery generations remain
+PASS: separate common HOME volume is selected automatically without copying payloads onto the system partition
+PASS: ineligible common HOME ancestors fall back to public system storage without changing their permissions
+PASS: ordinary group writes and named ancestor ACL denial/writes cause fallback while original permissions remain intact
+PASS: configured packaged greeter account can traverse and write its storage
+PASS: setup rejects inaccessible ancestors before replacing the greetd command
+PASS: setup rejects named ancestor ACL denial without changing valid login/appearance or original ACL
+PASS: packaged system setup prepares private storage owned by the HOME=/ greeter
+PASS: greetd starts the exact setup command with HOME=/ and its logind runtime directory
+PASS: real Cage greeter renders shared media with HOME=/; private HOME aliases remain unreadable
+PASS: real greetd/PAM rejects a wrong password without starting a user session
+PASS: native greeter starts the selected Wayland session as the authenticated user
+PASS: avatar selection changes the account authenticated by real greetd/PAM
