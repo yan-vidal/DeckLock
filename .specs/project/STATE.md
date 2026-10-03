@@ -415,3 +415,40 @@ now require a reboot, or service restart from a separate TTY after leaving the
 managed session. A public CLI regression failed on the old logout promise. No
 automatic service restart, session termination, authentication or power action
 was added; existing packaged VM tests start a fresh service.
+
+2026-10-03 aarch64 VM gate sped up (PR #56): the emulated Ubuntu arm64 gate took 93.7 min
+(run 36897087368), of which about 70 were package installation under TCG, not the suites
+(13 min) as an earlier estimate had it. It now takes 35.2 min (run 37117073212) with exactly the
+same 41 assertions as the baseline. `--provision-native` installs the harness packages (286,
+48 s) on the host, in a same-architecture chroot of a raw copy of the pinned image, before the
+guest boots; the candidate and its 98 dependencies, the reinstall check, the PAM fixtures and
+every suite still run in the booted guest, and setup.sh is not edited. Four things the plan did
+not foresee came from the CI probes, each fixed test-first: exercise.py raced Sway's start-up
+against swaymsg's 3 s timeout (margin 0.6 s, lost by 0.06 s) and now waits for Sway's own report;
+an offline install enables services that start at the guest's first boot (greetd ran and
+`usermod` on its account failed), so DISABLE_UNITS disables them after the install; needrestart,
+an apt hook of the Ubuntu image, scanned every process for about 14 min after each in-guest
+install (28 min), so emulated guests set NEEDRESTART_SUSPEND=1; and apt cost about 7 min per
+call under emulation even with nothing to do, so the guest is given the manifest with
+PRE_SYNC='' and SYNC_AND_INSTALL='true' appended. Tried and reversed: pre-installing the
+candidate's 98 dependencies on the host too (31.0 min), which gave up the evidence that apt
+resolves them and that their maintainer scripts run on a live system for four minutes; the user
+chose to keep them in the guest and a contract keeps it that way. Containment: all mounting
+under `unshare --mount --propagation private` (a bind of /dev under systemd's shared mounts
+would reach the host's /dev/pts), the mount point outside the work directory and removed only
+with rmdir, the privileged step bounded by `timeout` inside sudo (a subprocess timeout kills
+only sudo), the guest's own files restored by an EXIT trap installed first. Any failure of the
+host step warns, records `fallback_reason` and takes the unchanged in-guest path: shown end to
+end on a throwaway PR (#57, closed): the slow path passed with the same 41 assertions in
+59.9 min. The aarch64 job timeout is 210 min (the sum of the script's own bounds on the native
+path) and the guest phase is bounded at 600 s x slowdown there; the timeout only caps a hang.
+Not done: dpkg force-unsafe-io and cache=unsafe (they would have to win back minutes out of the
+4 that installing the candidate and its dependencies takes), masking background services
+(target met; masking snapd.seeded risks a stalled first boot). Deferred minors from the final
+review: the job-timeout comment omits the image download and the non-VM steps and the fallback
+path's bound sum (286 min) exceeds 210; ROOT_LABEL is Ubuntu-only so the flag on Arch or Fedora
+attaches a loop device and always falls back; a fallback reason can embed the whole chroot
+script; the collected dpkg.log mixes host-time and guest-time entries; the wiring contract pins
+source substrings. Untested: real ARM hardware, and whether the hosted runner's sudoers
+(use_pty) hangs up a SIGKILLed sudo tree (the in-sudo timeout makes that moot). Next: the
+controller reconnection fix, then the 0.3.3 release.

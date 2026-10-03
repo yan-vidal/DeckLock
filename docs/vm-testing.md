@@ -102,6 +102,36 @@ the factor. Fedora has no aarch64 target yet; its arm64 package is covered by
 the package contract only. Emulation proves the arm64 build under a real kernel,
 PAM and compositors, not behavior on real ARM hardware.
 
+CI also passes `--provision-native`. Before the guest boots, the runner installs on the
+host, at native speed, the harness packages that would otherwise be installed under
+emulation (the same `PRE_SYNC` and `SYNC_AND_INSTALL $HARNESS_PACKAGES` commands `setup.sh`
+runs, read from the same `distros/<target>.env`). It works on a raw copy of the pinned image,
+in a chroot of the same architecture, inside a private mount namespace on a mount point
+outside the work directory, and the privileged step is bounded by `timeout` inside `sudo`.
+The guest's own files are restored by a trap that exists before anything is prepared, and
+the units named in `DISABLE_UNITS` are disabled: an offline install enables services that
+would start at the guest's first boot, which an online install never reaches (greetd did, and
+`greeter.py` could then no longer change its account). The step needs matching host and
+guest architectures, root or passwordless sudo, and about 10 GiB free, and it is for
+disposable CI runners only. The candidate and its dependencies are installed in the booted
+guest by `setup.sh`, so apt still resolves them there and their maintainer scripts still run
+on a live system: pre-installing the dependencies on the host saved four minutes of 35 and was
+reversed, and a contract keeps it reversed. `setup.sh` is not edited, but the guest is handed
+the manifest with `PRE_SYNC=''` and `SYNC_AND_INSTALL='true'` appended (the copy in the
+evidence shows it), because apt took about seven minutes per call under emulation even with
+nothing to do. The `setup.sh` run also gets `NEEDRESTART_SUSPEND=1` whenever the guest is
+emulated: needrestart, an apt hook of the Ubuntu image, scanned every process for about 14
+minutes after each install. If the host step cannot run or fails, the run warns
+(`::warning::`), records `fallback_reason` and `provisioning: in-guest` in `result.json` and
+installs inside the guest as before. `provision.log` records each host command and its
+duration, and the guest's `dpkg.log` and apt `history.log` are collected so each in-guest
+install step can be timed (the file also holds the host's own install, with host-time
+stamps). A passing run takes about 35 minutes, down from about 94: about 9 minutes until the
+guest is up, then 22 of setup and suites, of which installing the candidate and its 98
+dependencies is about 4. Not done: dpkg `force-unsafe-io` and `cache=unsafe`, which would
+have to win back minutes out of those 4, and masking background services, because the target
+was met and masking `snapd.seeded` risks a stalled first boot.
+
 An official Arch cloud image is pinned by version and SHA256. The disk is a
 fresh copy-on-write overlay and cloud-init installs a one-run SSH key. QEMU uses
 user-mode networking with SSH bound only to a random localhost port. The guest

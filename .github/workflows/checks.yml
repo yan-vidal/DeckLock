@@ -209,10 +209,12 @@ jobs:
     name: Real Wayland and PAM (Ubuntu aarch64)
     needs: package-ubuntu-aarch64
     runs-on: ubuntu-24.04-arm
-    # Above test-vm.py's own scaled bounds (boot 32 min, guest 160 min), so a
-    # stuck guest still ends in its log rather than a cancelled job. Measured:
-    # a passing run takes about 100 min, 10 of them booting.
-    timeout-minutes: 300
+    # Above the sum of test-vm.py's own bounds on the native path (host provisioning
+    # 76 min, boot 32, copying 10, guest phase 80, evidence 8 = 206), so a stuck guest
+    # still ends in its log rather than a cancelled job. A passing run takes about
+    # 35 min (run 37117073212), down from about 94 before the harness packages were
+    # installed on the host. The timeout only caps a hang.
+    timeout-minutes: 210
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -220,7 +222,7 @@ jobs:
       - name: VM dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-arm qemu-efi-aarch64 qemu-utils genisoimage openssh-client
+          sudo apt-get install -y qemu-system-arm qemu-efi-aarch64 qemu-utils genisoimage openssh-client cloud-guest-utils
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ubuntu-package-aarch64
@@ -228,7 +230,7 @@ jobs:
       - name: Verify candidate and run disposable VM
         run: |
           (cd dist && sha256sum --check SHA256SUMS)
-          python3 scripts/test-vm.py --target ubuntu --arch aarch64 --allow-emulation --package dist/*.deb
+          python3 scripts/test-vm.py --target ubuntu --arch aarch64 --allow-emulation --provision-native --package dist/*.deb
       - name: VM evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

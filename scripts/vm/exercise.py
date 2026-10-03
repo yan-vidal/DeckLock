@@ -117,6 +117,9 @@ try:
     env['SWAYSOCK'] = str(next(runtime.glob('sway-ipc.*.sock')))
     until(lambda: list(runtime.glob('wayland-*')), 'Wayland socket ready', child=sway)
     env['WAYLAND_DISPLAY'] = next(p.name for p in runtime.glob('wayland-*') if not p.name.endswith('.lock'))
+    # swaymsg stops waiting for a reply after 3 s and Sway accepts IPC only once it is fully
+    # running, long after its sockets exist, so wait for its own report instead of racing it.
+    until(lambda: 'Running compositor on wayland display' in text('sway.log'), 'Sway running', child=sway)
     probe = spawn(['python3', str(EVIDENCE / 'probe.py')], 'probe.log')
     until(lambda: 'DeckLock input probe' in run(['swaymsg', '-t', 'get_tree']), 'probe mapped', child=probe)
     type_keys('before')
