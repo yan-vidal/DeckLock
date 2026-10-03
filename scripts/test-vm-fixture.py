@@ -22,6 +22,7 @@ VM_RUNNER = ROOT / "scripts/test-vm.py"
 HELPER = ROOT / "scripts/vm/cloud-init-ready.sh"
 SETUP = ROOT / "scripts/vm/setup.sh"
 GREETER = ROOT / "scripts/vm/greeter.py"
+WORKFLOW = ROOT / ".github/workflows/checks.yml"
 COMPOSITOR = ROOT / "scripts/vm/compositor.py"
 
 
@@ -277,6 +278,29 @@ def check_native_wiring():
     return failures
 
 
+def job_block(text, name):
+    match = re.search(rf"^  {re.escape(name)}:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", text,
+                      re.MULTILINE | re.DOTALL)
+    return match.group(1) if match else ""
+
+
+def check_native_workflow():
+    failures = []
+    text = WORKFLOW.read_text()
+    if "--provision-native" not in job_block(text, "vm-ubuntu-aarch64"):
+        failures.append("the aarch64 VM job does not use native provisioning")
+    for name in ("vm", "vm-fedora", "vm-ubuntu"):
+        if "--provision-native" in job_block(text, name):
+            failures.append(f"{name} runs under KVM and must stay on its own path")
+    needs = re.search(r"^  required:.*?needs: \[([^\]]*)\]", text, re.MULTILINE | re.DOTALL)
+    waited = {item.strip() for item in needs.group(1).split(",")} if needs else set()
+    for gate in ("check", "package", "package-fedora", "package-ubuntu", "package-fedora-aarch64",
+                 "package-ubuntu-aarch64", "vm", "vm-fedora", "vm-ubuntu", "vm-ubuntu-aarch64"):
+        if gate not in waited:
+            failures.append(f"the required aggregate no longer waits for {gate}")
+    return failures
+
+
 def main():
     failures = []
 
@@ -378,6 +402,7 @@ def main():
             failures.extend(check(native))
 
     failures.extend(check_native_wiring())
+    failures.extend(check_native_workflow())
 
     if failures:
         for failure in failures:
