@@ -690,9 +690,38 @@ fn main() {
     });
     key(&view, "a").emit_clicked();
     assert_eq!(view.entry.text(), "a AAa");
+    // Selection is the key under the pad's point, not the one the fade lights up: a
+    // centred left pad lands on d and a centred right pad on k.
+    let type_with_both_pads = || {
+        for (side, name) in [(Side::Left, "LPADTOUCH"), (Side::Right, "RPADTOUCH")] {
+            (view.controller_event)(ControllerEvent::Button {
+                name: name.into(),
+                pressed: true,
+            });
+            (view.controller_event)(ControllerEvent::Pad { side, x: 0, y: 0 });
+            // An earlier check leaves the left trigger held, so release before pulling.
+            (view.controller_event)(ControllerEvent::Trigger { side, value: 0 });
+            (view.controller_event)(ControllerEvent::Trigger { side, value: 255 });
+            (view.controller_event)(ControllerEvent::Trigger { side, value: 0 });
+        }
+    };
+    type_with_both_pads();
+    assert_eq!(view.entry.text(), "a AAadk");
     (view.controller_event)(ControllerEvent::Disconnected);
     assert_eq!(key(&view, "a").opacity(), 1.0);
     assert!(!view.keyboard.has_css_class("ghost"));
+    (view.controller_event)(ControllerEvent::Connected);
+    assert!(
+        view.keyboard.has_css_class("ghost"),
+        "reconnected keyboard must restore pad geometry"
+    );
+    assert_eq!(key(&view, "a").opacity(), 0.0);
+    type_with_both_pads();
+    assert_eq!(
+        view.entry.text(),
+        "a AAadkdk",
+        "both pads must select the same keys after reconnect as before the outage"
+    );
     let weak_entry = view.entry.downgrade();
     view.window.destroy();
     drop(view);

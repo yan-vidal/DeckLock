@@ -659,6 +659,25 @@ fn build_keyboard(
             return;
         };
         match event {
+            ControllerEvent::Connected if ghost => {
+                container.add_css_class("ghost");
+                grid.set_size_request(
+                    (800.0 * scale).round() as i32,
+                    (405.0 * scale).round() as i32,
+                );
+                for ((button, _), (_, x, y, width, height)) in keys.iter().zip(keyboard::geometry())
+                {
+                    button.set_size_request(
+                        (width * scale).round() as i32,
+                        (height * scale).round() as i32,
+                    );
+                    grid.move_(button, x * scale, y * scale);
+                }
+                fade();
+                if status.text() == settings.strings.text("controller-unavailable") {
+                    status.set_text("");
+                }
+            }
             ControllerEvent::Pad { side, x, y } if container.is_visible() => {
                 let idx = if side == Side::Left { 0 } else { 1 };
                 if !touching.borrow()[idx] {
