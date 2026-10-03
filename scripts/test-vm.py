@@ -181,7 +181,7 @@ def main():
         if args.provision_native:
             manifest = ROOT / 'scripts/vm/distros' / f'{args.target}.env'
             raw, reason = vm_native.try_native(
-                base, manifest, work, logs, args.arch, package=package,
+                base, manifest, work, logs, args.arch,
                 disable=vm_native.read_manifest(manifest).get('DISABLE_UNITS', '').split())
             if raw is not None:
                 disk = f'file={raw},if=virtio,format=raw'

@@ -8,6 +8,7 @@ made it abort, and the evidence that would have explained it, with cloud-init
 replaced by a stub that exits the way the real one does.
 """
 import ast
+import inspect
 import os
 from pathlib import Path
 import re
@@ -285,7 +286,6 @@ def check_native_wiring():
             ("vm_native.try_native(", "test-vm.py does not call vm_native.try_native"),
             ("report['provisioning']", "the report does not record how the guest was provisioned"),
             ("fallback_reason", "a fallback does not record its reason"),
-            ("package=package", "the candidate is not handed to the native provisioning"),
             ("vm_native.guest_manifest(", "the guest is not given the manifest for a host-installed guest"),
             ("DISABLE_UNITS", "the units to disable after an offline install are not read from the manifest"),
             ("/var/log/dpkg.log", "the guest's dpkg log, which times each install step, is not collected"),
@@ -342,66 +342,6 @@ def check_sway_readiness():
     if marker > first_call:
         return ["exercise.py calls swaymsg before waiting for Sway to report that it is running"]
     return []
-
-
-def check_candidate_dependencies(native):
-    """The candidate's dependency closure is installed on the host and the candidate itself is
-    purged again, so setup.sh still installs it in the booted guest, from a system that never
-    had it. Without this the guest spent about 40 minutes installing 98 dependencies under
-    emulation, which was most of what was left after the harness packages moved to the host.
-    """
-    failures = []
-    with tempfile.TemporaryDirectory(prefix="decklock-native-") as directory:
-        env = Path(directory) / "target.env"
-        base = ("PRE_SYNC=''\nSYNC_AND_INSTALL='echo install'\nHARNESS_PACKAGES='a b'\n"
-                "INSTALL_CANDIDATE='echo candidate-install'\n")
-        purge = "PURGE_CANDIDATE='echo candidate-purge'\n"
-        cases = ((base + purge, "/x/c.deb", "install a b\ncandidate-install /x/c.deb\ncandidate-purge\n"),
-                 (base, "/x/c.deb", "install a b\n"),
-                 (base + purge, None, "install a b\n"))
-        for manifest, candidate, expected in cases:
-            env.write_text(manifest)
-            try:
-                script = native.provisioning_script(str(env), candidate)
-            except TypeError:
-                return ["provisioning_script does not take the candidate yet"]
-            result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=20)
-            if result.stdout != expected or result.returncode:
-                failures.append(f"candidate {candidate!r} with purge={'PURGE' in manifest} printed "
-                                f"{result.stdout!r}, exit {result.returncode}: {result.stderr}")
-    for failing in (None, "chroot"):
-        with tempfile.TemporaryDirectory(prefix="decklock-native-") as directory:
-            bin_dir, log = stubs(directory, failing)
-            try:
-                script = native.chroot_script("/dev/loop7p1", Path(directory) / "root", "/x/ubuntu.env",
-                                              Path(directory) / "policy-rc.d",
-                                              candidate="/x/decklock_0.3.2-1_arm64.deb")
-            except TypeError:
-                return failures + ["chroot_script does not take the candidate yet"]
-            env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
-            subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, timeout=20)
-            calls = log.read_text().splitlines()
-            order = next((i for i, call in enumerate(calls) if call.startswith("chroot")), len(calls))
-            label = f"(chroot {'fails' if failing else 'succeeds'})"
-            if not any(call.startswith("cp /x/decklock_0.3.2-1_arm64.deb")
-                       and call.endswith("/tmp/decklock-candidate.deb") for call in calls[:order]):
-                failures.append(f"the candidate was not copied in before the chroot {label}")
-            if not any(call.startswith("rm -f") and "decklock-candidate.deb" in call for call in calls[order + 1:]):
-                failures.append(f"the candidate's copy was left in the guest {label}")
-    with tempfile.TemporaryDirectory(prefix="decklock-native-") as directory:
-        work = Path(directory)
-        (work / "base.img").write_bytes(b"")
-        runner = FakeRun()
-        native.provision(work / "base.img", work / "ubuntu.env", work, work / "provision.log",
-                         package=work / "decklock_0.3.2-1_arm64.deb", run=runner, geteuid=lambda: 1000,
-                         settle=lambda _: None, leftover=lambda mount: [])
-        script = next(command[-1] for command in runner.commands if "unshare" in command)
-        if "decklock-candidate.deb" not in script:
-            failures.append("provision does not hand the candidate to the chroot")
-    manifest = (ROOT / "scripts/vm/distros/ubuntu.env").read_text()
-    if "PURGE_CANDIDATE='dpkg --purge decklock'" not in manifest:
-        failures.append("the Ubuntu manifest does not name how to purge the candidate after its dependencies")
-    return failures
 
 
 def check_offline_guest_state(native):
@@ -518,20 +458,21 @@ def check_flag_help_warns():
         "the --provision-native help does not warn that it runs as root and is for disposable runners only"]
 
 
-def check_no_maintainer_scripts():
-    """PURGE_CANDIDATE leaves a filesystem that matches a clean install only because the .deb
-    has no maintainer scripts. If one is added, the in-guest install stops being a clean first
-    install and that decision has to be revisited, not inherited silently."""
-    names = ("preinst", "postinst", "prerm", "postrm")
+def check_candidate_stays_in_guest(native):
+    """The host step installs the harness packages only. The candidate and its dependencies are
+    installed in the booted guest, where apt resolves them and their maintainer scripts run on a
+    live system: pre-installing the dependencies on the host would have saved about 9 minutes of
+    a 31-minute gate and given up exactly that evidence, so it was tried and reversed."""
     failures = []
-    for path in (ROOT / "packaging").rglob("*"):
-        if path.name in names:
-            failures.append(f"{path.relative_to(ROOT)} adds a maintainer script to a package; revisit PURGE_CANDIDATE")
-    for builder in (ROOT / "scripts/ci-build-package", ROOT / "scripts/package-release.py"):
-        text = builder.read_text()
-        for name in names:
-            if re.search(rf"DEBIAN/{name}\b", text):
-                failures.append(f"{builder.name} builds a {name}; revisit PURGE_CANDIDATE")
+    for function in (native.provisioning_script, native.chroot_script, native.provision):
+        if {"candidate", "package"} & set(inspect.signature(function).parameters):
+            failures.append(f"{function.__name__} can still install the candidate on the host")
+    for target in ("arch", "fedora", "ubuntu"):
+        if "PURGE_CANDIDATE" in (ROOT / f"scripts/vm/distros/{target}.env").read_text():
+            failures.append(f"the {target} manifest still names a purge for a candidate installed on the host")
+    script = native.provisioning_script()
+    if "INSTALL_CANDIDATE" in script:
+        failures.append("the host provisioning script installs the candidate")
     return failures
 
 
@@ -633,14 +574,13 @@ def main():
     if native is not None:
         for check in (check_provisioning_script, check_native_preconditions, check_chroot_script,
                       check_native_orchestration, check_native_fallback, check_mounts_under,
-                      check_candidate_dependencies, check_offline_guest_state,
-                      check_containment):
+                      check_offline_guest_state,
+                      check_containment, check_candidate_stays_in_guest):
             failures.extend(check(native))
 
     failures.extend(check_native_wiring())
     failures.extend(check_sway_readiness())
     failures.extend(check_flag_help_warns())
-    failures.extend(check_no_maintainer_scripts())
     failures.extend(check_native_workflow())
 
     if failures:

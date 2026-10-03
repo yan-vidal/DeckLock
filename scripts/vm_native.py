@@ -40,31 +40,17 @@ def read_manifest(path):
     return dict(re.findall(r"^([A-Z_]+)='([^']*)'", Path(path).read_text(), re.MULTILINE))
 
 
-def provisioning_script(env_path=ENV_IN_GUEST, candidate=None):
-    """The commands scripts/vm/setup.sh runs first, from the same manifest.
-
-    With a candidate and a manifest that says how to purge it, the candidate's dependency
-    closure is installed too: the candidate goes in with the manifest's own command and comes
-    out again, dependencies staying. setup.sh then still installs the candidate itself in the
-    booted guest, on a system where it is not installed, and apt's resolution is in
-    provision.log. A purge only matches a clean install while the package has no maintainer
-    scripts, which test-vm-fixture.py checks.
-    """
-    script = (
+def provisioning_script(env_path=ENV_IN_GUEST):
+    """The two commands scripts/vm/setup.sh runs first, from the same manifest."""
+    return (
         'set -euo pipefail\n'
         'export DEBIAN_FRONTEND=noninteractive LC_ALL=C\n'
         f'source {shlex.quote(env_path)}\n'
         '[[ -z $PRE_SYNC ]] || $PRE_SYNC\n'
         '$SYNC_AND_INSTALL $HARNESS_PACKAGES\n')
-    if candidate:
-        script += ('if [[ -n ${PURGE_CANDIDATE:-} ]]; then\n'
-                   f'    $INSTALL_CANDIDATE {shlex.quote(candidate)}\n'
-                   '    $PURGE_CANDIDATE\n'
-                   'fi\n')
-    return script
 
 
-def chroot_script(partition, mount, manifest, policy, candidate=None, disable=()):
+def chroot_script(partition, mount, manifest, policy, disable=()):
     """Runs under `unshare --mount --propagation private`: mount, prepare, install, restore.
 
     The EXIT trap is installed before anything is prepared and undoes only what was done,
@@ -72,15 +58,12 @@ def chroot_script(partition, mount, manifest, policy, candidate=None, disable=()
     The mounts need no undoing: they die with the namespace.
     """
     q = shlex.quote
-    inside = f'/tmp/decklock-candidate{Path(str(candidate)).suffix}' if candidate else None
-    copy_candidate = f'cp {q(str(candidate))} "$root{inside}"\n' if candidate else ''
-    drop_candidate = f' "$root{inside}"' if candidate else ''
     disabled = ''.join(f'systemctl --root="$root" disable {q(unit)}\n' for unit in disable)
     return (
         'set -euo pipefail\n'
         f'root={q(str(mount))}\n'
         'cleanup() {\n'
-        f'    rm -f "$root/usr/sbin/policy-rc.d" "$root{ENV_IN_GUEST}"{drop_candidate}\n'
+        f'    rm -f "$root/usr/sbin/policy-rc.d" "$root{ENV_IN_GUEST}"\n'
         '    if [ "${moved:-0}" = 1 ]; then\n'
         '        rm -f "$root/etc/resolv.conf"\n'
         '        mv "$root/etc/resolv.conf.decklock-orig" "$root/etc/resolv.conf"\n'
@@ -92,11 +75,10 @@ def chroot_script(partition, mount, manifest, policy, candidate=None, disable=()
         'mount -t proc proc "$root/proc"\n'
         f'install -m 0755 {q(str(policy))} "$root/usr/sbin/policy-rc.d"\n'
         f'cp {q(str(manifest))} "$root{ENV_IN_GUEST}"\n'
-        + copy_candidate +
         'mv "$root/etc/resolv.conf" "$root/etc/resolv.conf.decklock-orig"\n'
         'moved=1\n'
         'cp /etc/resolv.conf "$root/etc/resolv.conf"\n'
-        f'chroot "$root" /bin/bash -c {q(provisioning_script(candidate=inside))}\n'
+        f'chroot "$root" /bin/bash -c {q(provisioning_script())}\n'
         + disabled)
 
 
@@ -188,7 +170,7 @@ def root_partition(host, loop, settle=time.sleep):
     raise NativeUnavailable(f'no partition labelled {ROOT_LABEL} on {loop}')
 
 
-def provision(base_image, manifest, work, log_path, *, package=None, disable=(), run=subprocess.run,
+def provision(base_image, manifest, work, log_path, *, disable=(), run=subprocess.run,
               geteuid=os.geteuid, size_gib=GUEST_DISK_GIB, settle=time.sleep,
               leftover=lambda mount: mounts_under(mount, Path('/proc/self/mountinfo').read_text())):
     """Copy the pinned image into `work`, install the harness packages into the copy, return its path.
@@ -219,7 +201,7 @@ def provision(base_image, manifest, work, log_path, *, package=None, disable=(),
                 # Bounded by `timeout` as root: the subprocess timeout would only kill sudo and
                 # leave the root-owned unshare, chroot and apt tree running.
                 host(['timeout', '--kill-after=30', '1800', 'unshare', '--mount', '--propagation', 'private', 'bash', '-c',
-                      chroot_script(partition, mount, manifest, policy, candidate=package,
+                      chroot_script(partition, mount, manifest, policy,
                                     disable=disable)], timeout=1800 + 90)
             finally:
                 host(['sync'], timeout=120, check=False)
