@@ -24,6 +24,7 @@ SETUP = ROOT / "scripts/vm/setup.sh"
 GREETER = ROOT / "scripts/vm/greeter.py"
 WORKFLOW = ROOT / ".github/workflows/checks.yml"
 COMPOSITOR = ROOT / "scripts/vm/compositor.py"
+EXERCISE = ROOT / "scripts/vm/exercise.py"
 
 
 def run_with_stub(exit_code, output="status: done"):
@@ -301,6 +302,25 @@ def check_native_workflow():
     return failures
 
 
+def check_sway_readiness():
+    """exercise.py must wait for Sway to finish starting before its first swaymsg.
+
+    swaymsg stops waiting for a reply after 3 s, and Sway only accepts IPC once it logs
+    "Running compositor on wayland display", long after its sockets exist. Racing that
+    left about 0.6 s of margin under emulation and lost it once at 0.06 s.
+    """
+    source = EXERCISE.read_text()
+    marker = source.find("Running compositor on wayland display")
+    first_call = source.find("run(['swaymsg'")
+    if first_call < 0:
+        return ["exercise.py no longer calls swaymsg, so the readiness check is stale"]
+    if marker < 0:
+        return ["exercise.py never waits for Sway to report that it is running"]
+    if marker > first_call:
+        return ["exercise.py calls swaymsg before waiting for Sway to report that it is running"]
+    return []
+
+
 def main():
     failures = []
 
@@ -402,6 +422,7 @@ def main():
             failures.extend(check(native))
 
     failures.extend(check_native_wiring())
+    failures.extend(check_sway_readiness())
     failures.extend(check_native_workflow())
 
     if failures:
