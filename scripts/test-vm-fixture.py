@@ -259,6 +259,24 @@ def check_mounts_under(native):
     return [] if got == ["/tmp/root", "/tmp/root/proc"] else [f"mounts_under returned {got}"]
 
 
+def check_native_wiring():
+    failures = []
+    source = VM_RUNNER.read_text()
+    for needle, why in (
+            ("--provision-native", "test-vm.py has no --provision-native flag"),
+            ("vm_native.try_native(", "test-vm.py does not call vm_native.try_native"),
+            ("report['provisioning']", "the report does not record how the guest was provisioned"),
+            ("fallback_reason", "a fallback does not record its reason"),
+            ("::warning", "a fallback does not raise a visible warning")):
+        if needle not in source:
+            failures.append(why)
+    setup = SETUP.read_text()
+    for line in ("[[ -z $PRE_SYNC ]] || $PRE_SYNC", "$SYNC_AND_INSTALL $HARNESS_PACKAGES"):
+        if line not in setup:
+            failures.append(f"setup.sh no longer runs `{line}`, which vm_native mirrors")
+    return failures
+
+
 def main():
     failures = []
 
@@ -358,6 +376,8 @@ def main():
         for check in (check_provisioning_script, check_native_preconditions, check_chroot_script,
                       check_native_orchestration, check_native_fallback, check_mounts_under):
             failures.extend(check(native))
+
+    failures.extend(check_native_wiring())
 
     if failures:
         for failure in failures:

@@ -25,6 +25,8 @@ import tempfile
 import threading
 import time
 
+import vm_native
+
 ROOT = Path(__file__).resolve().parent.parent
 DISTROS = {
     'arch': {
@@ -110,6 +112,10 @@ def main():
     parser.add_argument('--allow-emulation', action='store_true',
                         help='Without usable KVM, emulate the guest (TCG) with scaled waits. '
                              'For disposable CI runners only, never a shared machine')
+    parser.add_argument('--provision-native', action='store_true',
+                        help='Install the harness packages on the host before the guest boots. '
+                             'Needs the host and guest architectures to match and root; '
+                             'otherwise warns and installs inside the guest as usual')
     parser.add_argument('--logs', type=Path, default=ROOT / 'target/vm-logs')
     args = parser.parse_args()
     distro = DISTROS[args.target]
@@ -152,7 +158,7 @@ def main():
               'target': args.target, 'arch': args.arch, 'image': distro['image'], 'image_sha256': distro['sha256'],
               'package_sha256': digest(package), 'package': package.name,
               'memory_mib': 2048, 'cpus': 2 if kvm else 4, 'accelerator': 'kvm' if kvm else 'tcg',
-              'slowdown': slowdown, 'status': 'running'}
+              'slowdown': slowdown, 'provisioning': 'in-guest', 'status': 'running'}
     (logs / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
     # The copy-on-write overlay grows with every guest write, and a package
     # install writes hundreds of MiB. /tmp is tmpfs by default on Arch and Fedora,
@@ -168,7 +174,18 @@ def main():
         (seed / 'meta-data').write_text('instance-id: decklock-isolated-test\nlocal-hostname: decklock-test-vm\n')
         (seed / 'user-data').write_text('#cloud-config\ndisable_root: false\nssh_pwauth: false\nusers:\n  - name: root\n    ssh_authorized_keys:\n      - ' + public + '\nwrite_files:\n  - path: /etc/decklock-test-vm\n    content: disposable-qemu-fixture\nruncmd:\n  - [systemctl, enable, --now, sshd]\n')
         subprocess.run(['genisoimage', '-quiet', '-output', str(work / 'seed.iso'), '-volid', 'cidata', '-joliet', '-rock', str(seed)], check=True)
-        subprocess.run([image_tool, 'create', '-q', '-f', 'qcow2', '-F', 'qcow2', '-b', str(base), str(work / 'disk.qcow2'), '12G'], check=True)
+        disk = f'file={work}/disk.qcow2,if=virtio,format=qcow2'
+        if args.provision_native:
+            raw, reason = vm_native.try_native(
+                base, ROOT / 'scripts/vm/distros' / f'{args.target}.env', work, logs, args.arch)
+            if raw is not None:
+                disk = f'file={raw},if=virtio,format=raw'
+                report['provisioning'] = 'native'
+            else:
+                report['fallback_reason'] = reason
+                print(f"::warning title=Native provisioning skipped::{reason.replace(chr(10), ' ')}", flush=True)
+        if report['provisioning'] == 'in-guest':
+            subprocess.run([image_tool, 'create', '-q', '-f', 'qcow2', '-F', 'qcow2', '-b', str(base), str(work / 'disk.qcow2'), '12G'], check=True)
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
@@ -187,7 +204,7 @@ def main():
             seed = ['-drive', f'file={work}/seed.iso,if=virtio,format=raw,readonly=on']
         command = [qemu, '-name', 'decklock-isolated-test', *accel, *machine,
                    '-m', '2048', '-smp', str(report['cpus']), '-display', 'none', '-monitor', 'none', '-no-reboot',
-                   '-drive', f'file={work}/disk.qcow2,if=virtio,format=qcow2', *seed,
+                   '-drive', disk, *seed,
                    '-netdev', f'user,id=net0,hostfwd=tcp:127.0.0.1:{port}-:22',
                    '-device', 'virtio-net-pci,netdev=net0', '-device', 'virtio-rng-pci',
                    '-serial', f'file:{logs}/serial.log']
