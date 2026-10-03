@@ -51,6 +51,14 @@ anticipate. Both were ruled on during execution and are now in the spec (R1, R2,
   and now waits for Sway's report first, with a contract test. Commit `ci: wait for Sway to
   be running before the first swaymsg`.
 
+- The second probe (run 37097235975) passed Sway, X11, labwc and Wayfire and then failed in
+  `greeter.py`: an offline install enables services that start at first boot, so greetd ran
+  and `usermod` on its account failed. Units in `DISABLE_UNITS` are now disabled after the
+  host install, the guest gets a manifest whose apt-get update and harness install are
+  no-ops (about 7 min per apt call under emulation), and `dpkg.log` and apt `history.log`
+  are collected to time each step. Commit `ci: make an offline-provisioned guest start like
+  an online one`.
+
 Because `chroot_script` and `provision` changed, the Task 6 and Task 7 diffs below were
 written against the earlier signatures. They are re-derived against the code as it stands
 when Task 6 is executed; their intent, tests and keep rules are unchanged.

@@ -61,14 +61,21 @@ the suite; changing what the VM proves.
   the manifest's `INSTALL_CANDIDATE` and purges it again, dependencies staying, so the
   candidate's own dependency closure (98 packages on Ubuntu, about 40 minutes under
   emulation in the first probe) is not left to the guest. The first probe showed that
-  prebaking only `HARNESS_PACKAGES` would have saved about 27 of the 94 minutes.
+  prebaking only `HARNESS_PACKAGES` would have saved about 27 of the 94 minutes. Units named
+  in `DISABLE_UNITS` are disabled after the install: an offline install enables services
+  that start at the guest's first boot, which an online install never reaches because the
+  guest is not rebooted (greetd running made `usermod` fail in `greeter.py`).
 - **R2 Everything else stays in the booted guest.** `scripts/vm/setup.sh` is unchanged.
   Installing the candidate itself, the reinstall-preserves-configuration check, the PAM
   fixtures and every suite run in the booted guest, and the candidate is installed there
   from a system that never had it. Where apt's resolution of the candidate's dependencies
   is evidenced moves from `guest.log` to `provision.log`: same command, same archive, same
   minute, run on the host. Reinstalling already-installed harness packages in the guest is
-  an idempotent no-op, which is also what makes the slow path a valid fallback.
+  an idempotent no-op, which is also what makes the slow path a valid fallback. Because apt
+  took about seven minutes per call under emulation even with nothing to do, a natively
+  provisioned guest is given the manifest with `PRE_SYNC=''` and `SYNC_AND_INSTALL='true'`
+  appended (later assignments win), so those two `setup.sh` lines become no-ops; `setup.sh`
+  itself is not edited and the copy of the manifest in the evidence shows the override.
 - **R3 Evidence.** `result.json` records `provisioning` as `native` or `in-guest`, and
   `fallback_reason` when it is `in-guest`. The native phase writes `provision.log` into the
   evidence directory. `packages.txt` keeps being read from inside the guest.
