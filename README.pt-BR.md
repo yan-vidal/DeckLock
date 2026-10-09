@@ -379,6 +379,28 @@ Executar novamente sem escolher compositor preserva um greeter Hyprland existent
 do Hyprland do desktop. Alinhamento do toque/painel, GPU e login real com Hyprland
 ainda exigem validação no hardware.
 
+Para usar os dois pads antes da autenticação, instale o sc-controller e acrescente
+`--controller` ao `setup greeter` ou `setup all`. Ao alterar essa opção num greeter
+Hyprland existente, repita suas opções de compositor, saída e rotação:
+
+```sh
+sudo decklock setup all --compositor hyprland --output eDP-1 --transform 3 --controller --dry-run
+sudo decklock setup all --compositor hyprland --output eDP-1 --transform 3 --controller
+```
+
+A integração é opcional. O setup preserva a escolha nas reaplicações;
+`--controller=false` a desativa. O login real sob greetd passa a ter um daemon
+exclusivo, em primeiro plano, com perfil embutido e diretórios privados no runtime.
+Ele não lê os perfis do desktop nem inicia outro teclado/OSD. Fechar o teclado
+libera os pads; o pad direito e os gatilhos oferecem mouse/cliques pelo perfil.
+A saída normal encerra o daemon; matar o greeter também mata seu daemon. Sem
+sc-controller, acesso ao dispositivo ou daemon funcional, o teclado por mouse/toque
+continua disponível. A conta do greetd precisa do acesso ao controle/uinput concedido
+pelas regras de dispositivo do pacote sc-controller; o setup não altera permissões
+de dispositivo ou grupos. `--greeter-controller` não inicia daemon em preview ou
+sem greetd. A validação física e a dos pacotes ainda precisam ser feitas;
+veja [o procedimento no aparelho](docs/greeter-controller-uat.md).
+
 Reinicie o sistema para ativar o novo comando de login, ou encerre a sessão
 gerenciada e reinicie o greetd por outra TTY. O greetd guarda a configuração
 carregada na inicialização; um logout sozinho não a recarrega. Guarde o backup

@@ -467,3 +467,34 @@ point (centred pads land on d and k; f and k only light up by proximity), and a 
 held by an earlier check had to be released explicitly. Untested: a real sc-controller restart
 with a physical controller; the Steam Deck device checks and hardware stay outside what the
 suite establishes.
+
+2026-10-09 greeter pad input: resumed on feat/greeter-pad-input from main 26e1bef.
+Root's pre-0.3.3 workflow/docs draft was superseded; the old forced UID/runtime
+environment workaround was not ported because current greetd/logind service
+tests already establish that boundary. Exact staged/unstaged patches and the
+untracked prototype are retained under target/reconciliation-2026-10-09 in the
+worktree. Root tracked edits are in stash 40cb86326547b03c9763d60199a1cfb6bd335648;
+root now follows main. Original notebook/prototype/dependency files are preserved.
+
+setup greeter/all --controller now opt into --greeter-controller; omission
+preserves the saved choice and --controller=false disables it. Real greetd only
+owns a foreground/alone sc-controller child and a static embedded profile in
+private runtime storage, with normal bounded termination/reaping and Linux
+parent-death protection. Preview/settings never start it. Missing/failed daemon
+startup keeps the existing clickable keyboard. No device rules, groups, host
+service configuration, passwords, PAM actions or session-lock behavior changed.
+The installed 0.7.1 profile parser was checked without running a daemon; the
+old prototype's Profile() constructor lacked its required ActionParser.
+
+Regression first failed at the actual setup CLI rejecting --controller and at
+the real binary rejecting --greeter-controller. An additional real Unix protocol
+regression reproduced Ready without hardware incorrectly reporting Connected;
+it now keeps fallback and restores Connected on device hotplug. GTK checks type
+with both pads in login mode and verify disconnect fallback. An initial new GTK
+fixture sent pad events before the newly shown keyboard was allocated; it now
+waits with a bound and uses a fixed keyboard layout, preserving the assertions.
+scripts/check --all adds a real binary/fake daemon lifecycle gate (private Xvfb
+and D-Bus). Final-commit local/CI evidence is to be recorded after verification;
+physical Steam Deck and sc-controller-in-package VM validation remain pending.
+No installation, host daemon restart, release or tag performed. Device procedure:
+docs/greeter-controller-uat.md; investigation pointers: .notebook/greeter-pad-input.md.

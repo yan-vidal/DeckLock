@@ -26,6 +26,9 @@ pub enum Action {
         /// Do not enable the virtual keyboard by default in greeter mode.
         #[arg(long)]
         no_keyboard: bool,
+        /// Own a private sc-controller daemon at login. Use --controller=false to disable.
+        #[arg(long, num_args = 0..=1, default_missing_value = "true", conflicts_with = "no_keyboard")]
+        controller: Option<bool>,
         /// Where the greeter remembers the last user and session. Defaults to
         /// /var/lib/decklock-greeter (/var/lib/greetd/decklock with SELinux).
         /// It is left alone when --target is given.
@@ -77,6 +80,9 @@ pub enum Action {
         /// Disable the virtual keyboard in the greeter.
         #[arg(long)]
         no_keyboard: bool,
+        /// Own a private sc-controller daemon at login. Use --controller=false to disable.
+        #[arg(long, num_args = 0..=1, default_missing_value = "true", conflicts_with = "no_keyboard")]
+        controller: Option<bool>,
         /// Private greeter storage directory.
         #[arg(long)]
         state_dir: Option<PathBuf>,
@@ -964,9 +970,14 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn greeter_command(no_keyboard: bool, dir: Option<&Path>) -> String {
+fn greeter_command(no_keyboard: bool, controller: bool, dir: Option<&Path>) -> String {
     let keyboard = if no_keyboard { "" } else { " --keyboard" };
-    let command = format!("cage -s -- decklock --greeter{keyboard}");
+    let controller = if controller {
+        " --greeter-controller"
+    } else {
+        ""
+    };
+    let command = format!("cage -s -- decklock --greeter{keyboard}{controller}");
     with_greeter_storage(&command, dir)
 }
 
@@ -986,6 +997,7 @@ fn with_greeter_storage(command: &str, dir: Option<&Path>) -> String {
 
 struct GreeterOptions {
     no_keyboard: bool,
+    controller: Option<bool>,
     state_dir: Option<PathBuf>,
     dry_run: bool,
     user_config: Option<PathBuf>,
@@ -1017,7 +1029,7 @@ fn setup_greeter_with_storage(
     let state_dir_requested = state_dir.is_some();
     let mut dir = greeter_state_dir(target, state_dir);
     let path = target.unwrap_or_else(|| Path::new("/etc/greetd/config.toml"));
-    let previous = fs::read_to_string(path)
+    let configured_command = fs::read_to_string(path)
         .ok()
         .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
         .and_then(|doc| {
@@ -1025,7 +1037,9 @@ fn setup_greeter_with_storage(
                 .get("command")?
                 .as_str()
                 .map(str::to_string)
-        })
+        });
+    let previous = configured_command
+        .clone()
         .filter(|command| command.contains("start-hyprland") && command.contains("greeter"));
     // Preserve the storage location of a generated/admin-selected Hyprland
     // kiosk when re-running setup without replacing that compositor command.
@@ -1050,8 +1064,17 @@ fn setup_greeter_with_storage(
         }
     }
     let lua_path = path.with_file_name("hyprland-greeter.lua");
+    let controller = options.controller.unwrap_or_else(|| {
+        !no_keyboard
+            && (configured_command.as_ref().is_some_and(|command| {
+                command.contains("decklock --greeter") && command.contains("--greeter-controller")
+            }) || previous.is_some()
+                && fs::read_to_string(&lua_path).is_ok_and(|lua| {
+                    lua.contains("decklock --greeter") && lua.contains("--greeter-controller")
+                }))
+    });
     let lua = (compositor == Some(GreeterCompositor::Hyprland))
-        .then(|| hyprland_greeter_config(no_keyboard, output, transform.unwrap_or(0)));
+        .then(|| hyprland_greeter_config(no_keyboard, controller, output, transform.unwrap_or(0)));
     let command = if lua.is_some() {
         with_greeter_storage(
             &format!(
@@ -1063,12 +1086,12 @@ fn setup_greeter_with_storage(
     } else if compositor.is_none()
         && let Some(previous) = previous
     {
-        if no_keyboard || state_dir_requested {
-            return Err("To change an existing Hyprland greeter's keyboard or storage, pass --compositor hyprland and its output/transform options; greetd was not changed".into());
+        if no_keyboard || state_dir_requested || options.controller.is_some() {
+            return Err("To change an existing Hyprland greeter's keyboard, controller or storage, pass --compositor hyprland and its output/transform options; greetd was not changed".into());
         }
         previous
     } else {
-        greeter_command(no_keyboard, dir.as_deref())
+        greeter_command(no_keyboard, controller, dir.as_deref())
     };
     // Parse/validate existing greetd policy before touching any saved files.
     let review = write_greeter_config(target, &command, true)?;
@@ -1125,7 +1148,12 @@ fn setup_greeter_with_storage(
     ))
 }
 
-fn hyprland_greeter_config(no_keyboard: bool, output: Option<&str>, transform: u8) -> String {
+fn hyprland_greeter_config(
+    no_keyboard: bool,
+    controller: bool,
+    output: Option<&str>,
+    transform: u8,
+) -> String {
     // JSON strings are also Lua quoted strings. User-supplied connector names
     // must remain values, never executable Lua or shell fragments.
     let monitor = output.map(|output| format!(
@@ -1140,8 +1168,13 @@ fn hyprland_greeter_config(no_keyboard: bool, output: Option<&str>, transform: u
         })
         .unwrap_or_default();
     let keyboard = if no_keyboard { "" } else { " --keyboard" };
+    let controller = if controller {
+        " --greeter-controller"
+    } else {
+        ""
+    };
     format!(
-        "-- DeckLock login compositor; no desktop services or user configuration.\n{monitor}\nhl.monitor({{ output = \"\", mode = \"preferred\", position = \"auto\", scale = 1 }})\nhl.config({{\n general = {{ gaps_in = 0, gaps_out = 0, border_size = 0 }},\n {touch}\n misc = {{ disable_hyprland_logo = true, disable_splash_rendering = true, force_default_wallpaper = 0, disable_autoreload = true }},\n ecosystem = {{ no_update_news = true, no_donation_nag = true }},\n animations = {{ enabled = false }},\n}})\nhl.on(\"hyprland.start\", function()\n hl.exec_cmd(\"decklock --greeter{keyboard}; hyprctl dispatch 'hl.dsp.exit()'\")\nend)\n"
+        "-- DeckLock login compositor; no desktop services or user configuration.\n{monitor}\nhl.monitor({{ output = \"\", mode = \"preferred\", position = \"auto\", scale = 1 }})\nhl.config({{\n general = {{ gaps_in = 0, gaps_out = 0, border_size = 0 }},\n {touch}\n misc = {{ disable_hyprland_logo = true, disable_splash_rendering = true, force_default_wallpaper = 0, disable_autoreload = true }},\n ecosystem = {{ no_update_news = true, no_donation_nag = true }},\n animations = {{ enabled = false }},\n}})\nhl.on(\"hyprland.start\", function()\n hl.exec_cmd(\"decklock --greeter{keyboard}{controller}; hyprctl dispatch 'hl.dsp.exit()'\")\nend)\n"
     )
 }
 
@@ -1402,6 +1435,7 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
         Action::Greeter {
             target,
             no_keyboard,
+            controller,
             state_dir,
             compositor,
             output,
@@ -1414,6 +1448,7 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
             target.as_deref(),
             &GreeterOptions {
                 no_keyboard,
+                controller,
                 state_dir,
                 dry_run,
                 user_config,
@@ -1434,6 +1469,7 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
             greeter_target,
             lock_target,
             no_keyboard,
+            controller,
             state_dir,
             compositor,
             output,
@@ -1446,6 +1482,7 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
         } => {
             let mut options = GreeterOptions {
                 no_keyboard,
+                controller,
                 state_dir,
                 dry_run: true,
                 user_config,

@@ -368,6 +368,28 @@ an existing Hyprland greeter. `--compositor cage` explicitly returns to Cage.
 This does not migrate your desktop Hyprland configuration. Panel/touch alignment,
 GPU behavior and an actual Hyprland login still need hardware validation.
 
+To use both Steam Deck pads before authentication, install sc-controller and add
+`--controller` to `setup greeter` or `setup all`. For an existing Hyprland greeter,
+repeat its compositor/output/transform options when changing this setting:
+
+```sh
+sudo decklock setup all --compositor hyprland --output eDP-1 --transform 3 --controller --dry-run
+sudo decklock setup all --compositor hyprland --output eDP-1 --transform 3 --controller
+```
+
+This is opt-in. Setup preserves the choice on repeat; `--controller=false`
+disables it. Real greetd login then owns a separate foreground daemon and an
+embedded login profile in private runtime storage. It does not read the desktop
+controller profiles or start another keyboard/OSD. Closing the keyboard releases
+pad capture; the right pad and triggers provide mouse/click input via the profile.
+Normal exit stops and reaps the daemon; a killed greeter also kills its daemon.
+Missing sc-controller, device access or a failed daemon leaves the mouse/touch
+keyboard available. The greetd account needs the controller/uinput access granted
+by the sc-controller package's device rules; setup does not change device permissions
+or account groups. `--greeter-controller` never starts a daemon in preview or
+without greetd. Packaged VM/controller and physical Steam Deck validation remain
+separate; see [the device procedure](docs/greeter-controller-uat.md).
+
 Reboot to activate a changed login command, or end the managed desktop session
 and restart greetd from a separate TTY. greetd caches its configuration at
 startup; logout alone does not reload it. Keep the printed backup and a working

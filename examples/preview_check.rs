@@ -333,7 +333,11 @@ fn main() {
 
     // 3. Greeter mode UI validation:
     let greeter_settings = Rc::new(ui::Settings {
-        config: Config::default(),
+        config: Config {
+            controller_socket: Some("/unused/greeter-fake.socket".into()),
+            system_keyboard: false,
+            ..Config::default()
+        },
         theme: Theme::load(None).unwrap(),
         strings: I18n::new(Some("pt-BR"), None).unwrap(),
         preview: true,
@@ -362,6 +366,46 @@ fn main() {
         greeter_view.window.is_fullscreen(),
         "Login must request fullscreen"
     );
+    // The login keyboard uses the same pad geometry and releases as the locker.
+    // Inject events at the GTK boundary; never connect to a physical daemon.
+    greeter_view.keyboard.set_visible(true);
+    let allocation_deadline = Instant::now() + Duration::from_secs(2);
+    while key(&greeter_view, "d").width() == 0 && Instant::now() < allocation_deadline {
+        while glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        key(&greeter_view, "d").width() > 0,
+        "Login keyboard never received a GTK allocation"
+    );
+    for (side, name) in [(Side::Left, "LPADTOUCH"), (Side::Right, "RPADTOUCH")] {
+        (greeter_view.controller_event)(ControllerEvent::Button {
+            name: name.into(),
+            pressed: true,
+        });
+        (greeter_view.controller_event)(ControllerEvent::Pad { side, x: 0, y: 0 });
+        (greeter_view.controller_event)(ControllerEvent::Trigger { side, value: 255 });
+        (greeter_view.controller_event)(ControllerEvent::Trigger { side, value: 0 });
+        (greeter_view.controller_event)(ControllerEvent::Button {
+            name: name.into(),
+            pressed: false,
+        });
+    }
+    assert_eq!(
+        greeter_view.entry.text(),
+        "dk",
+        "Both login pads must type independently"
+    );
+    (greeter_view.controller_event)(ControllerEvent::Disconnected);
+    assert!(!greeter_view.keyboard.has_css_class("ghost"));
+    key(&greeter_view, "a").emit_clicked();
+    assert_eq!(
+        greeter_view.entry.text(),
+        "dka",
+        "Login keeps a clickable fallback after disconnect"
+    );
+    (greeter_view.controller_event)(ControllerEvent::Connected);
+    assert!(greeter_view.keyboard.has_css_class("ghost"));
     let greeter_power = descendants(greeter_view.window.upcast_ref())
         .into_iter()
         .find(|w| w.widget_name() == "power")

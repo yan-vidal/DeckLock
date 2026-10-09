@@ -62,6 +62,72 @@ impl Cli {
     }
 }
 #[test]
+fn greeter_pad_setup_is_explicit_and_forwards_to_both_compositors() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let state = cli.home.path().join("greeter state");
+    let args = [
+        "setup",
+        "greeter",
+        "--target",
+        target.to_str().unwrap(),
+        "--state-dir",
+        state.to_str().unwrap(),
+        "--controller",
+    ];
+    let mut dry_run = args.to_vec();
+    dry_run.push("--dry-run");
+    let review = cli.run(&dry_run, true);
+    assert!(String::from_utf8_lossy(&review.stdout).contains("--greeter-controller"));
+    assert!(!target.exists() && !state.exists());
+    cli.run(&args, true);
+    let before = std::fs::read_to_string(&target).unwrap();
+    assert!(
+        before.contains("--greeter --keyboard --greeter-controller"),
+        "{before}"
+    );
+    cli.run(&args, true);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), before);
+    cli.run(&args[..args.len() - 1], true);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), before);
+    let mut invalid = args.to_vec();
+    invalid.push("--no-keyboard");
+    cli.run(&invalid, false);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), before);
+    let mut hyprland = args.to_vec();
+    hyprland.extend(["--compositor", "hyprland", "--dry-run"]);
+    assert!(
+        String::from_utf8_lossy(&cli.run(&hyprland, true).stdout)
+            .contains("--greeter --keyboard --greeter-controller;")
+    );
+    let lock = cli.home.path().join("hypridle.conf");
+    cli.run(
+        &[
+            "setup",
+            "all",
+            "--greeter-target",
+            target.to_str().unwrap(),
+            "--lock-target",
+            lock.to_str().unwrap(),
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--controller",
+        ],
+        true,
+    );
+    assert!(lock.is_file());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), before);
+    let mut disable = args.to_vec();
+    *disable.last_mut().unwrap() = "--controller=false";
+    cli.run(&disable, true);
+    assert!(
+        !std::fs::read_to_string(&target)
+            .unwrap()
+            .contains("--greeter-controller")
+    );
+}
+
+#[test]
 fn greeter_setup_explains_that_logout_does_not_reload_the_daemon() {
     let cli = Cli::new();
     let target = cli.home.path().join("greetd.toml");

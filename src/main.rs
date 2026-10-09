@@ -66,6 +66,9 @@ struct Args {
     /// Enable sc-controller at its default socket and route deck-osk --toggle here.
     #[arg(long)]
     controller: bool,
+    /// Own a private sc-controller daemon for real greetd login (optional dependency).
+    #[arg(long, requires = "greeter", conflicts_with_all = ["controller", "controller_socket"])]
+    greeter_controller: bool,
     /// Toggle the embedded keyboard of an already running DeckLock instance.
     #[arg(long, conflicts_with_all = ["lock", "preview"])]
     toggle_keyboard: bool,
@@ -141,6 +144,7 @@ fn run(args: Args) -> Result<(), String> {
             || args.preview_fullscreen
             || args.controller_socket.is_some()
             || args.controller
+            || args.greeter_controller
             || args.toggle_keyboard
             || args.check_config
             || args.preview_exit_after.is_some()
@@ -255,11 +259,6 @@ fn run(args: Args) -> Result<(), String> {
                 .join("scc/daemon.socket"),
         );
     }
-    let shortcut_dir = if args.lock || config.controller_socket.is_some() {
-        shortcut::config_dir().map(|p| p.join("scc"))
-    } else {
-        None
-    };
     let mut theme = config::Theme::from_config(&config)?;
     if let Some(layout) = &config.layout {
         theme.layout = layout.clone();
@@ -307,6 +306,26 @@ fn run(args: Args) -> Result<(), String> {
         }
     }
     gtk::init().map_err(|e| e.to_string())?;
+    let _greeter_controller = if args.greeter_controller && !is_preview {
+        match decklock::greeter_controller::GreeterController::start() {
+            Ok(daemon) => {
+                config.controller_socket = Some(daemon.socket.clone());
+                Some(daemon)
+            }
+            Err(error) => {
+                eprintln!("Greeter controller unavailable: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let shortcut_dir =
+        if args.lock || (config.controller_socket.is_some() && _greeter_controller.is_none()) {
+            shortcut::config_dir().map(|p| p.join("scc"))
+        } else {
+            None
+        };
     let protocol = if args.lock {
         Some(lock::Protocol::detect().ok_or_else(|| strings.text("unsupported"))?)
     } else {

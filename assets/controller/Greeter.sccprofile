@@ -1,0 +1,18 @@
+{
+  "version": 1.6,
+  "is_template": false,
+  "buttons": {
+    "A": {"action": "button(Keys.KEY_ENTER)"},
+    "B": {"action": "button(Keys.KEY_ESC)"},
+    "X": {"action": "button(Keys.KEY_SPACE)"},
+    "Y": {"action": "button(Keys.KEY_TAB)"},
+    "LB": {"action": "button(Keys.KEY_BACKSPACE)"},
+    "RB": {"action": "button(Keys.KEY_SPACE)"}
+  },
+  "pad_left": {"action": "ball(XY(mouse(Rels.REL_HWHEEL, 1.0), mouse(Rels.REL_WHEEL, 1.0)))"},
+  "pad_right": {"action": "ball(mouse())"},
+  "rstick": {"action": "ball(mouse())"},
+  "trigger_left": {"action": "trigger(50, button(Keys.BTN_RIGHT))"},
+  "trigger_right": {"action": "trigger(50, button(Keys.BTN_LEFT))"},
+  "dpad": {"action": "dpad(button(Keys.KEY_UP), button(Keys.KEY_DOWN), button(Keys.KEY_LEFT), button(Keys.KEY_RIGHT))"}
+}

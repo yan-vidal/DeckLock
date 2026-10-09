@@ -4,6 +4,21 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in Steam Deck pad input before authentication: `setup greeter --controller`
+  and `setup all --controller` launch a greeter-owned sc-controller daemon with a
+  private runtime profile and the existing embedded keyboard. Repeat setup preserves
+  the choice; `--controller=false` disables it. Missing/failed controller input keeps
+  mouse/touch fallback. Preview never starts this daemon, and greeter termination
+  stops it. Tests use fake processes and isolated GTK; physical device validation
+  remains pending.
+
+### Fixed
+
+- A ready sc-controller daemon without a connected device keeps the clickable
+  keyboard fallback. Device hotplug restores pad mode without restarting DeckLock.
+
 ## [0.3.3] - 2026-10-03
 
 ### Fixed

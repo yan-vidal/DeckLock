@@ -66,6 +66,7 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | CLI executable | `tests/cli_contract.rs`, `src/main.rs` parser regression | Help without a display, alternate paths before/after subcommands, option round trips, invalid-write protection, import/reset |
 | Configuration | `src/config.rs`, `src/config_cli.rs` | Schema/ranges, path resolution, defaults, preservation and atomic saves |
 | Controller protocol | `src/controller.rs`, shortcut mock | Fragmented lines, no unsolicited capture, capture/release and no separate OSK |
+| Greeter controller ownership | `scripts/test-greeter-controller.py`, real CLI/private GTK | Explicit setup opt-in, private daemon/profile, no desktop config changes, no daemon in preview/without greetd/default login, capture only for a visible keyboard, release when hidden, missing dependency/failed startup/timeout fallback, graceful exit, stalled shutdown, SIGTERM and SIGKILL cleanup |
 | Adaptive foreground | `examples/preview_check.rs` | Fixed 1280×800 and 800×500 allocations, proportional controls, fullscreen media, transformed keyboard picking/clicks and destroyed-widget cleanup on a private display |
 | Combined setup | `tests/cli_contract.rs`, `scripts/vm/greeter.py` | Real CLI dry-run, option forwarding, invalid-input preservation and repeat; packaged VM checks sudo caller HOME, file/backup ownership and permissions instead of root configuration |
 | Keyboard | `src/keyboard.rs`, `examples/preview_check.rs` | Shift/Caps/Alt, Unicode/dead keys, ghost opacity and pad release |
@@ -220,3 +221,20 @@ and retains the configured greeter command in
 [Context](https://github.com/kennylevinsen/greetd/blob/0.10.3/greetd/src/context.rs).
 Packaged VM startup uses a fresh service; it does not establish configuration
 hot reload. Setup still leaves services running, preserving the active session.
+
+### Greeter pad validation
+
+`scripts/check --all` includes a private Xvfb/D-Bus greeter-controller gate. Its
+`scc-daemon` is an executable fake supplied through a temporary PATH; no physical
+daemon or controller is used. `examples/preview_check.rs` also checks both pads
+typing independently in the login keyboard, disconnect fallback and restored
+ghost geometry. Setup CLI checks cover Cage/Hyprland option forwarding, dry-run,
+repeat/preservation and explicit disable. The profile is embedded in the binary;
+the locally installed sc-controller 0.7.1 parser can load it without starting a
+daemon, but CI's fake does not establish compatibility with every sc-controller
+version. Packaged VM jobs do not currently install sc-controller or exercise USB
+and uinput. [The device UAT procedure](greeter-controller-uat.md) covers those
+boundaries, authenticated-session handoff and recovery. Normal exit removes its
+private files; abrupt death can leave a small runtime directory until runtime
+cleanup, with no password data. The parent-death signal follows
+[Linux PR_SET_PDEATHSIG](https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html).
