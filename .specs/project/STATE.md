@@ -498,3 +498,21 @@ and D-Bus). Final-commit local/CI evidence is to be recorded after verification;
 physical Steam Deck and sc-controller-in-package VM validation remain pending.
 No installation, host daemon restart, release or tag performed. Device procedure:
 docs/greeter-controller-uat.md; investigation pointers: .notebook/greeter-pad-input.md.
+
+2026-10-09 device setup follow-up: PR #59 head 424849c passed all 11 CI checks
+(run 37981085723). The user installed its Arch candidate on the Steam Deck OLED;
+the installed binary hash matches the candidate and the packaged Arch VM evidence.
+Dry-run succeeded, but applying setup exposed a separate installer boundary:
+Hyprland --verify-config requires XDG_RUNTIME_DIR, which sudo removes. The saved
+greetd configuration remained unchanged and the service was not restarted.
+
+A new real-CLI regression failed first with the missing runtime. Verification now
+creates owner-only temporary HOME/XDG storage and removes inherited desktop,
+D-Bus, Hyprland and greetd sockets for that child; no runtime environment is
+forced into the actual greetd session. The regression also checks cleanup, an
+inherited runtime left untouched, and saved greetd/Lua preservation on rejection.
+The installed Hyprland 0.56.2 reproduced the missing-runtime abort and accepted
+the generated Lua with private runtime storage; invalid Lua was still rejected.
+This is isolated parser evidence, not root package installation or real login.
+The corrected commit needs its own full local/CI checks and a new candidate
+before accompanied service activation and physical controller/PAM validation.

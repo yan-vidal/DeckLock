@@ -16,6 +16,10 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 ### Fixed
 
+- Hyprland login setup verifies its generated Lua with private temporary
+  HOME/XDG storage, including a runtime directory. Installation works when sudo
+  removes `XDG_RUNTIME_DIR`; rejected configuration still preserves saved greetd
+  and Lua files.
 - A ready sc-controller daemon without a connected device keeps the clickable
   keyboard fallback. Device hotplug restores pad mode without restarting DeckLock.
 

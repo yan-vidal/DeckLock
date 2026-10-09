@@ -40,4 +40,15 @@ Evidence: `tests/cli_contract.rs:greeter_pad_setup_is_explicit_and_forwards_to_b
 `examples/preview_check.rs` (greeter pad typing/disconnect fallback).
 Device/package boundaries: `docs/greeter-controller-uat.md`; no hardware or live-service test.
 
+Installer finding during accompanied setup: `src/setup.rs:verify_hyprland_config()`
+ran Hyprland without runtime storage after sudo cleared XDG_RUNTIME_DIR. This is
+the headless installer child, separate from the greetd/logind startup boundary.
+The installed 0.56.2 parser aborted without runtime and accepted generated Lua
+with it; the saved host config remained unchanged and greetd was not restarted.
+Use a temporary owner-only HOME/XDG for verification, clear inherited session
+sockets, and drop the directory after the bounded child exits. tempfile directories
+default to 0777 subject to umask: request 0700 explicitly with Builder.permissions.
+Regression: `tests/cli_contract.rs:hyprland_setup_verifies_with_private_runtime_even_without_sudo_environment()`.
+Local parser evidence: `target/device-uat-2026-10-09/hyprland-verifier-probe.txt`.
+
 Updated: 2026-10-09

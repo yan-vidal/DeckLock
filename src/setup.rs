@@ -4,6 +4,7 @@ pub(crate) mod shared_media;
 
 use std::{
     fs,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
 };
@@ -1194,12 +1195,27 @@ fn verify_hyprland_config(lua: &str) -> Result<(), String> {
     // Share one open file description: independently reopened streams each
     // start at offset zero and can overwrite the verifier's other diagnostics.
     let output = log.reopen().map_err(|e| e.to_string())?;
+    // Hyprland requires runtime storage even in --verify-config. sudo commonly
+    // removes XDG_RUNTIME_DIR; never borrow the desktop's runtime/config instead.
+    let verifier_home = tempfile::Builder::new()
+        .prefix("decklock-hyprland-verify-")
+        .permissions(fs::Permissions::from_mode(0o700))
+        .tempdir()
+        .map_err(|e| format!("Cannot prepare Hyprland verification storage: {e}"))?;
     let mut child = ProcessCommand::new("Hyprland")
         .args(["--verify-config", "-c"])
         .arg(file.path())
+        .env("HOME", verifier_home.path())
+        .env("XDG_RUNTIME_DIR", verifier_home.path())
+        .env("XDG_CONFIG_HOME", verifier_home.path())
+        .env("XDG_CACHE_HOME", verifier_home.path())
+        .env("XDG_DATA_HOME", verifier_home.path())
         .env_remove("WAYLAND_DISPLAY")
         .env_remove("WAYLAND_SOCKET")
         .env_remove("DISPLAY")
+        .env_remove("DBUS_SESSION_BUS_ADDRESS")
+        .env_remove("HYPRLAND_INSTANCE_SIGNATURE")
+        .env_remove("GREETD_SOCK")
         .stdout(output.try_clone().map_err(|e| e.to_string())?)
         .stderr(output)
         .spawn()
