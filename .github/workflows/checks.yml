@@ -11,7 +11,7 @@ permissions:
 # Superseded PR heads stop using runners. Main, tags and merge-group runs keep
 # their independent evidence and are never cancelled by this policy.
 concurrency:
-  group: checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  group: checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
