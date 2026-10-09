@@ -467,3 +467,27 @@ point (centred pads land on d and k; f and k only light up by proximity), and a 
 held by an earlier check had to be released explicitly. Untested: a real sc-controller restart
 with a physical controller; the Steam Deck device checks and hardware stay outside what the
 suite establishes.
+
+2026-10-09 CI preparation: user authorized dependency images, download caches and
+concurrent package builds after reviewing their costs. Separate worktree/branch
+perf/ci-dependency-cache keeps PR #59's accompanied Deck UAT candidate intact.
+Spec: .specs/features/ci-speed/spec.md. Baseline run38000779070 spent745 seconds
+installing native dependencies and271 seconds in its isolated gate; overall56m35s,
+including35m00s in the ARM VM. Its eleven required jobs all passed at source
+21342b4 (the controller/greeter candidate, not this CI change).
+New regressions first rejected serial package scheduling and absent cache actions/
+metadata CLI. Eight cache contracts now pass, and the real final aggregate step
+rejects failure/cancelled/skipped across all ten prerequisites (40 result cases).
+Dependency image built locally from its pinned bases. Initial image preparation
+failed because the official slim Rust image omits rustfmt/clippy; pinned components
+are now added explicitly. The first container invocation then failed at an unset
+GID from an apostrophe in a shell parameter error message. Its public entrypoint
+regression reproduced that error before correction and additionally requires
+private HOME/CARGO_HOME after runuser, argument forwarding and root-UID refusal.
+A concurrency regression also rejected main/tag grouping by identical source SHA;
+non-PR groups now use run_id. All failure logs retained in target/ci-development.
+Full local gate on 9bb22da and separate PR validation in progress; no measured
+speed claim or merge/release yet. Native bases/actions remain digest/SHA pinned,
+weekly preparation refreshes apt/native layers, Cargo caches downloaded sources
+only, and each VM cache is one pristine hash-pinned image. Candidate install and
+all assertions remain in the running guest.

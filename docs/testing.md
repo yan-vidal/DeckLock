@@ -114,7 +114,7 @@ on Arch and include their linked-library provenance.
 - PR targeting main: required **DeckLock checks** (all isolated, package and VM jobs) and **Arch package contract**.
   Fedora and Ubuntu packages also build. Download any `<target>-package`
   candidate from the workflow's artifacts if needed.
-- After packaging: **Real Wayland and PAM** for each target, using that exact
+- Package builds start alongside the isolated suite. After each package: **Real Wayland and PAM** for each target, using that exact
   package in QEMU/KVM. Every package and VM is required by the final **DeckLock checks** aggregator. Failed, skipped or cancelled gates fail the aggregator.
 - Main: the same checks after merge. No public release just because a PR exists.
 - Version/revision tag: `Release` invokes the checks and Arch package build, then
@@ -123,6 +123,41 @@ on Arch and include their linked-library provenance.
 - CI has read-only repository permissions except the final tag-publishing job.
   PR code receives no publishing token. Actions are pinned; checkout credentials
   are not persisted. Existing release tags/assets are never overwritten.
+
+### CI preparation and caches
+
+The native compatibility gate builds a dependency-only Ubuntu 24.04 image from
+`.github/ci/native-tests.Dockerfile`. Its Ubuntu and Rust 1.93.0 bases are pinned
+by digest. A small build context includes only the recipe, entrypoint and
+`bootstrap-native`; no project executable or source is baked into the image.
+Docker BuildKit caches those layers in GitHub Actions. The UTC ISO week is a
+build argument before apt/native preparation, so the first run of a new week
+refreshes packages. Recipe changes also invalidate the affected layers. Cold
+caches build normally; image build failure fails the native gate. Cache eviction
+only removes the speed benefit.
+
+The gate mounts its exact checkout, creates a container account matching its
+owner and runs `scripts/check --all` without root privileges, with private test
+displays and a fresh target directory. The pinned native library/mock compositor
+comes from the image. Missing dependencies still fail; no suite is skipped.
+
+Cargo caches contain only registry/git downloads under `.ci-cargo`, keyed by
+build target, OS/architecture, dependency image/toolchain identity and Cargo.lock.
+They never contain `target` or DeckLock executables. Each distribution still
+installs its current build stack and builds/tests/packages its own checkout.
+VM caches select a single pristine image using `scripts/vm-cache-key`, whose key
+includes the runner's pinned image SHA256. The VM runner verifies the hash after
+restore. Overlays, prepared disks, SSH keys, logs and the candidate package stay
+outside the cache. The candidate and its dependencies are still installed in the
+running guest, including the ARM native-harness path.
+
+All ten prerequisite jobs remain required by **DeckLock checks**, including when
+packaging finishes before isolated tests. Release publication still depends on
+the whole quality workflow. Superseded PR runs are cancelled; main, tags and
+merge-group runs retain their independent evidence. The tradeoffs are cache
+storage/transfer, weekly cold preparation and speculative package/VM work if the
+parallel isolated job fails. The ARM guest still uses TCG and remains the longest
+gate; cached downloads do not remove its assertions or prove physical-device UAT.
 
 `AGENTS.md` is guidance, not a security boundary. Required GitHub checks and branch
 protection enforce the merge policy. A repository administrator can still change
