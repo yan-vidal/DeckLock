@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Print GitHub cache outputs for one pinned pristine VM image, without booting it."""
+import argparse
+import ast
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def main():
+    # Read the runner's literal catalogue without importing its runtime/VM helpers.
+    tree = ast.parse((ROOT / "scripts/test-vm.py").read_text())
+    distros = next(ast.literal_eval(node.value) for node in tree.body
+                   if isinstance(node, ast.Assign)
+                   and any(isinstance(name, ast.Name) and name.id == "DISTROS"
+                           for name in node.targets))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--target", choices=sorted(distros), required=True)
+    parser.add_argument("--arch", choices=["x86_64", "aarch64"], required=True)
+    args = parser.parse_args()
+    distro = distros[args.target]
+    if args.arch != "x86_64":
+        if args.arch not in distro:
+            parser.error(f"No pinned {args.arch} image for {args.target}")
+        distro = distro | distro[args.arch]
+    print(f'path={ROOT / ".deps/vm-cache" / distro["image"]}')
+    print(f'key=vm-download-v1-{args.target}-{args.arch}-{distro["sha256"]}')
+
+
+if __name__ == "__main__":
+    main()
