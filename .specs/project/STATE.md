@@ -769,3 +769,8 @@ The first capture of the bar showed the power buttons stretched to about 170 px 
 icons expand within their slots, which made the power box expand once it shared a row with a
 spacer. The layout test had not caught it; an assertion that each power button stays within
 64 px failed first, and the power box no longer expands.
+
+Same branch, sixth change: the user asked to remove the "Wayland · Preview" banner; the preview
+now looks like the lock screen, and the preview-banner string and CSS rules are gone. The
+assertion that the preview shows no banner failed first. Still identifying a preview: its window
+title and, on submit, the notice that authentication is disabled in preview.

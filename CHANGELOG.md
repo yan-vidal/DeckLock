@@ -30,6 +30,8 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
   top-left corner. Help buttons in every window are a plain question mark, which no
   longer depends on the icon theme. The preview's help button opens the short lock
   guide instead of the full guide.
+- The preview no longer shows a "Wayland · Preview" banner; it looks like the lock
+  screen. Its window title and the notice shown on submit still say it is a preview.
 
 ### Fixed
 

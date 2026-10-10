@@ -979,10 +979,10 @@ fn build_in(
     outer.set_hexpand(true);
     outer.set_vexpand(true);
     overlay.add_overlay(&outer);
-    // The top bar spans the width: a status row (the preview banner on the left,
-    // the battery on the right) over a controls row (help on the left, power on
-    // the right). The battery's row thus lowers the help button and the power
-    // buttons alike; without a battery or banner it takes no space.
+    // The top bar spans the width: a status row (the battery on the right) over a
+    // controls row (help on the left, power on the right). The battery's row thus
+    // lowers the help button and the power buttons alike; without a battery it
+    // takes no space. The preview looks the same, with no banner.
     let top_bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
     top_bar.set_widget_name("top-bar");
     top_bar.set_valign(gtk::Align::Start);
@@ -994,15 +994,6 @@ fn build_in(
     top_bar.append(&status_row);
     top_bar.append(&controls_row);
     overlay.add_overlay(&top_bar);
-    if settings.preview && !settings.greeter {
-        let banner = gtk::Label::new(Some(&settings.strings.text("preview-banner")));
-        banner.set_widget_name("preview-banner");
-        banner.set_max_width_chars(24);
-        banner.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        banner.set_valign(gtk::Align::Center);
-        banner.set_can_target(false);
-        status_row.append(&banner);
-    }
     let status_space = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     status_space.set_hexpand(true);
     status_row.append(&status_space);

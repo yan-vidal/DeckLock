@@ -4,7 +4,6 @@ show-password = Mostrar senha
 hide-password = Ocultar senha
 virtual-keyboard = Teclado virtual
 caps-lock = Caps Lock ativado
-preview-banner = Wayland · Prévia
 preview-submit = A autenticação está desativada na prévia
 authentication-failed = Falha na autenticação. Tente novamente.
 authenticating = Autenticando…

@@ -191,8 +191,8 @@ fn check_battery(app: &gtk::Application) {
         ],
     );
     let no_battery = tempfile::tempdir().unwrap();
-    // The top bar spans the width: the battery's row on top (with the preview
-    // banner on its left), then the help button and the power buttons in one row.
+    // The top bar spans the width: the battery's row on top, then the help
+    // button and the power buttons in one row.
     for (greeter, preview, root, start_idle, power_visible, expected) in [
         (true, true, Some(supplies.path()), false, true, Some("67%")),
         (
@@ -216,6 +216,7 @@ fn check_battery(app: &gtk::Application) {
         // Without a battery its row takes no space.
         (true, true, Some(no_battery.path()), false, true, None),
         (false, false, None, false, true, None),
+        (false, true, Some(no_battery.path()), false, true, None),
         // Rest mode hides the top controls, the battery with them.
         (false, false, Some(supplies.path()), true, true, None),
     ] {
@@ -302,12 +303,10 @@ fn check_battery(app: &gtk::Application) {
         match expected {
             None => {
                 assert!(!battery.is_visible(), "No battery level expected: {case}");
-                if !preview {
-                    assert!(
-                        h.y() <= 30.0,
-                        "Without a battery nothing is reserved above the help button: {case}"
-                    );
-                }
+                assert!(
+                    h.y() <= 30.0,
+                    "Without a battery nothing is reserved above the help button: {case}"
+                );
             }
             Some(level) => {
                 assert!(battery.is_visible(), "Battery level hidden: {case}");
@@ -348,13 +347,11 @@ fn check_battery(app: &gtk::Application) {
                 }
             }
         }
-        if preview && !greeter {
-            let banner = bounds(&named("preview-banner"));
-            assert!(
-                banner.y() + banner.height() <= h.y() && banner.x() < 100.0,
-                "The preview banner shares the battery's row, above the help button: {case}"
-            );
-        }
+        // The preview looks like the lock screen: no banner over it.
+        assert!(
+            !widgets.iter().any(|w| w.widget_name() == "preview-banner"),
+            "The preview shows no banner: {case}"
+        );
         view.window.destroy();
         pump_for(30);
     }

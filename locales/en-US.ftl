@@ -4,7 +4,6 @@ show-password = Show password
 hide-password = Hide password
 virtual-keyboard = Virtual keyboard
 caps-lock = Caps Lock is on
-preview-banner = Wayland · Preview
 preview-submit = Authentication is disabled in preview
 authentication-failed = Authentication failed. Try again.
 authenticating = Authenticating…
