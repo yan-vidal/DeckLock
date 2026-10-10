@@ -24,7 +24,7 @@ local como pacote de release.
    greetd por um terminal da sessão que ele gerencia.
 5. No login, use cada pad e seu gatilho/click para selecionar teclas. Verifique
    soltura independente, Shift/Alt pelos grips, Backspace/espaço pelos bumpers,
-   ocultar o teclado, navegar pelo mouse do pad direito e reabrir pelo botão da UI.
+   A para confirmar com o teclado aberto, ocultar o teclado, navegar pelo mouse do pad direito e reabrir pelo botão da UI.
    Confira também teclado físico e touchscreen.
 6. Teste uma recusa de senha e uma autenticação correta digitando pessoalmente.
    Não grave senhas, OTPs ou texto do campo. Registre apenas rejeição/aceitação,

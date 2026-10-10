@@ -43,6 +43,10 @@ button { background-image: none; box-shadow: none; text-shadow: none; }
 #submit:disabled { opacity: 0.45; }
 #power button { background-color: alpha(@settings_surface, 0.70); border: 1px solid alpha(@accent, 0.50); border-radius: 18px; padding: 6px; margin: 4px; color: @foreground; min-width: 0; min-height: 0; }
 #power button:hover { background-color: alpha(@accent, 0.65); }
+#battery { color: white; font-size: 13px; text-shadow: 0 2px 8px rgba(0,0,0,0.9); margin: 0 4px; }
+#battery image { -gtk-icon-shadow: 0 1px 6px rgba(0,0,0,0.9); }
+window.decklock #help-button { background-color: alpha(@settings_surface, 0.70); border: 1px solid alpha(@accent, 0.50); border-radius: 18px; color: @foreground; font-size: 16px; font-weight: bold; min-width: 32px; min-height: 32px; padding: 0; }
+window.decklock #help-button:hover { background-color: alpha(@accent, 0.65); }
 #caps { color: #ffd166; font-size: 13px; font-weight: bold; text-shadow: 0 2px 8px rgba(0,0,0,0.9); }
 #status { color: #ffd9e2; font-size: 14px; text-shadow: 0 2px 8px rgba(0,0,0,0.9); }
 #status.warning { color: #ffe3a3; }

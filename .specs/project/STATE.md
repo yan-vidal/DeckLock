@@ -697,3 +697,30 @@ package builds and the Fedora guest passed. The user approved publishing the fix
 from the same PR (#64): version bump, dated changelog and README examples are in it, and
 both READMEs say the Hyprland setup needs 0.3.5. Next: tag v0.3.5 after main's checks, then
 the device procedure again from the installation step.
+
+2026-10-10 login polish after the device test of 0.3.5 (branch feat/greeter-login-polish): the
+user activated the 0.3.5 login on the Steam Deck OLED and reported that everything worked
+(wrong password refused at 12:45, correct one accepted at 12:46 in greetd's journal). They
+asked for four changes. (1) No "DeckLock — Login" title; the help button becomes a question
+mark in the same top-left corner. The button is now a plain "?" label in every window,
+independent of the icon theme; the window title keeps the name. (2) The login's help opens one
+short page about signing in (docs/guide/*/login.md), not the general and advanced chapters.
+(3) Sign in with Enter, which on the Steam Deck is the A button: the visible keyboard captures A
+with the other buttons (controller SOURCES) and the event handler ignored it, so with the
+keyboard open the only ways to submit were the ghost keyboard's own Enter key or hiding the
+keyboard and clicking. A now presses the keyboard's Enter key, as LB and RB press Backspace and
+Space, at login and on the lock screen. A physical Enter already submitted: the new XTest
+assertion in greeter_keys_check passed before any change. (4) The battery level above the power
+buttons in the top-right corner: src/battery.rs reads /sys/class/power_supply (system batteries
+only; mains, absent cells and scope=Device batteries such as a controller's are ignored; several
+are averaged), refreshed every 30 s, hidden without a battery and in rest mode. ui::Settings gains
+power_supply (main and the settings preview use /sys/class/power_supply; every test uses None
+or a fixture directory, never the host battery). Regressions failed first: the battery GTK case
+(no widget), the A button (no submission), the login title and help button, the help label and
+the login guide; the battery unit tests failed against a stub. A first run of the Portuguese
+login guide case failed because the test did not set config.locale, which the help follows as
+on the lock screen; the test now sets it. An early manual run of greeter_keys_check from this
+agent omitted the gate's environment and briefly opened a preview window on the user's Wayland
+desktop before failing; later runs used the gate's isolated environment. Not established: the
+battery on real hardware (the Deck's BAT1 matches the fixture's layout), the A button with a
+physical controller, and the login help window on the Deck's Hyprland greeter.

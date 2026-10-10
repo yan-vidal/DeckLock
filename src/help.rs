@@ -2,17 +2,46 @@
 use crate::i18n::I18n;
 use gtk::{gdk, prelude::*};
 use std::rc::Rc;
-fn documents(strings: &I18n) -> [&'static str; 2] {
-    if strings.text("help-language") == "pt-BR" {
-        [
-            include_str!("../docs/guide/pt-BR/general.md"),
-            include_str!("../docs/guide/pt-BR/advanced.md"),
-        ]
-    } else {
-        [
-            include_str!("../docs/guide/en-US/general.md"),
-            include_str!("../docs/guide/en-US/advanced.md"),
-        ]
+/// The full guide, or the single short page shown on the login screen.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Guide {
+    Full,
+    Login,
+}
+impl Guide {
+    fn of(notebook: &gtk::Notebook) -> Self {
+        if notebook.widget_name() == "help-login" {
+            Self::Login
+        } else {
+            Self::Full
+        }
+    }
+}
+fn documents(strings: &I18n, guide: Guide) -> Vec<(&'static str, &'static str)> {
+    let portuguese = strings.text("help-language") == "pt-BR";
+    match (guide, portuguese) {
+        (Guide::Login, true) => vec![(include_str!("../docs/guide/pt-BR/login.md"), "help-login")],
+        (Guide::Login, false) => vec![(include_str!("../docs/guide/en-US/login.md"), "help-login")],
+        (Guide::Full, true) => vec![
+            (
+                include_str!("../docs/guide/pt-BR/general.md"),
+                "help-general",
+            ),
+            (
+                include_str!("../docs/guide/pt-BR/advanced.md"),
+                "help-advanced",
+            ),
+        ],
+        (Guide::Full, false) => vec![
+            (
+                include_str!("../docs/guide/en-US/general.md"),
+                "help-general",
+            ),
+            (
+                include_str!("../docs/guide/en-US/advanced.md"),
+                "help-advanced",
+            ),
+        ],
     }
 }
 fn page(source: &str) -> gtk::ScrolledWindow {
@@ -80,10 +109,9 @@ fn populate(window: &gtk::Window, strings: &I18n) {
     while notebook.n_pages() > 0 {
         notebook.remove_page(Some(0));
     }
-    for (source, key) in documents(strings)
-        .into_iter()
-        .zip(["help-general", "help-advanced"])
-    {
+    let documents = documents(strings, Guide::of(&notebook));
+    notebook.set_show_tabs(documents.len() > 1);
+    for (source, key) in documents {
         notebook.append_page(
             &page(source),
             Some(&gtk::Label::new(Some(&strings.text(key)))),
@@ -101,7 +129,7 @@ pub fn refresh_all(strings: &I18n) {
         }
     }
 }
-fn open(parent: &gtk::Window, strings: &I18n) {
+fn open(parent: &gtk::Window, strings: &I18n, guide: Guide) {
     if let Some(window) = gtk::Window::list_toplevels()
         .into_iter()
         .filter_map(|w| w.downcast::<gtk::Window>().ok())
@@ -121,7 +149,11 @@ fn open(parent: &gtk::Window, strings: &I18n) {
     window.add_css_class("settings");
     crate::window_chrome::install(&window);
     let notebook = gtk::Notebook::new();
-    notebook.set_widget_name("help-tabs");
+    notebook.set_widget_name(if guide == Guide::Login {
+        "help-login"
+    } else {
+        "help-tabs"
+    });
     window.set_child(Some(&notebook));
     populate(&window, strings);
     let key = gtk::EventControllerKey::new();
@@ -151,14 +183,29 @@ pub fn controls(
     window: &impl IsA<gtk::Window>,
     strings: Rc<I18n>,
 ) -> (gtk::Button, gtk::EventControllerKey) {
-    let button = gtk::Button::from_icon_name("help-browser-symbolic");
+    controls_for(window, strings, Guide::Full)
+}
+/// The same controls, opening the short guide about signing in.
+pub fn login_controls(
+    window: &impl IsA<gtk::Window>,
+    strings: Rc<I18n>,
+) -> (gtk::Button, gtk::EventControllerKey) {
+    controls_for(window, strings, Guide::Login)
+}
+fn controls_for(
+    window: &impl IsA<gtk::Window>,
+    strings: Rc<I18n>,
+    guide: Guide,
+) -> (gtk::Button, gtk::EventControllerKey) {
+    // A plain question mark, independent of which icons the theme provides.
+    let button = gtk::Button::with_label("?");
     button.set_widget_name("help-button");
     button.set_tooltip_text(Some(&strings.text("help-tooltip")));
     let parent = window.as_ref().downgrade();
     let action_strings = strings.clone();
     button.connect_clicked(move |_| {
         if let Some(parent) = parent.upgrade() {
-            open(&parent, &action_strings);
+            open(&parent, &action_strings, guide);
         }
     });
     let key = gtk::EventControllerKey::new();
@@ -168,7 +215,7 @@ pub fn controls(
     key.connect_key_pressed(move |_, key, _, _| {
         if key == gdk::Key::F1 {
             if let Some(parent) = parent.upgrade() {
-                open(&parent, &strings);
+                open(&parent, &strings, guide);
             }
             return glib::Propagation::Stop;
         }

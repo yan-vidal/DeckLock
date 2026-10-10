@@ -385,6 +385,7 @@ disables it. Real greetd login then owns a separate foreground daemon and an
 embedded login profile in private runtime storage. It does not read the desktop
 controller profiles or start another keyboard/OSD. Closing the keyboard releases
 pad capture; the right pad and triggers provide mouse/click input via the profile.
+While the keyboard is open, A confirms like Enter.
 Normal exit stops and reaps the daemon; a killed greeter also kills its daemon.
 Missing sc-controller, device access or a failed daemon leaves the mouse/touch
 keyboard available. The greetd account needs the controller/uinput access granted

@@ -43,6 +43,7 @@ fn main() {
             start_idle: false,
             username: "test".into(),
             greeter: false,
+            power_supply: None,
         }),
         Rc::new(|_| panic!("A displayed notice must never authenticate")),
     );

@@ -1,6 +1,7 @@
 //! Help, language and decorations on the gate's private display; no real lock.
 use decklock::{
     config::{Config, Theme},
+    greeter::UserEntry,
     i18n::I18n,
     settings, ui,
 };
@@ -134,11 +135,16 @@ fn main() {
     capture(&guide, "help-general");
     tabs.set_current_page(Some(1));
     assert!(text(guide.upcast_ref()).contains("Inside DeckLock"));
-    find(window.upcast_ref(), "help-button")
+    let help_button = find(window.upcast_ref(), "help-button")
         .unwrap()
         .downcast::<gtk::Button>()
-        .unwrap()
-        .emit_clicked();
+        .unwrap();
+    assert_eq!(
+        help_button.label().as_deref(),
+        Some("?"),
+        "Help is a question mark"
+    );
+    help_button.emit_clicked();
     assert_eq!(
         help(window.upcast_ref()),
         guide,
@@ -209,6 +215,7 @@ fn main() {
                 start_idle: false,
                 username: "test".into(),
                 greeter: false,
+                power_supply: None,
             }),
             Rc::new(|_| panic!("Help must not authenticate")),
         );
@@ -235,7 +242,65 @@ fn main() {
         }
         view.window.destroy();
     }
+
+    // The login shows one short guide about signing in, not the technical chapters.
+    for (locale, heading, other) in [
+        ("en-US", "Signing in", "Using DeckLock"),
+        ("pt-BR", "Como entrar", "Usando o DeckLock"),
+    ] {
+        // The guide follows the configured language, as on the lock screen.
+        let config = Config {
+            locale: Some(locale.into()),
+            background_pool: Some(vec![]),
+            idle_pool: Some(vec![]),
+            ..Default::default()
+        };
+        let login = ui::build_greeter_with_users(
+            &app,
+            Rc::new(ui::Settings {
+                theme: Theme::from_config(&config).unwrap(),
+                config,
+                strings: I18n::new(Some(locale), None).unwrap(),
+                preview: true,
+                show_keyboard: false,
+                start_idle: false,
+                username: "alice".into(),
+                greeter: true,
+                power_supply: None,
+            }),
+            vec![UserEntry {
+                username: "alice".into(),
+                display_name: "alice".into(),
+                uid: 1000,
+                icon_path: None,
+            }],
+            Rc::new(|_| panic!("Help must not authenticate")),
+        );
+        login.window.present();
+        pump(50);
+        f1(&login.window);
+        pump(50);
+        let guide = help(login.window.upcast_ref());
+        let pages = guide.child().and_downcast::<gtk::Notebook>().unwrap();
+        assert_eq!(pages.n_pages(), 1, "Login help is a single page");
+        assert!(!pages.shows_tabs(), "Login help has no chapter tabs");
+        let content = text(guide.upcast_ref());
+        assert!(content.contains(heading), "Login guide missing in {locale}");
+        assert!(
+            !content.contains(other),
+            "Login help must not show the general guide"
+        );
+        // Plain words for whoever is signing in: no commands or system paths.
+        for technical in ["sudo", "/etc/", "/var/", "PAM", "greetd"] {
+            assert!(
+                !content.contains(technical),
+                "Login help mentions {technical}"
+            );
+        }
+        login.window.destroy();
+        pump(30);
+    }
     println!(
-        "PASS: F1, bilingual chapters, live language, help reuse/cleanup, window chrome, GUI preference save and lock UI exclusion"
+        "PASS: F1, bilingual chapters, live language, help reuse/cleanup, window chrome, GUI preference save, lock UI exclusion and the login guide"
     );
 }

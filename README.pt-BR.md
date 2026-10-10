@@ -397,6 +397,7 @@ A integração é opcional. O setup preserva a escolha nas reaplicações;
 exclusivo, em primeiro plano, com perfil embutido e diretórios privados no runtime.
 Ele não lê os perfis do desktop nem inicia outro teclado/OSD. Fechar o teclado
 libera os pads; o pad direito e os gatilhos oferecem mouse/cliques pelo perfil.
+Com o teclado aberto, o botão A confirma como Enter.
 A saída normal encerra o daemon; matar o greeter também mata seu daemon. Sem
 sc-controller, acesso ao dispositivo ou daemon funcional, o teclado por mouse/toque
 continua disponível. A conta do greetd precisa do acesso ao controle/uinput concedido

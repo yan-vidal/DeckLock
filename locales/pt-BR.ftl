@@ -20,6 +20,8 @@ close-keyboard = Fechar teclado
 space = Espaço
 shift = Shift
 controller-unavailable = Controle indisponível; use o teclado ou mouse.
+battery = Bateria
+battery-charging = Bateria carregando
 layout = Layout do teclado
 preview-title = DeckLock — prévia da tela de bloqueio Wayland
 greeter-title = DeckLock — Login
@@ -146,6 +148,7 @@ help-language = pt-BR
 help-title = Ajuda do DeckLock
 help-general = Geral
 help-advanced = Avançada
+help-login = Como entrar
 help-tooltip = Ajuda (F1)
 settings-window-decorations = Mostrar barras de título e botões de fechar
 

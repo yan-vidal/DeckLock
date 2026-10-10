@@ -46,6 +46,7 @@ fn main() {
         start_idle: false,
         username: "Demo".into(),
         greeter: false,
+        power_supply: None,
     });
     ui::apply_css(&settings.theme.css).unwrap();
     let view = ui::build(

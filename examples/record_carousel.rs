@@ -56,6 +56,7 @@ fn main() {
         start_idle: false,
         username: "yan".into(),
         greeter: true,
+        power_supply: None,
     });
 
     ui::apply_css(&settings.theme.css).unwrap();

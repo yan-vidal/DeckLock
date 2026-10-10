@@ -2,6 +2,31 @@
 
 User-facing changes are reviewed in pull requests. Dates are assigned when a release is approved. Packaging-only rebuilds use Arch pkgrel and a separate -rN tag; published assets are never replaced.
 
+## [Unreleased]
+
+### Added
+
+- The lock, login and preview screens show the battery level just above the power
+  buttons on devices with a system battery. It is read from the Linux power-supply
+  class every 30 seconds; mains adapters and the batteries of peripherals such as a
+  controller are ignored, and nothing is shown without a battery. Rest mode hides it
+  together with the power buttons. Themes can style `#battery`.
+- The login's help opens one short page about signing in, in plain words, instead of
+  the full guide with its technical chapter.
+
+### Changed
+
+- The login no longer shows a "DeckLock — Login" title; its help button takes the
+  top-left corner. Help buttons in every window are a plain question mark, which no
+  longer depends on the icon theme.
+
+### Fixed
+
+- The A button confirms like Enter while the on-screen keyboard holds the controller,
+  at login and on the lock screen. The keyboard captures A along with the other
+  buttons and ignored it, so with the keyboard open the password could only be sent
+  with the keyboard's own Enter key, or by hiding the keyboard and clicking.
+
 ## [0.3.5] - 2026-10-10
 
 ### Fixed

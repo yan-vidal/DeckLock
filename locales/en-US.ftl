@@ -20,6 +20,8 @@ close-keyboard = Close keyboard
 space = Space
 shift = Shift
 controller-unavailable = Controller unavailable; use keyboard or mouse.
+battery = Battery
+battery-charging = Battery charging
 layout = Keyboard layout
 preview-title = DeckLock — Wayland lock screen preview
 greeter-title = DeckLock — Login
@@ -146,6 +148,7 @@ help-language = en-US
 help-title = DeckLock Help
 help-general = General
 help-advanced = Advanced
+help-login = Signing in
 help-tooltip = Help (F1)
 settings-window-decorations = Show window title bars and close buttons
 

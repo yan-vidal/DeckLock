@@ -349,6 +349,7 @@ fn run(args: Args) -> Result<(), String> {
         start_idle: args.preview_idle,
         username,
         greeter: args.greeter,
+        power_supply: Some("/sys/class/power_supply".into()),
     });
     let app = gtk::Application::new(
         Some("io.github.yan_vidal.DeckLock"),

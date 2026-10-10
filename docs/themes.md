@@ -39,6 +39,8 @@ dessa API; a organização dos blocos é definida pelo TOML.
 | `#keyboard`, `.key` | Teclado virtual |
 | `.key-hover`, `.modifier-active` | Posição do pad e modificadores virtuais |
 | `#power`, `#preview-banner` | Energia e indicação de preview |
+| `#battery` | Nível da bateria, acima dos botões de energia, quando o aparelho tem bateria |
+| `#help-button` | Botão de ajuda (?) do login e do preview |
 
 ```css
 @define-color accent #d8a657;

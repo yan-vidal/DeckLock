@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod battery;
 pub mod config;
 pub mod controller;
 pub mod greeter;
