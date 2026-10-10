@@ -545,3 +545,29 @@ connection to 12-16 s. Not done, each needing its own measurement and decision: 
 scale, suites in parallel guests, starting the boot before the package build ends. Deferred
 minor: `--print-plan` repeats the memory, CPU-count and wait-scale literals instead of sharing
 them with the run path. PR #59 stays a draft: its accompanied Steam Deck validation is pending.
+
+2026-10-10 ARM VM, second round (branch perf/arm-vm-await-candidate): PR #61's own run
+38016488097 confirmed the adopted profile (ARM job 16m30s, test-vm.py 957 s, 41 assertions,
+workflow 20m37s; isolated gates 5m47s with a warm dependency image). The ARM path is still the
+longest: package build 3m55s, then the VM job. Comparing that run's TCG and KVM reports, fixed
+scaled sleeps removed, an emulated guest is 4.0-4.3 times slower in the session suites but
+11.3 in the greeter, 11.9 installing the candidate and 15.7 reinstalling it. The wait scale of
+8 therefore stays: halving it, proposed earlier, would leave the greeter and package bounds
+with under half of their KVM margin. Change: the guest's preparation and boot (41 s + 207 s) do
+not depend on the candidate and its build takes 235 s, so the ARM VM job no longer has
+`needs:` and starts with the build. test-vm.py `--package-fetch COMMAND` starts COMMAND with
+the boot, ends the boot wait if it fails, requires exit 0 before anything is copied into the
+guest and only then resolves `--package` (a quoted glob). scripts/ci-await-candidate lists the
+run attempt's jobs through `gh`, downloads the artifact only after the named job succeeded in
+this attempt, ends at once on any other conclusion, is bounded (3000 s in the workflow; thirty
+consecutive failed listings) and checks SHA256SUMS. The job gets `actions: read`, which
+release.yml now grants to the checks it calls, and its timeout is 240 min (bounds sum to 234).
+The KVM jobs keep `needs:`. New `ci-await-candidate` gate step: eleven cases against a fake
+`gh`, failed first for the missing script. The CLI, workflow and step-order contracts failed
+first too; the order contract was checked against three mutations. report: guest_ready and
+candidate_wait phases, package fields filled once the candidate arrives, candidate-fetch.log.
+Not established: the release path (only a tag exercises it; the permission grant follows
+GitHub's documented rule for called workflows), a real run whose package job fails, an API
+outage longer than thirty listings. No timing is claimed until this change's own run. Still
+open from the first round: suites in parallel guests, a PAM-lockout-only wait scale, SSH
+connection reuse (12-16 s per connection).

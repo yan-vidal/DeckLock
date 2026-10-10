@@ -73,3 +73,48 @@ Not done here: the remaining 17m45s is 8.3 min before any suite starts and 8.1 m
 of suites, about 2.6 min of that in fixed sleeps scaled by 8. Lowering that scale,
 running suites in parallel guests and starting the boot before the package build
 ends each need their own measurement and decision.
+
+## Round 2 (2026-10-10): boot while the candidate builds
+
+After adoption the workflow takes 20m37s (run 38016488097) and the ARM path is
+still the longest: the package build, 3m55s, then the VM job, 16m30s. The next
+longest lane ends at about 7m35s.
+
+Measured before choosing a lever, from that run's ARM (TCG) and Ubuntu x86_64
+(KVM) reports, with the fixed scaled sleeps removed:
+
+| Phase | KVM | TCG | Ratio |
+|---|---|---|---|
+| Sway, PAM and X11 | 38.2 s | 204.8 s | 4.0 |
+| labwc | 8.9 s | 43.2 s | 4.3 |
+| Wayfire | 9.2 s | 41.8 s | 4.0 |
+| Greeter | 17.5 s | 184.4 s | 11.3 |
+| Candidate and dependencies | 13.2 s | 156.7 s | 11.9 |
+| Reinstall | 2.5 s | 39.0 s | 15.7 |
+
+The wait scale of 8 therefore stays. It is about twice what the session suites
+need but less than what the greeter and package steps cost, so halving it would
+leave those bounds with under half of the margin they have under KVM. A narrower
+scale for the PAM lockout alone (96 s of the 205 s) is left for later.
+
+Lever chosen: the guest's preparation and boot (41 s + 207 s) do not depend on
+the candidate, and the build takes 235 s. Run them together.
+
+### Acceptance
+
+- AWAIT-01: The ARM VM job starts with `package-ubuntu-aarch64`, not after it.
+  The three KVM jobs keep `needs:`.
+- AWAIT-02: The candidate is accepted only after the job that builds it has
+  succeeded in this run attempt, and only after `SHA256SUMS` matches. A job that
+  ends any other way ends the wait at once; the wait is bounded; a missing `gh`,
+  missing run identity or persistently failing listings end it early.
+- AWAIT-03: Nothing is copied into the guest before the candidate is accepted,
+  and a fetch still running when the run ends is stopped.
+- AWAIT-04: `DeckLock checks` still requires both jobs. No assertion, wait or
+  package step changes. `release.yml` grants the `actions: read` the job needs.
+- AWAIT-05: `scripts/check --all`, workflow lint and this change's own CI run
+  before any timing is claimed.
+
+Not established by this change: the release path, which only a tag exercises;
+a real run in which the package job fails (covered at the awaiter's CLI with a
+fake `gh`); behavior during a GitHub API outage longer than thirty listings.

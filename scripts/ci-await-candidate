@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Wait for one job of this workflow run attempt to succeed, then fetch and verify its artifact.
+
+A VM job uses this to prepare and boot its guest while the candidate is still building,
+instead of idling behind `needs:`. What `needs:` guaranteed is kept: the artifact is fetched
+only after the named job succeeded in this attempt, a job that ends any other way ends the
+wait at once, and the wait is bounded. SHA256SUMS is checked before the candidate is accepted.
+
+Requires `gh`, GH_TOKEN with `actions: read`, and the GITHUB_* variables of the run.
+"""
+import argparse
+import hashlib
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import time
+
+IDENTITY = ('GITHUB_REPOSITORY', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GH_TOKEN')
+
+
+def fail(message):
+    raise SystemExit(f'ci-await-candidate: {message}')
+
+
+def jobs(repository, run, attempt):
+    listing = subprocess.run(
+        ['gh', 'api', '--paginate',
+         f'repos/{repository}/actions/runs/{run}/attempts/{attempt}/jobs?per_page=100',
+         '--jq', '.jobs[] | [.name, .status, (.conclusion // "")] | @tsv'],
+        capture_output=True, text=True, timeout=60)
+    if listing.returncode:
+        raise RuntimeError(listing.stderr.strip() or f'gh api exited {listing.returncode}')
+    return [tuple(line.split('\t')) for line in listing.stdout.splitlines() if line.strip()]
+
+
+def verify(directory):
+    sums = directory / 'SHA256SUMS'
+    if not sums.is_file():
+        fail(f'the artifact has no SHA256SUMS in {directory}')
+    entries = [line.split(None, 1) for line in sums.read_text().splitlines() if line.strip()]
+    if not entries:
+        fail('SHA256SUMS lists no file')
+    for entry in entries:
+        if len(entry) != 2:
+            fail(f'SHA256SUMS has a malformed line: {" ".join(entry)}')
+        expected, name = entry[0], entry[1].strip().lstrip('*')
+        if Path(name).name != name:
+            fail(f'SHA256SUMS names a path outside the artifact: {name}')
+        path = directory / name
+        if not path.is_file():
+            fail(f'SHA256SUMS lists {name}, which the artifact does not contain')
+        with path.open('rb') as stream:
+            actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if actual != expected:
+            fail(f'{name} does not match SHA256SUMS')
+        print(f'{name}: OK', flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--job', required=True,
+                        help='Full name of the job that builds the candidate. A caller workflow '
+                             'may prefix it with its own job name and " / "')
+    parser.add_argument('--artifact', required=True, help='Name of the artifact that job uploads')
+    parser.add_argument('--directory', type=Path, required=True,
+                        help='Where the artifact is extracted; must be absent or empty')
+    parser.add_argument('--timeout', type=float, default=1800,
+                        help='Seconds to wait for the job before giving up')
+    parser.add_argument('--interval', type=float, default=10, help='Seconds between job listings')
+    parser.add_argument('--tolerated-errors', type=int, default=30,
+                        help='Consecutive failed listings accepted as transient before giving up')
+    args = parser.parse_args()
+    missing = [name for name in IDENTITY if not os.environ.get(name)]
+    if missing:
+        fail('missing ' + ', '.join(missing))
+    repository, run, attempt = (os.environ[name] for name in IDENTITY[:3])
+    if not shutil.which('gh'):
+        fail('missing dependency: gh')
+    if args.directory.exists() and any(args.directory.iterdir()):
+        fail(f'{args.directory} already holds files; refusing to mix them with the candidate')
+    deadline = time.monotonic() + args.timeout
+    reported = error = None
+    errors = 0
+    while True:
+        try:
+            named = [job for job in jobs(repository, run, attempt)
+                     if job[0] == args.job or job[0].endswith(' / ' + args.job)]
+            error, errors = None, 0
+        except (RuntimeError, subprocess.TimeoutExpired, OSError) as problem:
+            named, errors = [], errors + 1
+            if str(problem) != error:
+                error = str(problem)
+                print(f'ci-await-candidate: listing failed: {error}', file=sys.stderr, flush=True)
+            if errors > args.tolerated_errors:
+                fail(f'{errors} consecutive listings failed; last error: {error}')
+        if len(named) > 1:
+            fail(f'{len(named)} jobs are named {args.job!r}; the candidate would be ambiguous')
+        if named:
+            name, status, conclusion = named[0]
+            state = f'{status} {conclusion}'.strip()
+            if state != reported:
+                print(f'{name}: {state}', flush=True)
+                reported = state
+            if status == 'completed':
+                if conclusion != 'success':
+                    fail(f'{name} ended as {conclusion or "unknown"}; there is no candidate to test')
+                break
+        if time.monotonic() >= deadline:
+            fail(f'{args.job!r} did not succeed within {args.timeout:g} s'
+                 + (f'; last error: {error}' if error else ''))
+        time.sleep(args.interval)
+    download = subprocess.run(
+        ['gh', 'run', 'download', run, '--repo', repository, '--name', args.artifact,
+         '--dir', str(args.directory)], capture_output=True, text=True, timeout=600)
+    if download.returncode:
+        fail(f'could not download {args.artifact}: {download.stderr.strip()}')
+    verify(args.directory)
+    print(f'PASS: {args.artifact} from {args.job!r}, attempt {attempt}', flush=True)
+
+
+if __name__ == '__main__':
+    main()
