@@ -1,11 +1,14 @@
 # Pads no login: validação física acompanhada
 
-Esta etapa permanece pendente. Os testes isolados não comprovam acesso ao USB,
-uinput, comportamento físico dos pads ou passagem para o daemon do desktop.
-Use um ambiente recuperável e o pacote candidato correspondente ao commit do PR,
-após os checks de pacote/VM passarem. Não use o executável local como pacote de release.
+Esta etapa permanece pendente. A 0.3.4 publica a opção antes desta validação,
+por decisão do usuário, para que o teste seja feito no pacote publicado. Os testes
+isolados não comprovam acesso ao USB, uinput, comportamento físico dos pads ou
+passagem para o daemon do desktop. Use um ambiente recuperável e o pacote publicado
+da 0.3.4 ou mais recente, conferido pelo `SHA256SUMS` do release. Um candidato de
+PR só serve depois que seus checks de pacote/VM passarem. Não use o executável
+local como pacote de release.
 
-1. Anote versão/commit do candidato, versão do sc-controller, compositor, modelo
+1. Anote versão/commit do pacote, versão do sc-controller, compositor, modelo
    do Deck e configuração de tela. Preserve o backup do greetd e uma TTY com acesso
    administrativo. A instalação e a saída da sessão devem ser acompanhadas pelo usuário.
 2. Confira que a conta configurada em `default_session.user` consegue acessar o

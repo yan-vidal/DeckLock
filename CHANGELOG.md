@@ -2,7 +2,7 @@
 
 User-facing changes are reviewed in pull requests. Dates are assigned when a release is approved. Packaging-only rebuilds use Arch pkgrel and a separate -rN tag; published assets are never replaced.
 
-## [Unreleased]
+## [0.3.4] - 2026-10-10
 
 ### Added
 
@@ -22,6 +22,31 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
   and Lua files.
 - A ready sc-controller daemon without a connected device keeps the clickable
   keyboard fallback. Device hotplug restores pad mode without restarting DeckLock.
+
+### Changed
+
+- The required checks finish in about 12 minutes instead of about 57 on the measured
+  runs. Test dependencies come from a prepared image and caches of pristine
+  downloads, package builds run concurrently, and the emulated Ubuntu arm64 guest
+  uses QEMU's implementation-defined pointer authentication, boots while its
+  candidate builds and shares the suites with two more guests. Every target still
+  runs the same 41 assertions on the candidate installed in a running guest; on
+  arm64 the suites no longer follow one another in a single guest. This affects CI
+  only.
+
+### Compatibility and limitations
+
+- Pad input before authentication is published before its validation on a physical
+  Steam Deck. Its tests use a fake `scc-daemon` and isolated GTK; the packaged VM
+  gates install no sc-controller and exercise no USB or uinput device. Controller
+  and uinput access for the greetd account, pad ergonomics and the handoff to the
+  desktop's sc-controller daemon are not established. A greeter-owned daemon that
+  dies is not restarted, and abrupt termination can leave static runtime files until
+  runtime cleanup. `docs/greeter-controller-uat.md` gives the accompanied procedure
+  and recovery.
+- The Hyprland setup fix is covered by a real-CLI regression and was checked against
+  the Hyprland 0.56.2 parser in isolated storage. A root installation and a real
+  login with it are not established.
 
 ## [0.3.3] - 2026-10-03
 

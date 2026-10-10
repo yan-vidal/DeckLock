@@ -642,3 +642,23 @@ once, guests differ in suites only, KVM jobs take no selection). Costs: three AR
 about as long as one ran before; on ARM the suites no longer follow one another in one guest,
 so an effect of one suite on a later one is exercised by the KVM guests only. No timing is
 claimed until this change's own run.
+
+2026-10-10 0.3.4 release (PR #59): the user approved publishing 0.3.4 and merging PR #59
+before its accompanied Steam Deck validation, so that the device test runs on the published
+package instead of a CI candidate. This reverses the plan recorded above, which validated a
+candidate before merge and proposed no release or tag. The branch merges main (2084f8d; only
+this file conflicted and both series of entries are kept) and carries the version bump, the
+dated changelog, the README install examples and the limits. Runs 38020534604 and 38023182398
+(PR #63 and main at 9f94422) took 11m54s and 12m06s with the same 41 assertions per
+target. State of the device when this was written: the installed package is still the 424849c
+candidate, the saved greetd configuration is unchanged, greetd was not restarted and no item
+of docs/greeter-controller-uat.md has been executed. Published without evidence: pad input on
+hardware, controller/uinput access of the greetd account, the handoff to the desktop daemon,
+and the Hyprland setup fix through a root installation and a real login. This is the first
+release through release.yml since #62 and #63: the `actions: read` grant to the called checks
+and the three-guest ARM matrix under workflow_call run for the first time with this tag. The
+awaiter's job-name match was compared with the v0.3.3 release run, whose builder job is listed
+as `quality / Package (Ubuntu aarch64) / Ubuntu aarch64 package contract`, the prefixed form it
+accepts. If the tag workflow fails, the fix goes through a PR and a new version; the tag is not
+moved. Next: tag v0.3.4 after main's checks, confirm the assets, then the accompanied device
+procedure with the release package.
