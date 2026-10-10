@@ -33,14 +33,21 @@ collect_evidence() {
     true
 }
 trap collect_evidence EXIT
+# Bash's own clock avoids creating a process for each measurement. These are
+# guest-clock timestamps; test-vm.py separately records host monotonic durations.
+phase() { printf 'DECKLOCK_VM_PHASE %s %s\n' "$1" "$EPOCHREALTIME"; }
+phase guest_setup
 bash "$fixture/cloud-init-ready.sh" /var/tmp/cloud-init-status.txt
+phase cloud_init_ready
 # Load before syncing packages: an upgrade can replace the running kernel's
 # module directory (pacman -Syu does), after which modprobe finds nothing.
 modprobe vgem
 [[ -z $PRE_SYNC ]] || $PRE_SYNC
 # shellcheck disable=SC2086
 $SYNC_AND_INSTALL $HARNESS_PACKAGES
+phase harness_ready
 $INSTALL_CANDIDATE $fixture/$CANDIDATE_GLOB
+phase candidate_installed
 useradd --create-home --shell /bin/bash locktest
 # Public fixture credentials, confined to this disposable guest.
 printf 'locktest:DeckLock-test-42\n' | chpasswd
@@ -86,6 +93,7 @@ sha256sum /home/locktest/candidate-config.toml > /var/tmp/decklock-evidence/conf
 $REINSTALL_CANDIDATE $fixture/$CANDIDATE_GLOB
 sha256sum --check /var/tmp/decklock-evidence/config-before.sha256
 printf 'PASS: candidate reinstallation preserves user configuration on %s\n' "$target"
+phase candidate_reinstalled
 # Whether the stack /etc/pam.d/decklock includes counts failures is that
 # distribution's policy, so it is read from configuration here and exercise.py
 # asserts PAM's behavior against it. Deriving it from the observed tally would
@@ -113,9 +121,11 @@ for _ in $(seq 60); do
     sleep 1
 done
 [[ -S $runtime/bus ]]
+phase session_ready
 runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
     DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" DECKLOCK_STACK_FAILLOCK="$stack_faillock" \
     DECKLOCK_VM_SLOWDOWN="$slowdown" python3 /var/tmp/decklock-evidence/exercise.py
+phase sway_pam_x11_complete
 # GLES compositors get the vgem render node loaded above (see compositor.py).
 # Mesa renders there through vgem's primary node too, so the user needs both
 # render and video; runuser applies the new supplementary groups. Sway above
@@ -128,5 +138,7 @@ for compositor in $EXTRA_COMPOSITORS; do
     runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
         DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" DECKLOCK_VM_SLOWDOWN="$slowdown" \
         python3 /var/tmp/decklock-evidence/compositor.py "$compositor"
+    phase "${compositor}_complete"
 done
 python3 "$fixture/greeter.py"
+phase greeter_complete
