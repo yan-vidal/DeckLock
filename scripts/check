@@ -63,6 +63,7 @@ with tempfile.TemporaryDirectory(prefix='decklock-check-') as temporary:
     step('ci-workflow',[sys.executable,'scripts/test-ci-workflow.py'],env,60)
     step('ci-cache',[sys.executable,'scripts/test-ci-cache.py'],env,60)
     step('vm-fixture',[sys.executable,'scripts/test-vm-fixture.py'],env,60)
+    step('vm-emulation',[sys.executable,'scripts/test-vm-emulation.py'],env,60)
     step('whitespace',['git','diff','--check'],env)
     if args.all:
         step('isolated-gtk',['xvfb-run','-a','-s','-screen 0 1280x800x24 -nolisten tcp','dbus-run-session','--',sys.executable,'scripts/test-gui-isolated.py'],env,240)

@@ -491,3 +491,31 @@ speed claim or merge/release yet. Native bases/actions remain digest/SHA pinned,
 weekly preparation refreshes apt/native layers, Cargo caches downloaded sources
 only, and each VM cache is one pristine hash-pinned image. Candidate install and
 all assertions remain in the running guest.
+
+2026-10-09 ARM VM emulation experiment (branch perf/arm-vm-emulation, on top of PR #60's
+commits; spec .specs/features/arm-vm-performance/spec.md): the aarch64 VM is the only long gate
+left. Run 38006310277 (6b444a2, PR #60) took 40m20s; every other job had ended within 10m11s
+and the ARM VM job took 36m00s. Its report had no phase times, so they were reconstructed from
+that run's job log, serial log, journal, dpkg.log and apt history: host preparation 1.4 min;
+boot to guest-ready 9.6 min (apparmor.service 157 s, the four cloud-init stages 188 s, about
+30 s per SSH connection); the candidate with its 98 dependencies 7.1 min (dpkg 271 s, apt
+resolution 69 s, 83 s after dpkg ended); the reinstall 2.2 min (dpkg 9 s); the suites 13.6 min
+(exercise.py 5m03s including the 96 s scaled lockout, labwc 1m24s, Wayfire 1m22s, the greeter
+about 6 min). Hypothesis: QEMU 8.2.2, the runner's, signs pointers with QARMA5 under
+`-cpu max`, which its documentation calls slow to emulate; QEMU 10.0 made the
+implementation-defined algorithm the default for that reason. `--tcg-pauth impdef` selects
+`max,pauth=on,pauth-impdef=on,pauth-qarma3=off`; the default profile, KVM and x86 are
+unchanged. The ARM job is temporarily a two-profile matrix: each profile runs the whole suite
+on the same candidate in its own guest and both are required. result.json now records
+cpu_model, qemu_version, host phase durations and guest-clock phase marks. `--print-plan`
+prints the pinned image and CPU options without touching the host, and
+scripts/test-vm-emulation.py (seven public-CLI cases) is a new `vm-emulation` gate step.
+Checked before CI: QEMU 8.2.2 (1:8.2.2+ds-0ubuntu1.18, installed into a throwaway container of
+the Ubuntu 24.04 dependency image) initializes `virt` with that CPU string without booting,
+refuses impdef together with qarma3 and refuses an unknown property; actionlint 1.7.12 reports only SC2046 on the three x86 `setfacl` lines
+main already has, and reports a wrong `needs` or matrix key in the ARM job when one is
+introduced. No timing is claimed: the comparison is one CI run with one sample per profile.
+The draft PR targets main because checks.yml runs only for pull requests to main, so its diff
+carries PR #60's commits until that merges; it is not to be merged as is, since the matrix
+doubles ARM runner time. Not adopted: a faster default, shorter waits, sharding. Limits: the
+impdef profile is no evidence of pointer-authentication strength or of real ARM hardware.

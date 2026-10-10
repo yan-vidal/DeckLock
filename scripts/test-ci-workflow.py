@@ -63,6 +63,17 @@ assert '--privileged' not in native and '/dev/' not in native
 for vm in vms:
     assert 'uses: ./.github/actions/cache-vm' in job(vm)
 
+# This experiment compares complete suites; neither profile is optional.
+arm = job('vm-ubuntu-aarch64')
+assert re.search(r'^        tcg_pauth: \[default, impdef\]$', arm, re.MULTILINE), (
+    'ARM experiment must compare the default and explicit impdef profiles')
+assert 'fail-fast: false' in arm and 'continue-on-error:' not in arm
+assert '--tcg-pauth "${{ matrix.tcg_pauth }}"' in arm
+assert 'name: ubuntu-package-aarch64' in arm
+assert '--allow-emulation --provision-native' in arm
+assert 'name: vm-evidence-ubuntu-aarch64-${{ matrix.tcg_pauth }}' in arm
+assert '--suite' not in arm, 'The experiment must run the whole guest suite'
+
 recipe = (ROOT / '.github/ci/native-tests.Dockerfile').read_text()
 for line in recipe.splitlines():
     if line.startswith('FROM '):

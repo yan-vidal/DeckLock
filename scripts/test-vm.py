@@ -66,6 +66,16 @@ AARCH64_FIRMWARE = ['/usr/share/qemu-efi-aarch64/QEMU_EFI.fd', '/usr/share/AAVMF
 MINIMUM_QEMU_IMG = (6, 0)
 
 
+def cpu_model(arch, kvm, tcg_pauth):
+    if kvm:
+        return 'host'
+    if arch == 'aarch64' and tcg_pauth == 'impdef':
+        # QEMU 8.2's implementation-defined PAC is faster to emulate. It keeps
+        # the instruction semantics but is not evidence of cryptographic strength.
+        return 'max,pauth=on,pauth-impdef=on,pauth-qarma3=off'
+    return 'max'
+
+
 def qemu_img():
     path = shutil.which('qemu-img')
     if not path:
@@ -105,7 +115,7 @@ def main():
         raise KeyboardInterrupt(f'Interrupted by signal {signum}')
     signal.signal(signal.SIGTERM, interrupted)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--package', type=Path, required=True, help='Candidate package built by CI')
+    parser.add_argument('--package', type=Path, help='Candidate package built by CI (required for execution)')
     parser.add_argument('--target', choices=sorted(DISTROS), default='arch')
     parser.add_argument('--arch', choices=['x86_64', 'aarch64'], default=platform.machine(),
                         help='Guest architecture; KVM needs it to match the host')
@@ -119,12 +129,30 @@ def main():
                              'guest architectures to match; without passwordless sudo, or on any failure, '
                              'it warns and installs inside the guest as usual')
     parser.add_argument('--logs', type=Path, default=ROOT / 'target/vm-logs')
+    parser.add_argument('--tcg-pauth', choices=['default', 'impdef'], default='default',
+                        help='ARM TCG pointer-authentication implementation; impdef is a faster, '
+                             'non-cryptographic test implementation. KVM always uses the host CPU')
+    parser.add_argument('--print-plan', action='store_true',
+                        help='Print pinned image and CPU options without inspecting or starting a VM')
     args = parser.parse_args()
+    if args.tcg_pauth == 'impdef' and args.arch != 'aarch64':
+        parser.error('--tcg-pauth impdef requires --arch aarch64')
     distro = DISTROS[args.target]
     if args.arch != 'x86_64':
         if args.arch not in distro:
             raise SystemExit(f'No pinned {args.arch} image for {args.target}')
         distro = distro | distro[args.arch]
+    if args.print_plan:
+        print(json.dumps({'target': args.target, 'arch': args.arch,
+                          'image': distro['image'], 'image_sha256': distro['sha256'],
+                          'tcg_pauth': args.tcg_pauth, 'memory_mib': 2048,
+                          'cpu_models': {mode: cpu_model(args.arch, mode == 'kvm', args.tcg_pauth)
+                                         for mode in ['kvm', 'tcg']},
+                          'cpus': {'kvm': 2, 'tcg': 4}, 'slowdown': {'kvm': 1, 'tcg': 8}}, indent=2))
+        return
+    if args.package is None:
+        parser.error('the following arguments are required: --package')
+    started = time.monotonic()
     kvm = args.arch == platform.machine() and os.access('/dev/kvm', os.R_OK | os.W_OK)
     if not kvm and not args.allow_emulation:
         raise SystemExit('KVM required: refusing slow software emulation on the shared machine')
@@ -132,6 +160,7 @@ def main():
     # inside the guest and on this side scales by this estimate, never below 1.
     slowdown = 1 if kvm else 8
     qemu = f'qemu-system-{args.arch}'
+    selected_cpu = cpu_model(args.arch, kvm, args.tcg_pauth)
     package = args.package.resolve(strict=True)
     if not package.name.endswith(distro['suffix']):
         raise SystemExit(f'{args.target} expects a {distro["suffix"]} candidate, got {package.name}')
@@ -160,6 +189,9 @@ def main():
               'target': args.target, 'arch': args.arch, 'image': distro['image'], 'image_sha256': distro['sha256'],
               'package_sha256': digest(package), 'package': package.name,
               'memory_mib': 2048, 'cpus': 2 if kvm else 4, 'accelerator': 'kvm' if kvm else 'tcg',
+              'cpu_model': selected_cpu, 'tcg_pauth': args.tcg_pauth,
+              'qemu_version': subprocess.check_output([qemu, '--version'], text=True, timeout=10).splitlines()[0],
+              'host_phase_seconds': {},
               'slowdown': slowdown, 'provisioning': 'in-guest', 'status': 'running'}
     (logs / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
     # The copy-on-write overlay grows with every guest write, and a package
@@ -178,6 +210,7 @@ def main():
         subprocess.run(['genisoimage', '-quiet', '-output', str(work / 'seed.iso'), '-volid', 'cidata', '-joliet', '-rock', str(seed)], check=True)
         disk = f'file={work}/disk.qcow2,if=virtio,format=qcow2'
         guest_env = ROOT / 'scripts/vm/distros' / f'{args.target}.env'
+        preparation_started = time.monotonic()
         if args.provision_native:
             manifest = ROOT / 'scripts/vm/distros' / f'{args.target}.env'
             raw, reason = vm_native.try_native(
@@ -193,12 +226,13 @@ def main():
                 print(f"::warning title=Native provisioning skipped::{reason.replace(chr(10), ' ')}", flush=True)
         if report['provisioning'] == 'in-guest':
             subprocess.run([image_tool, 'create', '-q', '-f', 'qcow2', '-F', 'qcow2', '-b', str(base), str(work / 'disk.qcow2'), '12G'], check=True)
+        report['host_phase_seconds']['disk_and_harness'] = round(time.monotonic() - preparation_started, 3)
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
         accel = ['-enable-kvm'] if kvm else ['-accel', 'tcg,thread=multi']
         if args.arch == 'x86_64':
-            machine = ['-cpu', 'host' if kvm else 'max']
+            machine = ['-cpu', selected_cpu]
             seed = ['-drive', f'file={work}/seed.iso,media=cdrom,readonly=on']
         else:
             # The virt machine has no IDE for a CD-ROM; cloud-init finds the seed
@@ -207,7 +241,7 @@ def main():
             if firmware is None:
                 raise SystemExit('Missing dependency: aarch64 UEFI firmware (qemu-efi-aarch64)')
             machine = ['-machine', 'virt,gic-version=' + ('host' if kvm else '3'),
-                       '-cpu', 'host' if kvm else 'max', '-bios', firmware]
+                       '-cpu', selected_cpu, '-bios', firmware]
             seed = ['-drive', f'file={work}/seed.iso,if=virtio,format=raw,readonly=on']
         command = [qemu, '-name', 'decklock-isolated-test', *accel, *machine,
                    '-m', '2048', '-smp', str(report['cpus']), '-display', 'none', '-monitor', 'none', '-no-reboot',
@@ -233,6 +267,7 @@ def main():
                         vm.terminate()
                         return
         with (logs / 'qemu.log').open('w') as output:
+            boot_started = time.monotonic()
             vm = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT)
             thread = threading.Thread(target=guard, args=(vm,), daemon=True)
             thread.start()
@@ -253,13 +288,16 @@ def main():
                 fixture = sorted(p for p in (ROOT / 'scripts/vm').iterdir() if p.suffix in {'.py', '.sh'})
                 fixture.append(guest_env)
                 subprocess.run(['scp', *ssh_options, '-P', str(port), str(package), *map(str, fixture), 'root@127.0.0.1:/root/decklock-fixture/'], check=True, timeout=60 * slowdown)
+                report['host_phase_seconds']['boot_ssh_and_copy'] = round(time.monotonic() - boot_started, 3)
                 print('Guest ready; installing dependencies and exercising the candidate.', flush=True)
+                guest_started = time.monotonic()
                 with (logs / 'guest.log').open('w') as guest_log:
                     # needrestart, an apt hook on Ubuntu images, scans every process after each install:
                     # about 14 minutes apiece under emulation, to report nothing a disposable guest needs.
                     quiet = 'NEEDRESTART_SUSPEND=1 ' if slowdown > 1 else ''
                     result = subprocess.run([*ssh, f'{quiet}DECKLOCK_VM_SLOWDOWN={slowdown} bash /root/decklock-fixture/setup.sh {args.target}'],
                                             stdout=guest_log, stderr=subprocess.STDOUT, timeout=(600 if report['provisioning'] == 'native' else 1200) * slowdown)
+                report['host_phase_seconds']['guest_execution'] = round(time.monotonic() - guest_started, 3)
                 if result.returncode:
                     raise RuntimeError(f'Guest test failed ({result.returncode}); see guest.log')
                 report['status'] = 'passed'
@@ -268,6 +306,7 @@ def main():
                 report['error'] = str(error)
                 raise
             finally:
+                evidence_started = time.monotonic()
                 if vm.poll() is None:
                     try:
                         transfer = subprocess.run(['scp', *ssh_options, '-P', str(port), '-r', 'root@127.0.0.1:/var/tmp/decklock-evidence', str(logs)], timeout=30 * slowdown, check=False)
@@ -287,6 +326,13 @@ def main():
                     vm.kill()
                     vm.wait()
                 thread.join(timeout=5)
+                report['host_phase_seconds']['evidence_and_shutdown'] = round(time.monotonic() - evidence_started, 3)
+                report['total_seconds'] = round(time.monotonic() - started, 3)
+                guest_log = logs / 'guest.log'
+                report['guest_phase_timestamps'] = [
+                    {'phase': fields[1], 'guest_epoch_seconds': float(fields[2])}
+                    for line in (guest_log.read_text(errors='replace').splitlines() if guest_log.exists() else [])
+                    if (fields := line.split()) and len(fields) == 3 and fields[0] == 'DECKLOCK_VM_PHASE']
                 (logs / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
                 # The job log is often the only evidence a reviewer can read, so a
                 # failure names its assertion there instead of only in guest.log.
