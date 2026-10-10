@@ -10,6 +10,7 @@ Never mounts the host home, devices, desktop sockets or credentials into the gue
 Requires QEMU/KVM, qemu-img, genisoimage, curl, OpenSSH and 3 GiB available RAM.
 """
 import argparse
+import glob
 import hashlib
 import json
 import os
@@ -78,6 +79,17 @@ def cpu_model(arch, kvm):
     return 'max'
 
 
+def candidate(pattern, suffix, target):
+    """The single file --package names: a plain path, or a glob a fetch command filled."""
+    matches = sorted(glob.glob(str(pattern)))
+    if len(matches) != 1:
+        raise SystemExit(f'--package must name exactly one file; {pattern} matches {len(matches)}')
+    package = Path(matches[0]).resolve(strict=True)
+    if not package.name.endswith(suffix):
+        raise SystemExit(f'{target} expects a {suffix} candidate, got {package.name}')
+    return package
+
+
 def qemu_img():
     path = shutil.which('qemu-img')
     if not path:
@@ -117,7 +129,14 @@ def main():
         raise KeyboardInterrupt(f'Interrupted by signal {signum}')
     signal.signal(signal.SIGTERM, interrupted)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--package', type=Path, help='Candidate package built by CI (required for execution)')
+    parser.add_argument('--package', type=Path,
+                        help='Candidate package built by CI (required for execution). With '
+                             '--package-fetch, a quoted glob that the command fills')
+    parser.add_argument('--package-fetch', metavar='COMMAND',
+                        help='Run COMMAND while the guest boots, then require it to have exited 0 and '
+                             '--package to match one file. For CI, where the candidate is still building')
+    parser.add_argument('--package-fetch-timeout', type=float, default=3600,
+                        help='Seconds, from the start of COMMAND, the booted guest waits for it')
     parser.add_argument('--target', choices=sorted(DISTROS), default='arch')
     parser.add_argument('--arch', choices=['x86_64', 'aarch64'], default=platform.machine(),
                         help='Guest architecture; KVM needs it to match the host')
@@ -149,6 +168,10 @@ def main():
         return
     if args.package is None:
         parser.error('the following arguments are required: --package')
+    # Only the fetch command may use the run's token: sudo, the emulator and ssh never see it.
+    fetch_env = os.environ.copy()
+    for name in ('GH_TOKEN', 'GITHUB_TOKEN'):
+        os.environ.pop(name, None)
     started = time.monotonic()
     kvm = args.arch == platform.machine() and os.access('/dev/kvm', os.R_OK | os.W_OK)
     if not kvm and not args.allow_emulation:
@@ -158,9 +181,7 @@ def main():
     slowdown = 1 if kvm else 8
     qemu = f'qemu-system-{args.arch}'
     selected_cpu = cpu_model(args.arch, kvm)
-    package = args.package.resolve(strict=True)
-    if not package.name.endswith(distro['suffix']):
-        raise SystemExit(f'{args.target} expects a {distro["suffix"]} candidate, got {package.name}')
+    package = None if args.package_fetch else candidate(args.package, distro['suffix'], args.target)
     logs = args.logs.resolve()
     logs.mkdir(parents=True, exist_ok=True)
     for name in [qemu, 'genisoimage', 'curl', 'ssh', 'scp', 'ssh-keygen']:
@@ -184,7 +205,8 @@ def main():
         raise SystemExit('Cached image SHA256 mismatch')
     report = {'test_source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
               'target': args.target, 'arch': args.arch, 'image': distro['image'], 'image_sha256': distro['sha256'],
-              'package_sha256': digest(package), 'package': package.name,
+              'package_sha256': digest(package) if package else None,
+              'package': package.name if package else None,
               'memory_mib': 2048, 'cpus': 2 if kvm else 4, 'accelerator': 'kvm' if kvm else 'tcg',
               'cpu_model': selected_cpu,
               'qemu_version': subprocess.check_output([qemu, '--version'], text=True, timeout=10).splitlines()[0],
@@ -268,19 +290,41 @@ def main():
             vm = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT)
             thread = threading.Thread(target=guard, args=(vm,), daemon=True)
             thread.start()
+            fetch = fetch_log = None
             try:
+                if args.package_fetch:
+                    # The candidate is still building: its artifact is awaited while this
+                    # guest boots, and nothing is installed before the command succeeds.
+                    fetch_log = (logs / 'candidate-fetch.log').open('w')
+                    fetch_started = time.monotonic()
+                    fetch = subprocess.Popen(['bash', '-c', args.package_fetch], env=fetch_env, stdout=fetch_log,
+                                             stderr=subprocess.STDOUT, start_new_session=True)
                 print(f"VM started: pid={vm.pid}, {report['accelerator'].upper()}, 2048 MiB, {report['cpus']} CPUs, "
                       f'waits x{slowdown}. Logs: {logs}', flush=True)
                 deadline = time.monotonic() + 240 * slowdown
                 while True:
                     if vm.poll() is not None:
                         raise RuntimeError('VM exited before SSH; see serial.log/qemu.log')
+                    if fetch and fetch.poll():
+                        raise RuntimeError(f'Candidate fetch failed ({fetch.returncode}); see candidate-fetch.log')
                     ready = subprocess.run([*ssh, 'test -f /etc/decklock-test-vm'], capture_output=True, timeout=8 * slowdown)
                     if ready.returncode == 0:
                         break
                     if time.monotonic() > deadline:
                         raise TimeoutError('VM boot/SSH deadline exceeded')
                     time.sleep(2)
+                if fetch:
+                    report['host_phase_seconds']['guest_ready'] = round(time.monotonic() - boot_started, 3)
+                    guest_ready = time.monotonic()
+                    try:
+                        code = fetch.wait(timeout=max(0, fetch_started + args.package_fetch_timeout - guest_ready))
+                    except subprocess.TimeoutExpired:
+                        raise TimeoutError(f'No candidate after {args.package_fetch_timeout:g} s; see candidate-fetch.log') from None
+                    if code:
+                        raise RuntimeError(f'Candidate fetch failed ({code}); see candidate-fetch.log')
+                    package = candidate(args.package, distro['suffix'], args.target)
+                    report.update(package_sha256=digest(package), package=package.name)
+                    report['host_phase_seconds']['candidate_wait'] = round(time.monotonic() - guest_ready, 3)
                 subprocess.run([*ssh, 'mkdir -p /root/decklock-fixture /var/tmp/decklock-evidence'], check=True, timeout=15 * slowdown)
                 fixture = sorted(p for p in (ROOT / 'scripts/vm').iterdir() if p.suffix in {'.py', '.sh'})
                 fixture.append(guest_env)
@@ -304,6 +348,18 @@ def main():
                 raise
             finally:
                 evidence_started = time.monotonic()
+                if fetch and fetch.poll() is None:
+                    os.killpg(fetch.pid, signal.SIGTERM)
+                    try:
+                        fetch.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(fetch.pid, signal.SIGKILL)
+                        fetch.wait()
+                if fetch_log:
+                    fetch_log.close()
+                    # Which job and artifact the candidate came from belongs in the job log.
+                    print('--- candidate-fetch.log ---', (logs / 'candidate-fetch.log').read_text(errors='replace').rstrip(),
+                          '--- end candidate-fetch.log ---', sep='\n', flush=True)
                 if vm.poll() is None:
                     try:
                         transfer = subprocess.run(['scp', *ssh_options, '-P', str(port), '-r', 'root@127.0.0.1:/var/tmp/decklock-evidence', str(logs)], timeout=30 * slowdown, check=False)

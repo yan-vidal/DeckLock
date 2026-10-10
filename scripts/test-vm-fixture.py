@@ -302,6 +302,34 @@ def check_native_wiring():
     return failures
 
 
+def check_candidate_fetch_wiring():
+    """A fetched candidate must be complete and verified before the guest receives anything.
+
+    test-vm.py cannot run here without a guest, so the order of its steps is pinned: the
+    fetch command starts with the boot, its failure ends the boot wait, it must have exited
+    0 before the fixture is copied, and only then is --package resolved.
+    """
+    source = VM_RUNNER.read_text()
+    order = ("fetch = subprocess.Popen(['bash', '-c', args.package_fetch]",
+             "if fetch and fetch.poll():",
+             "code = fetch.wait(timeout=",
+             "package = candidate(args.package",
+             "'root@127.0.0.1:/root/decklock-fixture/'")
+    positions = [source.find(needle) for needle in order]
+    failures = [f"test-vm.py lacks `{needle}`" for needle, at in zip(order, positions) if at < 0]
+    if not failures and positions != sorted(positions):
+        failures.append("test-vm.py copies the fixture before the fetched candidate is complete")
+    if "os.killpg(fetch.pid, signal.SIGTERM)" not in source:
+        failures.append("a fetch still running when the run ends is not stopped")
+    if "None if args.package_fetch else candidate(" not in source:
+        failures.append("without a fetch command the candidate is no longer required before boot")
+    withheld = source.find("os.environ.pop(name, None)")
+    if "for name in ('GH_TOKEN', 'GITHUB_TOKEN'):" not in source or "env=fetch_env" not in source \
+            or not 0 <= withheld < source.find("subprocess.run(") or withheld > source.find("vm_native.try_native("):
+        failures.append("the run's token reaches more than the fetch command")
+    return failures
+
+
 def job_block(text, name):
     match = re.search(rf"^  {re.escape(name)}:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", text,
                       re.MULTILINE | re.DOTALL)
@@ -579,6 +607,7 @@ def main():
             failures.extend(check(native))
 
     failures.extend(check_native_wiring())
+    failures.extend(check_candidate_fetch_wiring())
     failures.extend(check_sway_readiness())
     failures.extend(check_flag_help_warns())
     failures.extend(check_native_workflow())

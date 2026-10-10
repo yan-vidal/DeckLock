@@ -25,9 +25,41 @@ vms = {'vm': 'package', 'vm-fedora': 'package-fedora', 'vm-ubuntu': 'package-ubu
 for package in packages:
     assert not re.search(r'^    needs:', job(package), re.MULTILINE), (
         f'{package} must start alongside isolated tests')
+# Preparing and booting an emulated guest takes about as long as building its
+# candidate, so that job starts with the build and awaits the build's artifact.
+awaited = {'vm-ubuntu-aarch64'}
+package_workflow = (ROOT / '.github/workflows/build-package.yml').read_text()
+assert '    name: ${{ inputs.label }} package contract\n' in package_workflow
+assert 'name: ${{ inputs.target }}-package${{ inputs.artifact_suffix }}' in package_workflow
 for vm, package in vms.items():
-    assert re.search(rf'^    needs: {package}$', job(vm), re.MULTILINE), (
-        f'{vm} must wait for its exact candidate')
+    block, build = job(vm), job(package)
+    if vm not in awaited:
+        assert re.search(rf'^    needs: {package}$', block, re.MULTILINE), (
+            f'{vm} must wait for its exact candidate')
+        # A block ends where the next job's leading comment begins, so only its steps count.
+        steps = block.split('    steps:\n', 1)[1].split('\n  #', 1)[0]
+        assert '--package-fetch' not in steps and 'ci-await-candidate' not in steps
+        continue
+    assert not re.search(r'^    needs:', block, re.MULTILINE), f'{vm} must boot while {package} builds'
+
+    def value(key):
+        found = re.search(rf'^      {key}: (.+)$', build, re.MULTILINE)
+        return found.group(1) if found else ''
+    builder = f"{re.search(r'^    name: (.+)$', build, re.MULTILINE).group(1)} / {value('label')} package contract"
+    artifact = f"{value('target')}-package{value('artifact_suffix')}"
+    assert (f'scripts/ci-await-candidate --job "{builder}" --artifact {artifact} --directory dist'
+            in block), f'{vm} must await the artifact of the job that builds its candidate'
+    assert "--package 'dist/*.deb'" in block
+    assert 'actions/download-artifact' not in block, 'Only the awaited artifact may be the candidate'
+    assert re.search(r'^    permissions:\n      contents: read\n      actions: read\n', block, re.MULTILINE), (
+        f'{vm} lists jobs and downloads an artifact of its own run')
+    assert 'GH_TOKEN: ${{ github.token }}' in block
+# A called workflow cannot exceed its caller's permissions, so the release must grant them.
+release = (ROOT / '.github/workflows/release.yml').read_text()
+assert re.search(r'^  quality:\n(?:    #.*\n)*    permissions:\n      contents: read\n      actions: read\n'
+                 r'    uses: \./\.github/workflows/checks\.yml$', release, re.MULTILINE), (
+    'release.yml must let checks.yml read this run\'s jobs and artifacts')
+assert re.search(r'^permissions:\n  contents: read\n', workflow, re.MULTILINE)
 
 required = job('required')
 needs = re.search(r'^    needs: \[([^\]]*)\]', required, re.MULTILINE)
@@ -70,8 +102,8 @@ assert '    name: Real Wayland and PAM (Ubuntu aarch64)\n' in arm
 assert 'strategy:' not in arm and 'matrix' not in arm, 'The ARM VM runs one profile, once'
 assert 'continue-on-error:' not in arm
 assert '--tcg-pauth' not in arm, 'The CPU profile is test-vm.py\'s choice, not the workflow\'s'
-assert 'name: ubuntu-package-aarch64' in arm
-assert '--allow-emulation --provision-native --package dist/*.deb' in arm
+assert '--artifact ubuntu-package-aarch64 ' in arm
+assert '--allow-emulation --provision-native' in arm
 assert '          name: vm-evidence-ubuntu-aarch64\n' in arm
 assert '--suite' not in arm, 'The ARM VM must run the whole guest suite'
 

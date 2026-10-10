@@ -152,6 +152,7 @@ class VmEmulationCLI(unittest.TestCase):
         # Execution flags and nonexistent paths must not activate their effects.
         self.assertEqual(self.plan("ubuntu", "aarch64", "--provision-native",
                                    "--package", "absent-candidate.deb",
+                                   "--package-fetch", "touch fetched-by-plan; exit 7",
                                    "--logs", "must-not-create-logs"),
                          self.expected("ubuntu", "aarch64"))
 
@@ -186,13 +187,16 @@ class VmEmulationCLI(unittest.TestCase):
                 self.assertIn(diagnostic, result.stderr)
 
     def test_execution_still_requires_a_candidate_package(self):
+        # A fetch command fills --package later; it does not stand in for it.
         for arch in ("aarch64", "x86_64"):
-            with self.subTest(arch=arch):
-                result = self.invoke("--target", "ubuntu", "--arch", arch, "--allow-emulation")
-                self.assertEqual(result.returncode, 2, result.stderr)
-                self.assertEqual(result.stdout, "")
-                self.assertIn("--package", result.stderr)
-                self.assertIn("required", result.stderr)
+            for fetch in ((), ("--package-fetch", "touch fetched-without-package")):
+                with self.subTest(arch=arch, fetch=bool(fetch)):
+                    result = self.invoke("--target", "ubuntu", "--arch", arch,
+                                         "--allow-emulation", *fetch)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("--package", result.stderr)
+                    self.assertIn("required", result.stderr)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,12 @@ permissions:
   contents: read
 jobs:
   quality:
+    # checks.yml's emulated aarch64 VM job lists this run's jobs and downloads its
+    # candidate while the guest boots. A called workflow cannot exceed the
+    # permissions of the job that calls it, so they are granted here.
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/checks.yml
   publish:
     needs: quality
