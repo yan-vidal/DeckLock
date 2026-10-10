@@ -7,7 +7,6 @@ import shutil
 import shlex
 import subprocess
 import struct
-import tempfile
 import zlib
 import time
 import tomllib
@@ -411,8 +410,9 @@ record('packaged system setup prepares private storage owned by the HOME=/ greet
 # Hyprland refuses to start with superuser privileges and needs runtime storage, even to
 # verify a configuration, and sudo removes XDG_RUNTIME_DIR. Root setup must still verify
 # the login configuration it generates with the installed compositor: both conditions
-# stopped a real installation that fake verifiers had accepted. A custom target leaves
-# this guest's own greetd configuration for the login below.
+# stopped a real installation that fake verifiers had accepted. Root's TMPDIR may also be
+# private to root (pam_tmpdir), out of reach of the account that verifies. A custom
+# target leaves this guest's own greetd configuration for the login below.
 for compositor in os.environ.get('DECKLOCK_VM_SETUP_COMPOSITORS', '').split():
     assert compositor == 'hyprland', f'No root setup check for {compositor}'
     assert shutil.which('Hyprland'), 'The manifest names hyprland, but this guest did not install it'
@@ -421,7 +421,10 @@ for compositor in os.environ.get('DECKLOCK_VM_SETUP_COMPOSITORS', '').split():
     kiosk_config = kiosk / 'config.toml'
     kiosk_config.write_text(
         f'[default_session]\ncommand = "cage -s -- decklock --greeter"\nuser = "{greeter_name}"\n')
+    private_tmp = kiosk / 'root-tmp'
+    private_tmp.mkdir(mode=0o700)
     sudo_env = {key: value for key, value in setup_env.items() if key != 'XDG_RUNTIME_DIR'}
+    sudo_env['TMPDIR'] = str(private_tmp)
     applied = subprocess.run(
         ['decklock', 'setup', 'greeter', '--target', str(kiosk_config), '--compositor', 'hyprland',
          '--output', 'Virtual-1', '--transform', '3', '--controller'],
@@ -432,9 +435,9 @@ for compositor in os.environ.get('DECKLOCK_VM_SETUP_COMPOSITORS', '').split():
     assert 'start-hyprland -- -c' in kiosk_config.read_text()
     kiosk_lua = (kiosk / 'hyprland-greeter.lua').read_text()
     assert 'transform = 3' in kiosk_lua and '--greeter-controller' in kiosk_lua
-    assert not list(Path(tempfile.gettempdir()).glob('decklock-hyprland-verify-*')), \
+    assert not list(Path('/tmp').glob('decklock-hyprland-verify-*')) and not list(private_tmp.iterdir()), \
         'Hyprland verification storage was left behind'
-    record('packaged root setup verifies its generated Hyprland login configuration with the installed Hyprland, without a runtime directory')
+    record('packaged root setup verifies its generated Hyprland login configuration with the installed Hyprland, without a runtime directory and with a private TMPDIR')
 
 greeter_config = state_dir / 'decklock/config.toml'
 greeter_config.parent.mkdir(parents=True, exist_ok=True)

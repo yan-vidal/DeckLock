@@ -1096,10 +1096,15 @@ fn setup_greeter_with_storage(
     };
     // Parse/validate existing greetd policy before touching any saved files.
     let review = write_greeter_config(target, &command, true)?;
-    if !dry_run && let Some(lua) = &lua {
-        verify_hyprland_config(lua)?;
-    }
     let user = configured_greeter_user(path)?;
+    if !dry_run && let Some(lua) = &lua {
+        let account = hyprland_verifier_ids(
+            unsafe { libc::geteuid() },
+            &fs::read_to_string("/etc/passwd").unwrap_or_default(),
+            &user,
+        )?;
+        verify_hyprland_config(lua, account)?;
+    }
     let (appearance, sharing_report) = appearance::prepare(
         dir.as_deref(),
         target.is_none(),
@@ -1179,16 +1184,31 @@ fn hyprland_greeter_config(
     )
 }
 
-fn verify_hyprland_config(lua: &str) -> Result<(), String> {
-    use std::io::Write;
+/// The account `Hyprland --verify-config` runs as when setup itself is root.
+/// Hyprland refuses to start with superuser privileges, and greetd's account is
+/// the one that will run this configuration. Other callers verify as themselves.
+fn hyprland_verifier_ids(
+    euid: u32,
+    passwd: &str,
+    user: &str,
+) -> Result<Option<(u32, u32)>, String> {
+    if euid != 0 {
+        return Ok(None);
+    }
+    match passwd_ids(passwd, user) {
+        Some((0, _)) => Err("greetd default_session.user must be a non-root service account; greetd was not changed".into()),
+        Some(ids) => Ok(Some(ids)),
+        None => Err(format!(
+            "The '{user}' service account is missing; install/configure greetd before setup"
+        )),
+    }
+}
+
+fn verify_hyprland_config(lua: &str, account: Option<(u32, u32)>) -> Result<(), String> {
+    use std::os::unix::process::CommandExt;
     if !command_exists("start-hyprland") || !command_exists("hyprctl") {
         return Err("Hyprland setup needs start-hyprland and hyprctl installed".into());
     }
-    let mut file = tempfile::Builder::new()
-        .suffix(".lua")
-        .tempfile()
-        .map_err(|e| e.to_string())?;
-    file.write_all(lua.as_bytes()).map_err(|e| e.to_string())?;
     // Configuration verification cannot block installation indefinitely. Keep
     // output in a temporary file so a verbose verifier cannot fill a pipe.
     let log = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
@@ -1197,14 +1217,33 @@ fn verify_hyprland_config(lua: &str) -> Result<(), String> {
     let output = log.reopen().map_err(|e| e.to_string())?;
     // Hyprland requires runtime storage even in --verify-config. sudo commonly
     // removes XDG_RUNTIME_DIR; never borrow the desktop's runtime/config instead.
-    let verifier_home = tempfile::Builder::new()
+    let storage_error = |e| format!("Cannot prepare Hyprland verification storage: {e}");
+    let mut storage = tempfile::Builder::new();
+    storage
         .prefix("decklock-hyprland-verify-")
-        .permissions(fs::Permissions::from_mode(0o700))
-        .tempdir()
-        .map_err(|e| format!("Cannot prepare Hyprland verification storage: {e}"))?;
-    let mut child = ProcessCommand::new("Hyprland")
+        .permissions(fs::Permissions::from_mode(0o700));
+    let verifier_home = match account {
+        // Root's own TMPDIR can be private to root (pam_tmpdir), where the account
+        // below could not reach its storage. /tmp is traversable by every account.
+        Some(_) => storage.tempdir_in("/tmp"),
+        None => storage.tempdir(),
+    }
+    .map_err(storage_error)?;
+    // The configuration lives in that storage, so one account owns all it reads.
+    let file = verifier_home.path().join("hyprland-greeter.lua");
+    fs::write(&file, lua).map_err(storage_error)?;
+    let mut command = ProcessCommand::new("Hyprland");
+    if let Some((uid, gid)) = account {
+        // Root keeps its log and removes the storage afterwards; the verifier
+        // itself holds no privilege and no supplementary group.
+        for path in [verifier_home.path(), file.as_path()] {
+            std::os::unix::fs::chown(path, Some(uid), Some(gid)).map_err(storage_error)?;
+        }
+        command.uid(uid).gid(gid);
+    }
+    let mut child = command
         .args(["--verify-config", "-c"])
-        .arg(file.path())
+        .arg(&file)
         .env("HOME", verifier_home.path())
         .env("XDG_RUNTIME_DIR", verifier_home.path())
         .env("XDG_CONFIG_HOME", verifier_home.path())
@@ -1632,6 +1671,32 @@ mod tests {
         assert_eq!(passwd_ids(passwd, "greeter2"), Some((1, 2)));
         assert_eq!(passwd_ids(passwd, "nobody"), None);
         assert_eq!(passwd_ids("greeter:x:abc:1::/:/bin/sh\n", "greeter"), None);
+    }
+
+    #[test]
+    fn hyprland_is_verified_as_the_greetd_account_only_when_setup_is_root() {
+        let passwd = "root:x:0:0:root:/root:/bin/bash\n\
+                      greeter:x:968:967:greetd greeter user:/:/bin/bash\n\
+                      toor:x:0:0::/root:/bin/sh\n";
+        // Unprivileged callers verify as themselves, whatever accounts exist.
+        assert_eq!(hyprland_verifier_ids(1000, passwd, "greeter"), Ok(None));
+        assert_eq!(hyprland_verifier_ids(1000, passwd, "absent"), Ok(None));
+        // Hyprland refuses superuser privileges: root verifies as greetd's account.
+        assert_eq!(
+            hyprland_verifier_ids(0, passwd, "greeter"),
+            Ok(Some((968, 967)))
+        );
+        // Never as root under another name, and never as a guessed account.
+        assert!(
+            hyprland_verifier_ids(0, passwd, "toor")
+                .unwrap_err()
+                .contains("non-root service account")
+        );
+        assert!(
+            hyprland_verifier_ids(0, passwd, "absent")
+                .unwrap_err()
+                .contains("'absent' service account is missing")
+        );
     }
 
     /// Runs `setup lock` against an existing hypridle.conf and returns the file

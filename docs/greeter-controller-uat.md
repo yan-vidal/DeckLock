@@ -1,10 +1,11 @@
 # Pads no login: validação física acompanhada
 
-Esta etapa permanece pendente. A 0.3.4 publica a opção antes desta validação,
-por decisão do usuário, para que o teste seja feito no pacote publicado. Os testes
-isolados não comprovam acesso ao USB, uinput, comportamento físico dos pads ou
-passagem para o daemon do desktop. Use um ambiente recuperável e o pacote publicado
-da 0.3.4 ou mais recente, conferido pelo `SHA256SUMS` do release. Um candidato de
+Esta etapa permanece pendente. A 0.3.4 publicou a opção antes desta validação,
+por decisão do usuário, para que o teste seja feito no pacote publicado. Nela o
+setup Hyprland via sudo falha antes de alterar o greetd; a 0.3.5 corrige isso.
+Os testes isolados não comprovam acesso ao USB, uinput, comportamento físico dos
+pads ou passagem para o daemon do desktop. Use um ambiente recuperável e o pacote
+publicado da 0.3.5 ou mais recente, conferido pelo `SHA256SUMS` do release. Um candidato de
 PR só serve depois que seus checks de pacote/VM passarem. Não use o executável
 local como pacote de release.
 

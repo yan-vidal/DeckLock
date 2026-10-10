@@ -1531,6 +1531,11 @@ runtime = pathlib.Path(os.environ['XDG_RUNTIME_DIR'])
 assert runtime != pathlib.Path(os.environ['INHERITED_RUNTIME'])
 info = runtime.stat()
 assert stat.S_IMODE(info.st_mode) == 0o700 and info.st_uid == os.geteuid(), (oct(stat.S_IMODE(info.st_mode)), info.st_uid, os.geteuid())
+# Root hands this storage to an unprivileged verifier, so the configuration has to live
+# inside it and belong to the same account, not in a file only the caller can read.
+config = pathlib.Path(sys.argv[3])
+assert config.parent == runtime, (str(config), str(runtime))
+assert config.stat().st_uid == os.geteuid(), (config.stat().st_uid, os.geteuid())
 for key in ['HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME']:
     assert pathlib.Path(os.environ[key]) == runtime, key
 for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'WAYLAND_SOCKET', 'DBUS_SESSION_BUS_ADDRESS', 'HYPRLAND_INSTANCE_SIGNATURE', 'GREETD_SOCK']:

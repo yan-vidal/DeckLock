@@ -2,6 +2,25 @@
 
 User-facing changes are reviewed in pull requests. Dates are assigned when a release is approved. Packaging-only rebuilds use Arch pkgrel and a separate -rN tag; published assets are never replaced.
 
+## [0.3.5] - 2026-10-10
+
+### Fixed
+
+- `setup greeter --compositor hyprland` and `setup all --compositor hyprland` work
+  through sudo. Hyprland refuses to start with superuser privileges, even to verify
+  a configuration, so root setup rejected its own valid Lua and left greetd
+  unchanged: 0.3.4 stopped there, and 0.3.3 one step earlier, at the runtime
+  directory sudo removes. Root now verifies as greetd's configured account, with
+  storage that account owns under `/tmp`, and never as root. A missing account
+  or one with UID 0 is refused before greetd changes.
+
+### Compatibility and limitations
+
+- The Arch VM gate now installs Hyprland and runs this setup as root against it;
+  the 0.3.3 and 0.3.4 gates used a fake verifier that accepted any caller. An actual
+  Hyprland login, GPU behavior and the Steam Deck validation of pad input remain
+  outside what the suites establish.
+
 ## [0.3.4] - 2026-10-10
 
 ### Added

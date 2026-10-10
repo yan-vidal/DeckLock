@@ -660,6 +660,8 @@ def main():
              "greeter.py would skip the Hyprland setup when the manifest names it but it is absent"),
             ("if key != 'XDG_RUNTIME_DIR'",
              "greeter.py runs the Hyprland setup with a runtime directory sudo would have removed"),
+            ("sudo_env['TMPDIR'] = str(private_tmp)",
+             "greeter.py runs the Hyprland setup without a TMPDIR private to root"),
             ("'--compositor', 'hyprland'", "greeter.py no longer applies the Hyprland login setup")):
         if needle not in greeter_source:
             failures.append(problem)
