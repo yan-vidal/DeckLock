@@ -66,6 +66,7 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | CLI executable | `tests/cli_contract.rs`, `src/main.rs` parser regression | Help without a display, alternate paths before/after subcommands, option round trips, invalid-write protection, import/reset |
 | Configuration | `src/config.rs`, `src/config_cli.rs` | Schema/ranges, path resolution, defaults, preservation and atomic saves |
 | Controller protocol | `src/controller.rs`, shortcut mock | Fragmented lines, no unsolicited capture, capture/release and no separate OSK |
+| Greeter controller ownership | `scripts/test-greeter-controller.py`, real CLI/private GTK | Explicit setup opt-in, private daemon/profile, no desktop config changes, no daemon in preview/without greetd/default login, capture only for a visible keyboard, release when hidden, missing dependency/failed startup/timeout fallback, graceful exit, stalled shutdown, SIGTERM and SIGKILL cleanup |
 | Adaptive foreground | `examples/preview_check.rs` | Fixed 1280×800 and 800×500 allocations, proportional controls, fullscreen media, transformed keyboard picking/clicks and destroyed-widget cleanup on a private display |
 | Combined setup | `tests/cli_contract.rs`, `scripts/vm/greeter.py` | Real CLI dry-run, option forwarding, invalid-input preservation and repeat; packaged VM checks sudo caller HOME, file/backup ownership and permissions instead of root configuration |
 | Keyboard | `src/keyboard.rs`, `examples/preview_check.rs` | Shift/Caps/Alt, Unicode/dead keys, ghost opacity and pad release |
@@ -84,7 +85,7 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | Greeter state directory and default session | `src/greeter.rs` unit tests, `src/setup.rs` unit tests, `tests/cli_contract.rs` | Under greetd the state file goes to the system directory when it exists (an explicit path and `XDG_STATE_HOME` still win, and outside greetd it is ignored); a uwsm-managed session is preselected over the bare one only when `uwsm` exists; `setup greeter --state-dir` creates the directory with mode 0750, does nothing in a dry run, and a custom `--target` alone creates nothing. The packaged service account is preserved; traversal/writing as that account, rejection of inaccessible ancestors before changing greetd, ownership, HOME=/ startup and the enforcing SELinux display-manager storage label are additionally asserted by the packaged VM gate |
 | Shared login media and private appearance | `tests/cli_contract.rs`, `scripts/vm/greeter.py` | Real CLI migrates one canonical library, checks inode/aliases, cross-filesystem bytes, deduplication/recovery, old snapshot conversion/rejection preserving installed appearance, CLI import, empty pools/procedurals, dry-run/repeat, failed-input preservation and appearance override. Packaged guest asserts owner-write/world-read modes, private HOME traversal denial, shared pool paths, SELinux mapping, separate common HOME volume selection/ineligible-parent or named-ACL fallback and a cyan photo rendered by real Cage with HOME=/; root-only selected input is rejected before replacing saved login/appearance |
 | Greeter startup and kiosk | `tests/cli_contract.rs`, `examples/preview_check.rs` | Unwritable HOME reaches GTK rather than aborting on media preparation; optional media failures name their path; greeter windows are undecorated; fullscreen is requested after the initial surface frame and acknowledged by a private xfwm4 in the GTK gate |
-| Hyprland greeter setup | `tests/cli_contract.rs` | Generated Lua rotates output and touchscreen, closes the compositor after DeckLock, preserves a working Hyprland command on repeat, refuses invalid rotation and passes custom storage paths through greetd shell quoting. Installed Hyprland Lua parsing is a separate local check; this does not prove GPU or real Hyprland login |
+| Hyprland greeter setup | `tests/cli_contract.rs` | Generated Lua rotates output and touchscreen, closes the compositor after DeckLock, preserves a working Hyprland command on repeat, refuses invalid rotation and passes custom storage paths through greetd shell quoting. Real CLI verification uses temporary owner-only HOME/XDG storage even without sudo's runtime environment, excludes desktop/greeter sockets, removes temporary artifacts and preserves saved greetd/Lua on rejection. Installed Hyprland Lua parsing is a separate local check; this does not prove GPU or real Hyprland login |
 | Lock setup command | `src/setup.rs` unit tests, `tests/cli_contract.rs` | Editing an existing `hypridle.conf`: exact key matching (`on_lock_cmd` untouched), known lockers replaced in `general` and `listener` blocks, trailing comments kept, custom wrappers and compound commands kept and reported until `--replace-custom` (including shell parameter braces and guards for unrelated processes), listeners that are not the lock command never replaced, inserting missing keys without corrupting shell expressions or losing listener edits, idempotence, atomic replacement preserving file mode, and a failed backup preserving the original. Never touches the real `~/.config`: every case uses `--target` in a temporary directory |
 | Real greetd login | `scripts/vm/greeter.py`, run by each distribution VM | Packaged setup command, greetd as a system service, logind runtime directories for the greeter and user sessions, real greetd and PAM rejection/acceptance, Cage Wayland greeter, chosen session running as the authenticated user, and a second account selected by arrow key |
 | Lock boundary on further compositors | `scripts/vm/compositor.py`, run by each distribution VM for its `EXTRA_COMPOSITORS` (labwc with pixman, Wayfire with software GLES on vgem) | Input reaching an ordinary client before lock, compositor lock confirmation, real PAM denial with no input leak, one protocol unlock, input restored, and a killed locker leaving the compositor locked. PAM policy cases stay on Sway only |
@@ -276,3 +277,20 @@ and retains the configured greeter command in
 [Context](https://github.com/kennylevinsen/greetd/blob/0.10.3/greetd/src/context.rs).
 Packaged VM startup uses a fresh service; it does not establish configuration
 hot reload. Setup still leaves services running, preserving the active session.
+
+### Greeter pad validation
+
+`scripts/check --all` includes a private Xvfb/D-Bus greeter-controller gate. Its
+`scc-daemon` is an executable fake supplied through a temporary PATH; no physical
+daemon or controller is used. `examples/preview_check.rs` also checks both pads
+typing independently in the login keyboard, disconnect fallback and restored
+ghost geometry. Setup CLI checks cover Cage/Hyprland option forwarding, dry-run,
+repeat/preservation and explicit disable. The profile is embedded in the binary;
+the locally installed sc-controller 0.7.1 parser can load it without starting a
+daemon, but CI's fake does not establish compatibility with every sc-controller
+version. Packaged VM jobs do not currently install sc-controller or exercise USB
+and uinput. [The device UAT procedure](greeter-controller-uat.md) covers those
+boundaries, authenticated-session handoff and recovery. Normal exit removes its
+private files; abrupt death can leave a small runtime directory until runtime
+cleanup, with no password data. The parent-death signal follows
+[Linux PR_SET_PDEATHSIG](https://man7.org/linux/man-pages/man2/PR_SET_PDEATHSIG.2const.html).

@@ -62,6 +62,72 @@ impl Cli {
     }
 }
 #[test]
+fn greeter_pad_setup_is_explicit_and_forwards_to_both_compositors() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let state = cli.home.path().join("greeter state");
+    let args = [
+        "setup",
+        "greeter",
+        "--target",
+        target.to_str().unwrap(),
+        "--state-dir",
+        state.to_str().unwrap(),
+        "--controller",
+    ];
+    let mut dry_run = args.to_vec();
+    dry_run.push("--dry-run");
+    let review = cli.run(&dry_run, true);
+    assert!(String::from_utf8_lossy(&review.stdout).contains("--greeter-controller"));
+    assert!(!target.exists() && !state.exists());
+    cli.run(&args, true);
+    let before = std::fs::read_to_string(&target).unwrap();
+    assert!(
+        before.contains("--greeter --keyboard --greeter-controller"),
+        "{before}"
+    );
+    cli.run(&args, true);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), before);
+    cli.run(&args[..args.len() - 1], true);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), before);
+    let mut invalid = args.to_vec();
+    invalid.push("--no-keyboard");
+    cli.run(&invalid, false);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), before);
+    let mut hyprland = args.to_vec();
+    hyprland.extend(["--compositor", "hyprland", "--dry-run"]);
+    assert!(
+        String::from_utf8_lossy(&cli.run(&hyprland, true).stdout)
+            .contains("--greeter --keyboard --greeter-controller;")
+    );
+    let lock = cli.home.path().join("hypridle.conf");
+    cli.run(
+        &[
+            "setup",
+            "all",
+            "--greeter-target",
+            target.to_str().unwrap(),
+            "--lock-target",
+            lock.to_str().unwrap(),
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--controller",
+        ],
+        true,
+    );
+    assert!(lock.is_file());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), before);
+    let mut disable = args.to_vec();
+    *disable.last_mut().unwrap() = "--controller=false";
+    cli.run(&disable, true);
+    assert!(
+        !std::fs::read_to_string(&target)
+            .unwrap()
+            .contains("--greeter-controller")
+    );
+}
+
+#[test]
 fn greeter_setup_explains_that_logout_does_not_reload_the_daemon() {
     let cli = Cli::new();
     let target = cli.home.path().join("greetd.toml");
@@ -1436,6 +1502,124 @@ fn wait_output(mut child: std::process::Child) -> Output {
         std::thread::sleep(Duration::from_millis(5));
     }
     child.wait_with_output().unwrap()
+}
+
+#[test]
+fn hyprland_setup_verifies_with_private_runtime_even_without_sudo_environment() {
+    let cli = Cli::new();
+    let target = cli.home.path().join("greetd.toml");
+    let lua = cli.home.path().join("hyprland-greeter.lua");
+    let bin = cli.home.path().join("fake-bin");
+    let inherited = cli.home.path().join("inherited-runtime");
+    let record = cli.home.path().join("verifier.json");
+    std::fs::create_dir(&bin).unwrap();
+    std::fs::create_dir(&inherited).unwrap();
+    std::fs::write(inherited.join("preserve"), "runtime canary").unwrap();
+    for name in ["start-hyprland", "hyprctl"] {
+        let file = bin.join(name);
+        std::fs::write(&file, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let verifier = bin.join("Hyprland");
+    std::fs::write(
+        &verifier,
+        r#"#!/usr/bin/python3
+import json, os, pathlib, stat, sys
+assert sys.argv[1:3] == ['--verify-config', '-c'], sys.argv[1:]
+assert pathlib.Path(sys.argv[3]).read_text().startswith('-- DeckLock login compositor')
+runtime = pathlib.Path(os.environ['XDG_RUNTIME_DIR'])
+assert runtime != pathlib.Path(os.environ['INHERITED_RUNTIME'])
+info = runtime.stat()
+assert stat.S_IMODE(info.st_mode) == 0o700 and info.st_uid == os.geteuid(), (oct(stat.S_IMODE(info.st_mode)), info.st_uid, os.geteuid())
+for key in ['HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME']:
+    assert pathlib.Path(os.environ[key]) == runtime, key
+for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'WAYLAND_SOCKET', 'DBUS_SESSION_BUS_ADDRESS', 'HYPRLAND_INSTANCE_SIGNATURE', 'GREETD_SOCK']:
+    assert key not in os.environ, key
+(runtime/'verifier-artifact').write_text('isolated verifier storage')
+pathlib.Path(os.environ['VERIFIER_RECORD']).write_text(json.dumps({'runtime': str(runtime)}))
+if os.environ.get('VERIFIER_REJECT'):
+    print('invalid-lua', file=sys.stderr)
+    sys.exit(1)
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&verifier, std::fs::Permissions::from_mode(0o755)).unwrap();
+    for (runtime_present, reject) in [(false, false), (true, false), (false, true)] {
+        std::fs::write(
+            &target,
+            "[default_session]\ncommand = 'cage -s -- decklock --greeter'\nuser = 'greeter'\n",
+        )
+        .unwrap();
+        std::fs::write(&lua, "-- saved working Lua\n").unwrap();
+        let saved_config = std::fs::read(&target).unwrap();
+        let saved_lua = std::fs::read(&lua).unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_decklock"));
+        command
+            .args([
+                "setup",
+                "greeter",
+                "--target",
+                target.to_str().unwrap(),
+                "--compositor",
+                "hyprland",
+                "--output",
+                "eDP-1",
+                "--transform",
+                "3",
+                "--controller",
+            ])
+            .env("HOME", cli.home.path())
+            .env("XDG_CONFIG_HOME", cli.home.path().join("config"))
+            .env("XDG_DATA_HOME", cli.home.path().join("data"))
+            .env("XDG_CACHE_HOME", cli.home.path().join("cache"))
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .env("TMPDIR", cli.home.path())
+            .env("INHERITED_RUNTIME", &inherited)
+            .env("VERIFIER_RECORD", &record)
+            .env("HYPRLAND_INSTANCE_SIGNATURE", "isolated-canary")
+            .env(
+                "DBUS_SESSION_BUS_ADDRESS",
+                "unix:path=/nonexistent-gate-bus",
+            )
+            .env("GREETD_SOCK", cli.home.path().join("fake-greetd"))
+            .env_remove("DISPLAY")
+            .env_remove("WAYLAND_DISPLAY")
+            .env_remove("WAYLAND_SOCKET")
+            .env_remove("DECKLOCK_GREETER_APPEARANCE");
+        if runtime_present {
+            command.env("XDG_RUNTIME_DIR", &inherited);
+        } else {
+            command.env_remove("XDG_RUNTIME_DIR");
+        }
+        if reject {
+            command.env("VERIFIER_REJECT", "1");
+        }
+        let result = bounded_output(&mut command);
+        assert_eq!(
+            result.status.success(),
+            !reject,
+            "runtime_present={runtime_present}, reject={reject}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let recorded: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&record).unwrap()).unwrap();
+        assert!(!Path::new(recorded["runtime"].as_str().unwrap()).exists());
+        assert_eq!(
+            std::fs::read_to_string(inherited.join("preserve")).unwrap(),
+            "runtime canary"
+        );
+        if reject {
+            assert!(String::from_utf8_lossy(&result.stderr).contains("invalid-lua"));
+            assert_eq!(std::fs::read(&target).unwrap(), saved_config);
+            assert_eq!(std::fs::read(&lua).unwrap(), saved_lua);
+        } else {
+            assert!(
+                std::fs::read_to_string(&lua)
+                    .unwrap()
+                    .contains("--greeter-controller")
+            );
+        }
+    }
 }
 
 #[test]

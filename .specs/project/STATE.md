@@ -468,6 +468,55 @@ held by an earlier check had to be released explicitly. Untested: a real sc-cont
 with a physical controller; the Steam Deck device checks and hardware stay outside what the
 suite establishes.
 
+2026-10-09 greeter pad input: resumed on feat/greeter-pad-input from main 26e1bef.
+Root's pre-0.3.3 workflow/docs draft was superseded; the old forced UID/runtime
+environment workaround was not ported because current greetd/logind service
+tests already establish that boundary. Exact staged/unstaged patches and the
+untracked prototype are retained under target/reconciliation-2026-10-09 in the
+worktree. Root tracked edits are in stash 40cb86326547b03c9763d60199a1cfb6bd335648;
+root now follows main. Original notebook/prototype/dependency files are preserved.
+
+setup greeter/all --controller now opt into --greeter-controller; omission
+preserves the saved choice and --controller=false disables it. Real greetd only
+owns a foreground/alone sc-controller child and a static embedded profile in
+private runtime storage, with normal bounded termination/reaping and Linux
+parent-death protection. Preview/settings never start it. Missing/failed daemon
+startup keeps the existing clickable keyboard. No device rules, groups, host
+service configuration, passwords, PAM actions or session-lock behavior changed.
+The installed 0.7.1 profile parser was checked without running a daemon; the
+old prototype's Profile() constructor lacked its required ActionParser.
+
+Regression first failed at the actual setup CLI rejecting --controller and at
+the real binary rejecting --greeter-controller. An additional real Unix protocol
+regression reproduced Ready without hardware incorrectly reporting Connected;
+it now keeps fallback and restores Connected on device hotplug. GTK checks type
+with both pads in login mode and verify disconnect fallback. An initial new GTK
+fixture sent pad events before the newly shown keyboard was allocated; it now
+waits with a bound and uses a fixed keyboard layout, preserving the assertions.
+scripts/check --all adds a real binary/fake daemon lifecycle gate (private Xvfb
+and D-Bus). Final-commit local/CI evidence is to be recorded after verification;
+physical Steam Deck and sc-controller-in-package VM validation remain pending.
+No installation, host daemon restart, release or tag performed. Device procedure:
+docs/greeter-controller-uat.md; investigation pointers: .notebook/greeter-pad-input.md.
+
+2026-10-09 device setup follow-up: PR #59 head 424849c passed all 11 CI checks
+(run 37981085723). The user installed its Arch candidate on the Steam Deck OLED;
+the installed binary hash matches the candidate and the packaged Arch VM evidence.
+Dry-run succeeded, but applying setup exposed a separate installer boundary:
+Hyprland --verify-config requires XDG_RUNTIME_DIR, which sudo removes. The saved
+greetd configuration remained unchanged and the service was not restarted.
+
+A new real-CLI regression failed first with the missing runtime. Verification now
+creates owner-only temporary HOME/XDG storage and removes inherited desktop,
+D-Bus, Hyprland and greetd sockets for that child; no runtime environment is
+forced into the actual greetd session. The regression also checks cleanup, an
+inherited runtime left untouched, and saved greetd/Lua preservation on rejection.
+The installed Hyprland 0.56.2 reproduced the missing-runtime abort and accepted
+the generated Lua with private runtime storage; invalid Lua was still rejected.
+This is isolated parser evidence, not root package installation or real login.
+The corrected commit needs its own full local/CI checks and a new candidate
+before accompanied service activation and physical controller/PAM validation.
+
 2026-10-09 CI preparation: user authorized dependency images, download caches and
 concurrent package builds after reviewing their costs. Separate worktree/branch
 perf/ci-dependency-cache keeps PR #59's accompanied Deck UAT candidate intact.
@@ -593,3 +642,23 @@ once, guests differ in suites only, KVM jobs take no selection). Costs: three AR
 about as long as one ran before; on ARM the suites no longer follow one another in one guest,
 so an effect of one suite on a later one is exercised by the KVM guests only. No timing is
 claimed until this change's own run.
+
+2026-10-10 0.3.4 release (PR #59): the user approved publishing 0.3.4 and merging PR #59
+before its accompanied Steam Deck validation, so that the device test runs on the published
+package instead of a CI candidate. This reverses the plan recorded above, which validated a
+candidate before merge and proposed no release or tag. The branch merges main (2084f8d; only
+this file conflicted and both series of entries are kept) and carries the version bump, the
+dated changelog, the README install examples and the limits. Runs 38020534604 and 38023182398
+(PR #63 and main at 9f94422) took 11m54s and 12m06s with the same 41 assertions per
+target. State of the device when this was written: the installed package is still the 424849c
+candidate, the saved greetd configuration is unchanged, greetd was not restarted and no item
+of docs/greeter-controller-uat.md has been executed. Published without evidence: pad input on
+hardware, controller/uinput access of the greetd account, the handoff to the desktop daemon,
+and the Hyprland setup fix through a root installation and a real login. This is the first
+release through release.yml since #62 and #63: the `actions: read` grant to the called checks
+and the three-guest ARM matrix under workflow_call run for the first time with this tag. The
+awaiter's job-name match was compared with the v0.3.3 release run, whose builder job is listed
+as `quality / Package (Ubuntu aarch64) / Ubuntu aarch64 package contract`, the prefixed form it
+accepts. If the tag workflow fails, the fix goes through a PR and a new version; the tag is not
+moved. Next: tag v0.3.4 after main's checks, confirm the assets, then the accompanied device
+procedure with the release package.

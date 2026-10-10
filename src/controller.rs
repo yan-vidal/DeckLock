@@ -61,6 +61,60 @@ mod tests {
     }
 
     #[test]
+    fn ready_without_a_device_keeps_fallback_and_hotplug_restores_input() {
+        use std::io::{BufRead, BufReader};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("daemon.socket");
+        let listener = UnixListener::bind(&path).unwrap();
+        let client = ControllerClient::connect(path).unwrap();
+        let (mut peer, _) = listener.accept().unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        let mut lines = BufReader::new(peer.try_clone().unwrap());
+        // This is the installed daemon's greeting when no hardware is present.
+        peer.write_all(b"Controller Count: 0\nReady.\n").unwrap();
+        client.set_active(true).unwrap();
+        let end = std::time::Instant::now() + Duration::from_millis(150);
+        let mut unavailable = false;
+        while let Ok(event) = client
+            .events
+            .recv_timeout(end.saturating_duration_since(std::time::Instant::now()))
+        {
+            assert_eq!(
+                event,
+                ControllerEvent::Disconnected,
+                "A ready daemon without a device must not enable the pad keyboard"
+            );
+            unavailable = true;
+        }
+        assert!(
+            unavailable,
+            "No fallback notification for an empty controller list"
+        );
+        for id in ["first", "replugged"] {
+            peer.write_all(
+                format!("Controller: {id} deck 0 None\nController Count: 1\n").as_bytes(),
+            )
+            .unwrap();
+            assert_eq!(
+                client.events.recv_timeout(Duration::from_secs(2)).unwrap(),
+                ControllerEvent::Connected
+            );
+            let mut line = String::new();
+            lines.read_line(&mut line).unwrap();
+            assert_eq!(line, format!("Controller: {id}\n"));
+            peer.write_all(b"OK.\n").unwrap();
+            line.clear();
+            lines.read_line(&mut line).unwrap();
+            assert!(line.starts_with("Lock: "), "{line}");
+            peer.write_all(b"OK.\nController Count: 0\n").unwrap();
+            assert_eq!(
+                client.events.recv_timeout(Duration::from_secs(2)).unwrap(),
+                ControllerEvent::Disconnected
+            );
+        }
+    }
+
+    #[test]
     fn parser_rejects_bad_input_and_preserves_touch_release() {
         assert_eq!(
             parse_event("Event: c LPADTOUCH 0", "c"),
@@ -367,6 +421,9 @@ fn run(
                 let id = body.split_whitespace().next().unwrap_or_default();
                 if controller.is_none() && !id.is_empty() {
                     controller = Some(id.to_owned());
+                    if ready {
+                        let _ = events.try_send(ControllerEvent::Connected);
+                    }
                 }
             } else if line == "OK." && selecting {
                 selecting = false;
@@ -379,10 +436,16 @@ fn run(
                 captured = true;
             } else if line == "Ready." {
                 ready = true;
-                let _ = events.try_send(ControllerEvent::Connected);
+                let _ = events.try_send(if controller.is_some() {
+                    ControllerEvent::Connected
+                } else {
+                    ControllerEvent::Disconnected
+                });
             } else if line == "Controller Count: 0" {
                 captured = false;
                 controller = None;
+                selecting = false;
+                capture_pending = false;
                 let _ = events.try_send(ControllerEvent::Disconnected);
             } else if line.starts_with("Fail:") || line.starts_with("Error:") {
                 // Refusal must not cause a retry loop or displace another client.

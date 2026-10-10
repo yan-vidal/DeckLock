@@ -68,6 +68,7 @@ with tempfile.TemporaryDirectory(prefix='decklock-check-') as temporary:
     step('whitespace',['git','diff','--check'],env)
     if args.all:
         step('isolated-gtk',['xvfb-run','-a','-s','-screen 0 1280x800x24 -nolisten tcp','dbus-run-session','--',sys.executable,'scripts/test-gui-isolated.py'],env,240)
+        step('greeter-controller',['xvfb-run','-a','-s','-screen 0 1280x800x24 -nolisten tcp','dbus-run-session','--',sys.executable,'scripts/test-greeter-controller.py'],env,60)
         step('wayland-protocol',[sys.executable,'scripts/test-lock-isolated.py'],env,60)
         step('build-x11',[cargo,'build','--locked','--offline','--features','x11','--target-dir','target/x11','--bin','decklock','--example','x11_intruder','--example','x11_video_check','--example','greeter_keys_check'],env)
         step('x11-vm-fixture',[sys.executable,'scripts/test-vm-x11-fixture.py'],env,30)

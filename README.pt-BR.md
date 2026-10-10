@@ -12,8 +12,8 @@ Suporte opcional a controles, incluindo dispositivos como o Steam Deck.
 
 ## Instalação
 
-A versão **0.3.3** é publicada no
-[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.3) para Arch,
+A versão **0.3.4** é publicada no
+[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.4) para Arch,
 Fedora 43 e Ubuntu 26.04 em x86_64, e para o Ubuntu 26.04 em aarch64 (arm64). Cada
 pacote instala o aplicativo, o atalho **Configurações do DeckLock**, as mídias
 incluídas e o serviço PAM que o DeckLock usa. O gerenciador de pacotes resolve as
@@ -26,38 +26,38 @@ instalar num GNOME ou KDE Plasma padrão não permite que o DeckLock bloqueie a 
 ### Arch Linux · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/decklock-0.3.3-1-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.4/decklock-0.3.4-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.4/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.3.3-1-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.3.4-1-x86_64.pkg.tar.zst
 ```
 
 ### Fedora 43 · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/decklock-0.3.3-1.fc43.x86_64.rpm
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.4/decklock-0.3.4-1.fc43.x86_64.rpm
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.4/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo dnf install ./decklock-0.3.3-1.fc43.x86_64.rpm
+sudo dnf install ./decklock-0.3.4-1.fc43.x86_64.rpm
 ```
 
 ### Ubuntu 26.04 · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/decklock_0.3.3-1_amd64.deb
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.4/decklock_0.3.4-1_amd64.deb
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.4/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo apt install ./decklock_0.3.3-1_amd64.deb
+sudo apt install ./decklock_0.3.4-1_amd64.deb
 ```
 
 ### Ubuntu 26.04 · aarch64 (arm64)
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/decklock_0.3.3-1_arm64.deb
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.3/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.4/decklock_0.3.4-1_arm64.deb
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.4/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo apt install ./decklock_0.3.3-1_arm64.deb
+sudo apt install ./decklock_0.3.4-1_arm64.deb
 ```
 
 Cada pacote é construído com as bibliotecas da própria distribuição. Derivadas que
@@ -141,7 +141,7 @@ Sem argumentos, `decklock` mostra a ajuda. Use `decklock --help` ou
 `decklock config --help` para comandos e exemplos. O preview não autentica nem
 executa ações de energia. Escape oculta o teclado e, depois, fecha a janela.
 
-**A versão 0.3.3 é experimental.** Preview e configurações foram testados no Hyprland.
+**A versão 0.3.4 é experimental.** Preview e configurações foram testados no Hyprland.
 Testes de protocolo isolados cobrem aquisição do bloqueio, mudanças de monitores e
 encerramento sem desbloquear, e máquinas virtuais descartáveis exercitam cada pacote
 com Sway e Linux-PAM reais no Arch, Fedora e Ubuntu, incluindo negativa, desbloqueio
@@ -378,6 +378,30 @@ Executar novamente sem escolher compositor preserva um greeter Hyprland existent
 `--compositor cage` volta explicitamente ao Cage. Isso não migra a configuração
 do Hyprland do desktop. Alinhamento do toque/painel, GPU e login real com Hyprland
 ainda exigem validação no hardware.
+
+Para usar os dois pads antes da autenticação, instale o sc-controller e acrescente
+`--controller` ao `setup greeter` ou `setup all`. Ao alterar essa opção num greeter
+Hyprland existente, repita suas opções de compositor, saída e rotação:
+
+```sh
+sudo decklock setup all --compositor hyprland --output eDP-1 --transform 3 --controller --dry-run
+sudo decklock setup all --compositor hyprland --output eDP-1 --transform 3 --controller
+```
+
+A integração é opcional. O setup preserva a escolha nas reaplicações;
+`--controller=false` a desativa. O login real sob greetd passa a ter um daemon
+exclusivo, em primeiro plano, com perfil embutido e diretórios privados no runtime.
+Ele não lê os perfis do desktop nem inicia outro teclado/OSD. Fechar o teclado
+libera os pads; o pad direito e os gatilhos oferecem mouse/cliques pelo perfil.
+A saída normal encerra o daemon; matar o greeter também mata seu daemon. Sem
+sc-controller, acesso ao dispositivo ou daemon funcional, o teclado por mouse/toque
+continua disponível. A conta do greetd precisa do acesso ao controle/uinput concedido
+pelas regras de dispositivo do pacote sc-controller; o setup não altera permissões
+de dispositivo ou grupos. `--greeter-controller` não inicia daemon em preview ou
+sem greetd. Esta opção é publicada a partir da 0.3.4, antes da validação num
+Steam Deck físico: as VMs dos pacotes não instalam o sc-controller, e a entrada
+pelos pads, o acesso ao dispositivo e a passagem para o daemon do desktop só foram
+testados com processos falsos. Veja [o procedimento no aparelho](docs/greeter-controller-uat.md).
 
 Reinicie o sistema para ativar o novo comando de login, ou encerre a sessão
 gerenciada e reinicie o greetd por outra TTY. O greetd guarda a configuração
