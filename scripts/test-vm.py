@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -65,6 +66,32 @@ AARCH64_FIRMWARE = ['/usr/share/qemu-efi-aarch64/QEMU_EFI.fd', '/usr/share/AAVMF
 # a bundled Android SDK. Refuse it rather than creating an overlay with a tool
 # that old and failing later in a way that looks like a guest problem.
 MINIMUM_QEMU_IMG = (6, 0)
+# The suites of scripts/vm/suites.sh, in the order a guest runs them. A KVM guest runs
+# them all. Emulated guests share them, each suite in exactly one guest.
+SUITES = ('package', 'session', 'compositors', 'greeter')
+
+
+def selected_suites(text):
+    names = text.split('+')
+    if len(set(names)) != len(names) or any(name not in SUITES for name in names):
+        raise argparse.ArgumentTypeError(f"distinct suites out of {', '.join(SUITES)}, joined by '+'")
+    return [name for name in SUITES if name in names]
+
+
+def completion_marks(suites, manifest):
+    """The phase marks setup.sh prints once each of these suites has finished."""
+    compositors = vm_native.read_manifest(manifest).get('EXTRA_COMPOSITORS', '').split()
+    marks = {'package': ['candidate_reinstalled'], 'session': ['sway_pam_x11_complete'],
+             'compositors': [f'{name}_complete' for name in compositors], 'greeter': ['greeter_complete']}
+    return [mark for suite in suites for mark in marks[suite]]
+
+
+def phase_marks(log):
+    """(phase, guest clock seconds) for every mark in the guest's log."""
+    if not log.exists():
+        return []
+    return [(fields[1], float(fields[2])) for line in log.read_text(errors='replace').splitlines()
+            if (fields := line.split()) and len(fields) == 3 and fields[0] == 'DECKLOCK_VM_PHASE']
 
 
 def cpu_model(arch, kvm):
@@ -150,6 +177,9 @@ def main():
                              'guest architectures to match; without passwordless sudo, or on any failure, '
                              'it warns and installs inside the guest as usual')
     parser.add_argument('--logs', type=Path, default=ROOT / 'target/vm-logs')
+    parser.add_argument('--suites', type=selected_suites, default=list(SUITES), metavar='A+B',
+                        help=f"Suites this guest runs, out of {', '.join(SUITES)}; all by default. Guests "
+                             'that share them must together run each one')
     parser.add_argument('--print-plan', action='store_true',
                         help='Print pinned image and CPU options without inspecting or starting a VM')
     args = parser.parse_args()
@@ -158,10 +188,12 @@ def main():
         if args.arch not in distro:
             raise SystemExit(f'No pinned {args.arch} image for {args.target}')
         distro = distro | distro[args.arch]
+    manifest = ROOT / 'scripts/vm/distros' / f'{args.target}.env'
     if args.print_plan:
         print(json.dumps({'target': args.target, 'arch': args.arch,
                           'image': distro['image'], 'image_sha256': distro['sha256'],
-                          'memory_mib': 2048,
+                          'memory_mib': 2048, 'suites': args.suites,
+                          'completion_marks': completion_marks(args.suites, manifest),
                           'cpu_models': {mode: cpu_model(args.arch, mode == 'kvm')
                                          for mode in ['kvm', 'tcg']},
                           'cpus': {'kvm': 2, 'tcg': 4}, 'slowdown': {'kvm': 1, 'tcg': 8}}, indent=2))
@@ -208,7 +240,7 @@ def main():
               'package_sha256': digest(package) if package else None,
               'package': package.name if package else None,
               'memory_mib': 2048, 'cpus': 2 if kvm else 4, 'accelerator': 'kvm' if kvm else 'tcg',
-              'cpu_model': selected_cpu,
+              'cpu_model': selected_cpu, 'suites': args.suites,
               'qemu_version': subprocess.check_output([qemu, '--version'], text=True, timeout=10).splitlines()[0],
               'host_phase_seconds': {},
               'slowdown': slowdown, 'provisioning': 'in-guest', 'status': 'running'}
@@ -336,11 +368,18 @@ def main():
                     # needrestart, an apt hook on Ubuntu images, scans every process after each install:
                     # about 14 minutes apiece under emulation, to report nothing a disposable guest needs.
                     quiet = 'NEEDRESTART_SUSPEND=1 ' if slowdown > 1 else ''
-                    result = subprocess.run([*ssh, f'{quiet}DECKLOCK_VM_SLOWDOWN={slowdown} bash /root/decklock-fixture/setup.sh {args.target}'],
+                    chosen = shlex.quote(' '.join(args.suites))
+                    result = subprocess.run([*ssh, f'{quiet}DECKLOCK_VM_SLOWDOWN={slowdown} DECKLOCK_VM_SUITES={chosen} bash /root/decklock-fixture/setup.sh {args.target}'],
                                             stdout=guest_log, stderr=subprocess.STDOUT, timeout=(600 if report['provisioning'] == 'native' else 1200) * slowdown)
                 report['host_phase_seconds']['guest_execution'] = round(time.monotonic() - guest_started, 3)
                 if result.returncode:
                     raise RuntimeError(f'Guest test failed ({result.returncode}); see guest.log')
+                # A guest that shares the suites must have finished its own and no other:
+                # a selection the guest read differently would otherwise pass having run less.
+                finished = [phase for phase, _ in phase_marks(logs / 'guest.log')]
+                owed = completion_marks(args.suites, manifest)
+                if [mark for mark in finished if mark in completion_marks(SUITES, manifest)] != owed:
+                    raise RuntimeError(f"Guest finished {finished}, not {owed} for {'+'.join(args.suites)}")
                 report['status'] = 'passed'
             except BaseException as error:
                 report['status'] = 'failed'
@@ -381,11 +420,9 @@ def main():
                 thread.join(timeout=5)
                 report['host_phase_seconds']['evidence_and_shutdown'] = round(time.monotonic() - evidence_started, 3)
                 report['total_seconds'] = round(time.monotonic() - started, 3)
-                guest_log = logs / 'guest.log'
                 report['guest_phase_timestamps'] = [
-                    {'phase': fields[1], 'guest_epoch_seconds': float(fields[2])}
-                    for line in (guest_log.read_text(errors='replace').splitlines() if guest_log.exists() else [])
-                    if (fields := line.split()) and len(fields) == 3 and fields[0] == 'DECKLOCK_VM_PHASE']
+                    {'phase': phase, 'guest_epoch_seconds': seconds}
+                    for phase, seconds in phase_marks(logs / 'guest.log')]
                 (logs / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
                 # The job log is often the only evidence a reviewer can read, so a
                 # failure names its assertion there instead of only in guest.log.
@@ -396,7 +433,7 @@ def main():
                           sep='\n', file=sys.stderr, flush=True)
     if report['status'] != 'passed':
         raise SystemExit('FAIL: VM evidence incomplete')
-    print(f'PASS: real Sway/PAM package VM on {args.target} {args.arch}', flush=True)
+    print(f"PASS: real Sway/PAM package VM on {args.target} {args.arch}, suites {'+'.join(args.suites)}", flush=True)
 
 
 if __name__ == '__main__':

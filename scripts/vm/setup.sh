@@ -14,6 +14,10 @@ export DECKLOCK_VM_SLOWDOWN="$slowdown"
 # Everything below is shared by every distribution.
 # shellcheck source=/dev/null
 source "$fixture/$target.env"
+# Which suites this guest runs: all of them, unless test-vm.py --suites chose some.
+# An unknown name ends the run here, before any work.
+# shellcheck source=scripts/vm/suites.sh
+source "$fixture/suites.sh"
 export LC_ALL=C
 # Recorded on exit, so a failure is diagnosable without another CI round trip.
 # A guest's mandatory access control is part of the environment being tested:
@@ -85,15 +89,17 @@ auth required pam_unix.so
 account required pam_deny.so
 PAM
 cp /etc/pam.d/decklock-vm-* /var/tmp/decklock-evidence/
-runuser -u locktest -- decklock --config /home/locktest/candidate-config.toml config set idle_seconds 777
-sha256sum /home/locktest/candidate-config.toml > /var/tmp/decklock-evidence/config-before.sha256
-# A plain install of an already-installed version is a no-op on dnf and apt, so
-# each target names its own reinstall command; otherwise this assertion would
-# pass without reinstalling anything.
-$REINSTALL_CANDIDATE $fixture/$CANDIDATE_GLOB
-sha256sum --check /var/tmp/decklock-evidence/config-before.sha256
-printf 'PASS: candidate reinstallation preserves user configuration on %s\n' "$target"
-phase candidate_reinstalled
+if runs package; then
+    runuser -u locktest -- decklock --config /home/locktest/candidate-config.toml config set idle_seconds 777
+    sha256sum /home/locktest/candidate-config.toml > /var/tmp/decklock-evidence/config-before.sha256
+    # A plain install of an already-installed version is a no-op on dnf and apt, so
+    # each target names its own reinstall command; otherwise this assertion would
+    # pass without reinstalling anything.
+    $REINSTALL_CANDIDATE $fixture/$CANDIDATE_GLOB
+    sha256sum --check /var/tmp/decklock-evidence/config-before.sha256
+    printf 'PASS: candidate reinstallation preserves user configuration on %s\n' "$target"
+    phase candidate_reinstalled
+fi
 # Whether the stack /etc/pam.d/decklock includes counts failures is that
 # distribution's policy, so it is read from configuration here and exercise.py
 # asserts PAM's behavior against it. Deriving it from the observed tally would
@@ -122,23 +128,30 @@ for _ in $(seq 60); do
 done
 [[ -S $runtime/bus ]]
 phase session_ready
-runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
-    DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" DECKLOCK_STACK_FAILLOCK="$stack_faillock" \
-    DECKLOCK_VM_SLOWDOWN="$slowdown" python3 /var/tmp/decklock-evidence/exercise.py
-phase sway_pam_x11_complete
+if runs session; then
+    runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" DECKLOCK_STACK_FAILLOCK="$stack_faillock" \
+        DECKLOCK_VM_SLOWDOWN="$slowdown" python3 /var/tmp/decklock-evidence/exercise.py
+    phase sway_pam_x11_complete
+fi
 # GLES compositors get the vgem render node loaded above (see compositor.py).
 # Mesa renders there through vgem's primary node too, so the user needs both
 # render and video; runuser applies the new supplementary groups. Sway above
-# ran without them.
+# ran without them. Applied in every guest: the greeter suite has always run
+# after this, whichever suites its guest runs.
 usermod -aG render,video locktest
-# Each further compositor repeats the lock boundary; PAM policy stays Sway's.
-# A fresh tally keeps every run independent of the attempts made before it.
-for compositor in $EXTRA_COMPOSITORS; do
-    faillock --user locktest --reset
-    runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
-        DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" DECKLOCK_VM_SLOWDOWN="$slowdown" \
-        python3 /var/tmp/decklock-evidence/compositor.py "$compositor"
-    phase "${compositor}_complete"
-done
-python3 "$fixture/greeter.py"
-phase greeter_complete
+if runs compositors; then
+    # Each further compositor repeats the lock boundary; PAM policy stays Sway's.
+    # A fresh tally keeps every run independent of the attempts made before it.
+    for compositor in $EXTRA_COMPOSITORS; do
+        faillock --user locktest --reset
+        runuser -u locktest -- env HOME=/home/locktest XDG_RUNTIME_DIR="$runtime" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" DECKLOCK_VM_SLOWDOWN="$slowdown" \
+            python3 /var/tmp/decklock-evidence/compositor.py "$compositor"
+        phase "${compositor}_complete"
+    done
+fi
+if runs greeter; then
+    python3 "$fixture/greeter.py"
+    phase greeter_complete
+fi

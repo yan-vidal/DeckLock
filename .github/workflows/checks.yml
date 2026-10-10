@@ -240,9 +240,16 @@ jobs:
   # package-ubuntu-aarch64 instead of after it: test-vm.py boots the guest while
   # scripts/ci-await-candidate waits for that job to succeed in this attempt,
   # then downloads and verifies its artifact. Nothing is installed before that.
+  # One emulated guest would run the suites in turn for about eight minutes, so
+  # three guests share them (scripts/vm/suites.sh). Each installs the candidate
+  # itself, each suite runs in exactly one of them, and all three are required.
   vm-ubuntu-aarch64:
-    name: Real Wayland and PAM (Ubuntu aarch64)
+    name: Real Wayland and PAM (Ubuntu aarch64, ${{ matrix.suites }})
     runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        suites: [session, package+compositors, greeter]
     # Listing this run's jobs and downloading its artifact.
     permissions:
       contents: read
@@ -273,13 +280,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/test-vm.py --target ubuntu --arch aarch64 --allow-emulation --provision-native \
-            --package 'dist/*.deb' \
+            --package 'dist/*.deb' --suites "${{ matrix.suites }}" \
             --package-fetch 'scripts/ci-await-candidate --job "Package (Ubuntu aarch64) / Ubuntu aarch64 package contract" --artifact ubuntu-package-aarch64 --directory dist --timeout 3000'
       - name: VM evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: vm-evidence-ubuntu-aarch64
+          name: vm-evidence-ubuntu-aarch64-${{ matrix.suites }}
           path: target/vm-logs/
           if-no-files-found: warn
           retention-days: 14
