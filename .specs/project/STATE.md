@@ -812,3 +812,8 @@ the login-appearance CLI and the settings button with a fake pkexec. Not exercis
 polkit dialog and agent, and a root write to /etc/greetd through pkexec. This Deck runs polkitd
 but no polkit agent in its Hyprland session, so the button would show the terminal command
 until one (such as hyprpolkitagent) is installed and started.
+Checked against the real pkexec on this Deck, without elevating anything (`pkexec /usr/bin/true`,
+no agent running): without a terminal it fails with "Error creating textual authentication
+agent" (exit 127); started from a terminal it would prompt there, away from the window. The
+button now passes --disable-internal-agent, whose real answer is "No authentication agent
+found." with exit 127, the case the fake reproduces; the test failed first on the old argv.

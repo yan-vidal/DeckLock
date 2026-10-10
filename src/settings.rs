@@ -916,7 +916,10 @@ pub fn build(
             let executable = executable.clone();
             std::thread::spawn(move || {
                 let _ = sender.send(
+                    // Only the session's graphical agent may ask, never a text
+                    // prompt in the terminal that started the settings.
                     std::process::Command::new("pkexec")
+                        .arg("--disable-internal-agent")
                         .arg(&executable)
                         .args(["setup", "login-appearance"])
                         .stdin(std::process::Stdio::null())

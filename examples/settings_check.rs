@@ -181,7 +181,12 @@ fn main() {
         assert!(done.contains("next time"), "{done}");
         assert_eq!(
             std::fs::read_to_string(&marker).unwrap(),
-            format!("{}\nsetup\nlogin-appearance\n", executable.display())
+            // No text prompt in whatever terminal started the settings: only the
+            // session's graphical agent may ask for the password.
+            format!(
+                "--disable-internal-agent\n{}\nsetup\nlogin-appearance\n",
+                executable.display()
+            )
         );
         let cancelled = run(&fake, "126", "");
         assert!(cancelled.contains("nothing was changed"), "{cancelled}");
