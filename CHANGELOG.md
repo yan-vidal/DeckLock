@@ -6,6 +6,14 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 ### Added
 
+- The login can have its own background pool, slideshow interval and layout,
+  through a `[login]` section with `same_as_lock = false`
+  (`decklock config set login.same_as_lock false`, `login.layout.clock_visible`,
+  `login.background_pool`). With `same_as_lock`, the default, the login shows what
+  the lock screen shows, as before, and the file keeps no `[login]` section. Rest
+  stays one for both screens. Login setup migrates the login's media to the shared
+  library like the others and fails before migrating anything if one is unreadable.
+
 - The lock, login and preview screens show the battery level on devices with a
   system battery, in the top-right corner on its own row above the power buttons.
   That row spans the width, so the help button in the top-left corner lines up with

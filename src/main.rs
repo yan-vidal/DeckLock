@@ -238,6 +238,7 @@ fn run(args: Args) -> Result<(), String> {
     {
         config.apply_appearance(config::Config::load(Some(&path))?);
     }
+    apply_screen(&mut config, &args);
     if let Some(theme) = args.theme {
         config.theme = Some(theme);
     }
@@ -636,9 +637,33 @@ fn run(args: Args) -> Result<(), String> {
     Ok(())
 }
 
+/// The login screen's appearance applies to the greeter only.
+fn apply_screen(config: &mut config::Config, args: &Args) {
+    if args.greeter {
+        config.use_login();
+    }
+}
+
 #[cfg(test)]
 mod cli_tests {
     use super::*;
+    #[test]
+    fn only_the_greeter_uses_the_login_appearance() {
+        let saved: config::Config = toml::from_str(
+            "slideshow_seconds = 12\n[login]\nsame_as_lock = false\nslideshow_seconds = 5\n",
+        )
+        .unwrap();
+        for (argv, expected) in [
+            (vec!["decklock", "--greeter"], 5),
+            (vec!["decklock", "--lock"], 12),
+            (vec!["decklock", "--preview"], 12),
+        ] {
+            let args = Args::try_parse_from(&argv).unwrap();
+            let mut config = saved.clone();
+            apply_screen(&mut config, &args);
+            assert_eq!(config.slideshow_seconds, expected, "{argv:?}");
+        }
+    }
     #[test]
     fn greeter_without_greetd_socket_is_preview_even_when_no_preview_flag_is_given() {
         let args = Args::try_parse_from(["decklock", "--greeter"]).unwrap();

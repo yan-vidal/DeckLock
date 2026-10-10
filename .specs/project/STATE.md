@@ -774,3 +774,17 @@ Same branch, sixth change: the user asked to remove the "Wayland · Preview" ban
 now looks like the lock screen, and the preview-banner string and CSS rules are gone. The
 assertion that the preview shows no banner failed first. Still identifying a preview: its window
 title and, on submit, the notice that authentication is disabled in preview.
+
+2026-10-10 lock, login and rest settings (branch feat/screen-settings, on top of PR #65; spec
+.specs/features/screen-settings/spec.md). The user wants the settings to do everything the CLI
+does, the login configured from the interface (asking for the administrator password through
+polkit when needed), and three settings tabs: Lock, Login (mirroring Lock with a check box, on by
+default) and Rest (one for both screens, as today). They approved a contract line for the polkit
+exception and asked to hold 0.3.6 until this work is done. Phase 1: Config gains
+LoginAppearance (same_as_lock, background_pool, slideshow_seconds, layout), skipped when
+default; Config::use_login resolves it and only the greeter applies it (main::apply_screen);
+apply_appearance carries it; the CLI edits login.* (a login layout starts from the lock's); the
+setup export checks the login pool before migrating anything, migrates it and carries the
+section. The unit, parser and CLI/setup tests failed first. A local cargo test run under load 16
+(an emulator and a node build) failed the timing-bound auth test
+inherited_stdout_does_not_extend_the_helper_deadline; it passed three times alone.
