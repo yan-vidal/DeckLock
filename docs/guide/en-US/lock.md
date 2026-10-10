@@ -24,7 +24,7 @@ After a while without use, the screen rests and shows only the background and th
 
 ## Top-right corner
 
-Switch user, suspend, hibernate, restart and shut down. On devices with a battery, its charge level appears just left of those buttons.
+Switch user, suspend, hibernate, restart and shut down. On devices with a battery, its charge level appears just above those buttons.
 
 ## This help
 

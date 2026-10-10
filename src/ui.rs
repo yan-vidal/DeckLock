@@ -979,30 +979,42 @@ fn build_in(
     outer.set_hexpand(true);
     outer.set_vexpand(true);
     overlay.add_overlay(&outer);
-    let previewing_lock = settings.preview && !settings.greeter;
-    if previewing_lock {
+    // The top bar spans the width: a status row (the preview banner on the left,
+    // the battery on the right) over a controls row (help on the left, power on
+    // the right). The battery's row thus lowers the help button and the power
+    // buttons alike; without a battery or banner it takes no space.
+    let top_bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    top_bar.set_widget_name("top-bar");
+    top_bar.set_valign(gtk::Align::Start);
+    top_bar.set_margin_top(12);
+    top_bar.set_margin_start(12);
+    top_bar.set_margin_end(12);
+    let status_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    let controls_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    top_bar.append(&status_row);
+    top_bar.append(&controls_row);
+    overlay.add_overlay(&top_bar);
+    if settings.preview && !settings.greeter {
         let banner = gtk::Label::new(Some(&settings.strings.text("preview-banner")));
         banner.set_widget_name("preview-banner");
         banner.set_max_width_chars(24);
         banner.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        banner.set_halign(gtk::Align::Start);
-        banner.set_valign(gtk::Align::Start);
+        banner.set_valign(gtk::Align::Center);
         banner.set_can_target(false);
-        overlay.add_overlay(&banner);
+        status_row.append(&banner);
     }
+    let status_space = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    status_space.set_hexpand(true);
+    status_row.append(&status_space);
     // Lock, login and preview carry a short guide in their own surface, opened by
-    // the ? in the top-left corner (below the preview banner) or F1. Its panel
-    // goes above the keyboard, further down.
+    // the ? or F1. Its panel goes above the keyboard, further down.
     let help = crate::help::screen(&settings.strings, settings.greeter);
     help.button.set_halign(gtk::Align::Start);
-    help.button.set_valign(gtk::Align::Start);
-    if previewing_lock {
-        help.button.set_margin_top(36);
-    } else {
-        help.button.set_margin_top(12);
-        help.button.set_margin_start(12);
-    }
-    overlay.add_overlay(&help.button);
+    help.button.set_valign(gtk::Align::Center);
+    controls_row.append(&help.button);
+    let controls_space = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    controls_space.set_hexpand(true);
+    controls_row.append(&controls_space);
     window.add_controller(help.key.clone());
     bindings
         .controllers
@@ -1011,14 +1023,6 @@ fn build_in(
     let status = gtk::Label::new(None);
     status.set_widget_name("status");
     status.set_wrap(true);
-    // The battery level sits left of the power buttons, in their row in the
-    // top-right corner, and takes the corner alone when they are hidden.
-    let corner = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    corner.set_widget_name("top-right");
-    corner.set_halign(gtk::Align::End);
-    corner.set_valign(gtk::Align::Start);
-    corner.set_margin_top(12);
-    corner.set_margin_end(12);
     let battery = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     battery.set_widget_name("battery");
     battery.set_valign(gtk::Align::Center);
@@ -1028,11 +1032,13 @@ fn build_in(
     let battery_label = gtk::Label::new(None);
     battery.append(&battery_icon);
     battery.append(&battery_label);
-    corner.append(&battery);
+    status_row.append(&battery);
     let power = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     power.set_widget_name("power");
-    power.set_halign(gtk::Align::End);
-    power.set_valign(gtk::Align::Start);
+    power.set_valign(gtk::Align::Center);
+    // Each icon expands within its slot; the bar's spare width stays between the
+    // help button and these buttons instead of stretching them.
+    power.set_hexpand(false);
 
     #[derive(Clone, Copy)]
     enum PowerAction {
@@ -1112,8 +1118,7 @@ fn build_in(
         power.append(&button);
     }
     power.set_visible(settings.theme.layout.power_visible);
-    corner.append(&power);
-    overlay.add_overlay(&corner);
+    controls_row.append(&power);
     let idle = Rc::new(Cell::new(false));
     let battery_present = Rc::new(Cell::new(false));
     let refresh_battery = {

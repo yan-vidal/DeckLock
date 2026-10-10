@@ -40,14 +40,15 @@ dessa API; a organização dos blocos é definida pelo TOML.
 | `#keyboard`, `.key` | Teclado virtual |
 | `.key-hover`, `.modifier-active` | Posição do pad e modificadores virtuais |
 | `#power`, `#preview-banner` | Energia e indicação de preview |
-| `#top-right` | Canto superior direito: bateria e botões de energia na mesma linha |
-| `#battery`, `#battery image`, `#battery label` | Nível da bateria, à esquerda dos botões de energia (sozinho no canto quando eles estão ocultos), quando o aparelho tem bateria; o tamanho do ícone vem de `-gtk-icon-size` |
+| `#top-bar` | Barra superior: a linha da bateria (e da faixa do preview) sobre a linha do botão ? e dos botões de energia |
+| `#battery`, `#battery image`, `#battery label` | Nível da bateria, numa linha própria acima dos botões de energia, quando o aparelho tem bateria; o tamanho do ícone vem de `-gtk-icon-size` |
 | `#battery.low`, `#battery.charging` | Bateria em 20% ou menos sem carregar, e bateria carregando |
 | `#help-button`, `#help-panel`, `#help-close` | Botão de ajuda (?) do bloqueio, login e preview, o guia curto que ele abre na própria tela e o × que o fecha |
 
 A posição dos elementos se ajusta com `margin`: em `#battery`, ela afasta a
-bateria dos botões de energia (`margin-right`) ou a desloca para baixo
-(`margin-top`); em `#top-right`, move o canto inteiro. Uma regra do seu tema
+bateria da borda direita (`margin-right`) ou a desloca para baixo
+(`margin-top`), levando junto a linha do ? e dos botões de energia; em
+`#top-bar`, move a barra superior inteira. Uma regra do seu tema
 substitui a margem do tema padrão em vez de somar a ela. O CSS do GTK não muda a
 ordem nem o lugar dos elementos na tela.
 

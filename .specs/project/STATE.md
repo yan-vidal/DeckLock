@@ -755,3 +755,17 @@ order or position property, so CSS adjusts placement with margins: #battery rela
 buttons and #top-right for the whole corner. That assertion passed once the row existed (a
 theme rule replaces the default theme's 4 px margin rather than adding to it; the test first
 assumed it added). Moving the battery elsewhere on the screen would need a layout option.
+
+Same branch, fifth change: the user preferred the battery back on its own row above the power
+buttons, with that row's height reserved across the full width so the help button in the
+top-left corner comes down to the power buttons' height. The top of the screen is now one bar
+(#top-bar): a status row (preview banner left, battery right) over a controls row (help left,
+power right). Without a battery or banner the status row takes no space and the help button and
+power buttons rise together; the preview banner moved into the status row so the help button
+never overlaps it (its default margin is now below it only). The new layout assertions failed
+first (the help button was not level with the power buttons). CSS placement: margins on #battery
+within its row and on #top-bar for the whole bar.
+The first capture of the bar showed the power buttons stretched to about 170 px each: their
+icons expand within their slots, which made the power box expand once it shared a row with a
+spacer. The layout test had not caught it; an assertion that each power button stays within
+64 px failed first, and the power box no longer expands.

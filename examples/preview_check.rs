@@ -191,15 +191,33 @@ fn check_battery(app: &gtk::Application) {
         ],
     );
     let no_battery = tempfile::tempdir().unwrap();
-    for (greeter, root, start_idle, power_visible, expected) in [
-        (true, Some(supplies.path()), false, true, Some("67%")),
-        (false, Some(supplies.path()), false, true, Some("67%")),
+    // The top bar spans the width: the battery's row on top (with the preview
+    // banner on its left), then the help button and the power buttons in one row.
+    for (greeter, preview, root, start_idle, power_visible, expected) in [
+        (true, true, Some(supplies.path()), false, true, Some("67%")),
+        (
+            false,
+            false,
+            Some(supplies.path()),
+            false,
+            true,
+            Some("67%"),
+        ),
+        (false, true, Some(supplies.path()), false, true, Some("67%")),
         // Without power buttons the battery takes the corner alone.
-        (false, Some(supplies.path()), false, false, Some("67%")),
-        (true, Some(no_battery.path()), false, true, None),
-        (false, None, false, true, None),
-        // Rest mode hides the corner controls, the battery with them.
-        (false, Some(supplies.path()), true, true, None),
+        (
+            false,
+            false,
+            Some(supplies.path()),
+            false,
+            false,
+            Some("67%"),
+        ),
+        // Without a battery its row takes no space.
+        (true, true, Some(no_battery.path()), false, true, None),
+        (false, false, None, false, true, None),
+        // Rest mode hides the top controls, the battery with them.
+        (false, false, Some(supplies.path()), true, true, None),
     ] {
         let view = ui::build(
             app,
@@ -219,7 +237,7 @@ fn check_battery(app: &gtk::Application) {
                     ..Theme::load(None).unwrap()
                 },
                 strings: I18n::new(Some("pt-BR"), None).unwrap(),
-                preview: true,
+                preview,
                 show_keyboard: false,
                 start_idle,
                 username: "Fixed fixture".into(),
@@ -234,55 +252,92 @@ fn check_battery(app: &gtk::Application) {
         view.window.present();
         pump_for(400);
         let widgets = descendants(view.window.upcast_ref());
-        let battery = widgets.iter().find(|w| w.widget_name() == "battery");
-        let case =
-            format!("greeter={greeter} root={root:?} idle={start_idle} power={power_visible}");
+        let named = |name: &str| {
+            widgets
+                .iter()
+                .find(|w| w.widget_name() == name)
+                .cloned()
+                .unwrap_or_else(|| panic!("Missing {name}"))
+        };
+        let (battery, power, help) = (named("battery"), named("power"), named("help-button"));
+        let case = format!(
+            "greeter={greeter} preview={preview} root={root:?} idle={start_idle} power={power_visible}"
+        );
+        if start_idle {
+            assert!(
+                !battery.is_visible() && !power.is_visible() && !help.is_visible(),
+                "Rest mode hides the top controls: {case}"
+            );
+            view.window.destroy();
+            pump_for(30);
+            continue;
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while help.width() == 0 && Instant::now() < deadline {
+            pump_for(10);
+        }
+        let bounds = |widget: &gtk::Widget| widget.compute_bounds(&view.window).unwrap();
+        let middle = |r: &gtk::graphene::Rect| r.y() + r.height() / 2.0;
+        let h = bounds(&help);
+        let buttons: Vec<_> = descendants(&power)
+            .into_iter()
+            .filter_map(|w| w.downcast::<gtk::Button>().ok())
+            .filter_map(|button| button.compute_bounds(&view.window))
+            .collect();
+        if power_visible {
+            let first = buttons.first().expect("Power buttons");
+            assert!(
+                (middle(&h) - middle(first)).abs() <= 2.0,
+                "The help button lines up with the power buttons: {case}"
+            );
+            // The bar's spare width goes between the two sides, never into the buttons.
+            for button in &buttons {
+                assert!(
+                    button.width() <= 64.0,
+                    "Power buttons keep their size ({} px): {case}",
+                    button.width()
+                );
+            }
+        }
         match expected {
-            None => assert!(
-                !battery.is_some_and(|b| b.is_visible()),
-                "No battery level expected: {case}"
-            ),
+            None => {
+                assert!(!battery.is_visible(), "No battery level expected: {case}");
+                if !preview {
+                    assert!(
+                        h.y() <= 30.0,
+                        "Without a battery nothing is reserved above the help button: {case}"
+                    );
+                }
+            }
             Some(level) => {
-                let battery = battery.expect("Battery level").clone();
                 assert!(battery.is_visible(), "Battery level hidden: {case}");
                 let label = descendants(&battery)
                     .into_iter()
                     .find_map(|w| w.downcast::<gtk::Label>().ok())
                     .expect("Battery percentage");
                 assert_eq!(label.text(), level, "{case}");
-                let power = widgets.iter().find(|w| w.widget_name() == "power").unwrap();
-                let deadline = Instant::now() + Duration::from_secs(2);
-                while battery.width() == 0 && Instant::now() < deadline {
-                    pump_for(10);
-                }
-                let b = battery.compute_bounds(&view.window).unwrap();
+                let b = bounds(&battery);
                 assert!(
-                    b.y() < 100.0 && b.x() > 640.0,
+                    b.y() < 60.0 && b.x() > 640.0,
                     "Battery must be in the top-right corner: {case}"
                 );
+                assert!(
+                    b.y() + b.height() <= h.y(),
+                    "The battery's row is reserved above the help button: {case}"
+                );
                 if power_visible {
-                    while power.width() == 0 && Instant::now() < deadline {
-                        pump_for(10);
-                    }
-                    // In the same row, just left of the power buttons.
-                    let buttons: Vec<_> = descendants(power)
-                        .into_iter()
-                        .filter_map(|w| w.downcast::<gtk::Button>().ok())
-                        .filter_map(|button| button.compute_bounds(&view.window))
-                        .collect();
-                    let first = buttons
-                        .iter()
-                        .min_by(|a, b| a.x().total_cmp(&b.x()))
-                        .expect("Power buttons");
-                    let gap = first.x() - (b.x() + b.width());
+                    let p = bounds(&power);
                     assert!(
-                        (0.0..=24.0).contains(&gap),
-                        "Battery must sit just left of the power buttons (gap {gap}): {case}"
+                        b.y() + b.height() <= p.y(),
+                        "Battery must sit above the power buttons: {case}"
                     );
-                    let middle = |r: &gtk::graphene::Rect| r.y() + r.height() / 2.0;
+                    let buttons_right = buttons
+                        .iter()
+                        .map(|bounds| bounds.x() + bounds.width())
+                        .fold(0.0_f32, f32::max);
                     assert!(
-                        (middle(&b) - middle(first)).abs() <= 2.0,
-                        "Battery must share the power buttons' row: {case}"
+                        (b.x() + b.width() - buttons_right).abs() <= 1.0,
+                        "Battery must align with the right edge of the power buttons: {case}"
                     );
                 } else {
                     assert!(!power.is_visible(), "{case}");
@@ -293,19 +348,26 @@ fn check_battery(app: &gtk::Application) {
                 }
             }
         }
+        if preview && !greeter {
+            let banner = bounds(&named("preview-banner"));
+            assert!(
+                banner.y() + banner.height() <= h.y() && banner.x() < 100.0,
+                "The preview banner shares the battery's row, above the help button: {case}"
+            );
+        }
         view.window.destroy();
         pump_for(30);
     }
 
-    // Themes place the battery through CSS margins: relative to the power
-    // buttons with #battery, and the whole corner with #top-right.
+    // Themes place the battery through CSS margins: #battery within its row,
+    // and #top-bar for the whole bar.
     let display = gtk::gdk::Display::default().unwrap();
     let mut placements = Vec::new();
     // Measured from zero margins: a theme rule replaces the default theme's.
     for rule in [
         Some("#battery { margin-right: 0; margin-top: 0; }"),
         Some("#battery { margin-right: 40px; margin-top: 30px; }"),
-        Some("#top-right { margin-top: 50px; margin-right: 100px; }"),
+        Some("#top-bar { margin-top: 50px; margin-right: 100px; }"),
     ] {
         let provider = rule.map(|rule| {
             let provider = gtk::CssProvider::new();
@@ -329,7 +391,7 @@ fn check_battery(app: &gtk::Application) {
                 },
                 theme: Theme::load(None).unwrap(),
                 strings: I18n::new(Some("pt-BR"), None).unwrap(),
-                preview: true,
+                preview: false,
                 show_keyboard: false,
                 start_idle: false,
                 username: "Fixed fixture".into(),
@@ -338,8 +400,6 @@ fn check_battery(app: &gtk::Application) {
             }),
             Rc::new(|_| panic!("Battery check must never authenticate")),
         );
-        view.window.set_titlebar(None::<&gtk::Widget>);
-        view.window.set_decorated(false);
         view.window.set_default_size(1280, 800);
         view.window.present();
         pump_for(400);
@@ -353,7 +413,7 @@ fn check_battery(app: &gtk::Application) {
         };
         let (battery, power) = (bounds("battery"), bounds("power"));
         placements.push((
-            power.x() - (battery.x() + battery.width()),
+            battery.x() + battery.width(),
             battery.y(),
             power.x() + power.width(),
             power.y(),
@@ -365,25 +425,24 @@ fn check_battery(app: &gtk::Application) {
         }
     }
     let [
-        (gap, battery_y, power_right, power_y),
-        (moved_gap, moved_y, ..),
-        (.., corner_right, corner_y),
+        (battery_right, battery_y, power_right, power_y),
+        (moved_right, moved_y, ..),
+        (.., bar_right, bar_y),
     ] = placements[..]
     else {
         unreachable!()
     };
     assert!(
-        (moved_gap - gap - 40.0).abs() <= 1.0,
-        "#battery margin-right moves it away from the power buttons ({gap} -> {moved_gap})"
+        (battery_right - moved_right - 40.0).abs() <= 1.0,
+        "#battery margin-right moves it left ({battery_right} -> {moved_right})"
     );
     assert!(
-        moved_y > battery_y,
+        (moved_y - battery_y - 30.0).abs() <= 1.0,
         "#battery margin-top moves it down ({battery_y} -> {moved_y})"
     );
     assert!(
-        (power_right - corner_right - 100.0).abs() <= 1.0
-            && (corner_y - power_y - 50.0).abs() <= 1.0,
-        "#top-right margins move the whole corner"
+        (power_right - bar_right - 100.0).abs() <= 1.0 && (bar_y - power_y - 50.0).abs() <= 1.0,
+        "#top-bar margins move the whole bar"
     );
 
     // Themes style the battery through CSS: state classes and the icon size.
@@ -887,10 +946,7 @@ fn main() {
         Some("?"),
         "Login help is a question mark"
     );
-    assert_eq!(
-        (login_help.halign(), login_help.valign()),
-        (gtk::Align::Start, gtk::Align::Start)
-    );
+    assert_eq!(login_help.halign(), gtk::Align::Start);
     assert!(
         login_help.margin_top() <= 12,
         "Login help takes the top-left corner the title used to share"
