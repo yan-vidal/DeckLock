@@ -662,3 +662,38 @@ as `quality / Package (Ubuntu aarch64) / Ubuntu aarch64 package contract`, the p
 accepts. If the tag workflow fails, the fix goes through a PR and a new version; the tag is not
 moved. Next: tag v0.3.4 after main's checks, confirm the assets, then the accompanied device
 procedure with the release package.
+
+2026-10-10 0.3.4 on the device, first finding: v0.3.4 was tagged at 0860664 and published by
+run 38051684030 (all gates and `publish` passed; the three first-release risks did not occur).
+The user installed the release package on the Steam Deck OLED (binary sha256 bbc80f2e...,
+BUILD-INFO 0860664). The dry-run plan was reviewed and correct; applying
+`sudo decklock setup greeter --compositor hyprland --output eDP-1 --transform 3 --controller`
+failed: "Hyprland was launched with superuser privileges, but the privileges check is not
+omitted". greetd, the media and the greeter storage were unchanged (compared with the saved
+originals), and greetd was not restarted. Root cause: verify_hyprland_config ran
+`Hyprland --verify-config` with the caller's privileges, and Hyprland refuses euid 0 before
+reading any configuration. 0.3.3 stopped one check earlier, at the runtime directory sudo
+removes, so this setup has not worked through sudo in any published version; the user's Deck
+runs a hand-written greeter configuration from 2026-09-30. Reproduced without real root in a
+user namespace that maps the greeter account (Hyprland 0.56.2): the same Lua is "config ok" as
+uid 1000, rejected with that message as uid 0, and "config ok" again when uid 0 runs the
+verifier as greeter with storage that account owns; a deliberately broken Lua is still
+rejected there. Fix: root verifies as greetd's configured account (uid/gid from /etc/passwd,
+no supplementary groups), the configuration lives inside the 0700 verification storage, both
+are handed to that account, and under root the storage is created in /tmp because root's
+TMPDIR can be private to root (pam_tmpdir): with the /tmp rule removed, a 0700 root TMPDIR
+made Hyprland report the configuration as invalid. A missing account or one with UID 0 is
+refused before greetd changes. Regressions: the Arch guest installs Hyprland and its greeter
+suite runs the setup as root against it, without a runtime directory and with a private
+TMPDIR (first pushed alone, to fail in CI); the CLI regression's fake verifier requires the
+configuration inside its own storage and owned by its account (failed first); a unit test
+covers the account choice. Why the gates missed it twice: the CLI fake accepts any caller and
+no VM installed Hyprland. Every manifest now declares SETUP_COMPOSITORS, so a guest without
+Hyprland says so. Not established: a real Hyprland login, and everything of the pad
+validation, which this failure stopped before greetd was touched. CI run 38058890089 on
+b58ca00, the regression alone: the Arch VM failed at the new assertion with that same
+message, after 'packaged system setup prepares private storage'; the isolated gates, the
+package builds and the Fedora guest passed. The user approved publishing the fix as 0.3.5
+from the same PR (#64): version bump, dated changelog and README examples are in it, and
+both READMEs say the Hyprland setup needs 0.3.5. Next: tag v0.3.5 after main's checks, then
+the device procedure again from the installation step.

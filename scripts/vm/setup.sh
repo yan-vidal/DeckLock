@@ -152,6 +152,6 @@ if runs compositors; then
     done
 fi
 if runs greeter; then
-    python3 "$fixture/greeter.py"
+    DECKLOCK_VM_SETUP_COMPOSITORS="$SETUP_COMPOSITORS" python3 "$fixture/greeter.py"
     phase greeter_complete
 fi
