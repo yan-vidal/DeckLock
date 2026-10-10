@@ -271,6 +271,95 @@ fn check_battery(app: &gtk::Application) {
         view.window.destroy();
         pump_for(30);
     }
+
+    // Themes style the battery through CSS: state classes and the icon size.
+    let low = tempfile::tempdir().unwrap();
+    let charging = tempfile::tempdir().unwrap();
+    for (root, status) in [(&low, "Discharging"), (&charging, "Charging")] {
+        let path = root.path().join("BAT0");
+        std::fs::create_dir(&path).unwrap();
+        for (field, value) in [("type", "Battery"), ("capacity", "15"), ("status", status)] {
+            std::fs::write(path.join(field), format!("{value}\n")).unwrap();
+        }
+    }
+    let display = gtk::gdk::Display::default().unwrap();
+    for (root, classes, theme_rule, icon_size) in [
+        (supplies.path(), [false, false], None, 16),
+        (low.path(), [true, false], None, 16),
+        (charging.path(), [false, true], None, 16),
+        (
+            supplies.path(),
+            [false, false],
+            Some("#battery image { -gtk-icon-size: 32px; }"),
+            32,
+        ),
+    ] {
+        let provider = theme_rule.map(|rule| {
+            let provider = gtk::CssProvider::new();
+            provider.load_from_string(rule);
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+            provider
+        });
+        let view = ui::build(
+            app,
+            Rc::new(ui::Settings {
+                config: Config {
+                    system_keyboard: false,
+                    window_decorations: false,
+                    background_pool: Some(vec![]),
+                    idle_pool: Some(vec![]),
+                    ..Config::default()
+                },
+                theme: Theme::load(None).unwrap(),
+                strings: I18n::new(Some("pt-BR"), None).unwrap(),
+                preview: true,
+                show_keyboard: false,
+                start_idle: false,
+                username: "Fixed fixture".into(),
+                greeter: false,
+                power_supply: Some(root.to_path_buf()),
+            }),
+            Rc::new(|_| panic!("Battery check must never authenticate")),
+        );
+        view.window.set_default_size(1280, 800);
+        view.window.present();
+        pump_for(300);
+        let battery = descendants(view.window.upcast_ref())
+            .into_iter()
+            .find(|w| w.widget_name() == "battery")
+            .expect("Battery level");
+        let case = format!("root={root:?} rule={theme_rule:?}");
+        assert_eq!(
+            [
+                battery.has_css_class("low"),
+                battery.has_css_class("charging")
+            ],
+            classes,
+            "Battery state classes: {case}"
+        );
+        let icon = descendants(&battery)
+            .into_iter()
+            .find_map(|w| w.downcast::<gtk::Image>().ok())
+            .expect("Battery icon");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while icon.width() == 0 && Instant::now() < deadline {
+            pump_for(10);
+        }
+        assert_eq!(
+            icon.width(),
+            icon_size,
+            "Battery icon size follows the theme CSS: {case}"
+        );
+        view.window.destroy();
+        pump_for(30);
+        if let Some(provider) = provider {
+            gtk::style_context_remove_provider_for_display(&display, &provider);
+        }
+    }
 }
 
 fn main() {

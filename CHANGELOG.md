@@ -10,7 +10,10 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
   buttons on devices with a system battery. It is read from the Linux power-supply
   class every 30 seconds; mains adapters and the batteries of peripherals such as a
   controller are ignored, and nothing is shown without a battery. Rest mode hides it
-  together with the power buttons. Themes can style `#battery`.
+  together with the power buttons, and the settings preview shows it like the lock
+  screen. Themes style it through CSS: `#battery`, its `image` and `label`, the icon
+  size with `-gtk-icon-size`, and the `.low` (20 % or less, not charging) and
+  `.charging` states.
 - The login's help opens one short page about signing in, in plain words, instead of
   the full guide with its technical chapter.
 

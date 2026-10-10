@@ -724,3 +724,11 @@ agent omitted the gate's environment and briefly opened a preview window on the 
 desktop before failing; later runs used the gate's isolated environment. Not established: the
 battery on real hardware (the Deck's BAT1 matches the fixture's layout), the A button with a
 physical controller, and the login help window on the Deck's Hyprland greeter.
+
+Same branch, second commit: the user asked that the battery be configurable in CSS and visible
+in the preview. The settings preview already read /sys/class/power_supply like the lock screen.
+The icon had a fixed pixel size in code, which overrides CSS; it now takes -gtk-icon-size from
+the theme (16 px in the default theme, 24 px in contrast), and #battery gets .low (20 % or less,
+not charging) and .charging classes. The class assertions failed first; the icon-size assertion
+was confirmed to fail by putting the fixed size back (16 against a theme rule of 32). Without a
+battery the preview shows nothing, as the lock screen would.

@@ -1023,8 +1023,8 @@ fn build_in(
     battery.set_widget_name("battery");
     battery.set_halign(gtk::Align::End);
     battery.set_visible(false);
+    // Size, colors and state styles (.low, .charging) come from the theme CSS.
     let battery_icon = gtk::Image::new();
-    battery_icon.set_pixel_size(16);
     let battery_label = gtk::Label::new(None);
     battery.append(&battery_icon);
     battery.append(&battery_label);
@@ -1141,6 +1141,16 @@ fn build_in(
                 } else {
                     "battery"
                 })));
+                for (class, active) in [
+                    ("charging", level.charging),
+                    ("low", !level.charging && level.percent <= 20),
+                ] {
+                    if active {
+                        battery.add_css_class(class);
+                    } else {
+                        battery.remove_css_class(class);
+                    }
+                }
             }
             present.set(level.is_some());
             battery.set_visible(level.is_some() && !idle.get());
