@@ -2,6 +2,44 @@
 
 User-facing changes are reviewed in pull requests. Dates are assigned when a release is approved. Packaging-only rebuilds use Arch pkgrel and a separate -rN tag; published assets are never replaced.
 
+## [Unreleased]
+
+### Added
+
+- The lock, login and preview screens show the battery level on devices with a
+  system battery, in the top-right corner on its own row above the power buttons.
+  That row spans the width, so the help button in the top-left corner lines up with
+  the power buttons below it; without a battery the row takes no space. It is read from the Linux power-supply
+  class every 30 seconds; mains adapters and the batteries of peripherals such as a
+  controller are ignored, and nothing is shown without a battery. Rest mode hides it
+  together with the power buttons, and the settings preview shows it like the lock
+  screen. Themes style it through CSS: `#battery`, its `image` and `label`, the icon
+  size with `-gtk-icon-size`, and the `.low` (20 % or less, not charging) and
+  `.charging` states. Margins on `#battery` move it within its row, and margins on
+  `#top-bar` move the whole top bar.
+- Layout option "Show battery percentage" (`layout.battery_percentage`, on by
+  default); off shows the battery icon alone, with the level in its tooltip.
+- The lock screen, login and preview have a question-mark help button in the top-left
+  corner. It opens one short page in plain words, about unlocking or signing in,
+  inside the screen itself: a session lock shows no other window. F1 opens it too,
+  and Esc or its × close it. The full guide stays in settings.
+
+### Changed
+
+- The login no longer shows a "DeckLock — Login" title; its help button takes the
+  top-left corner. Help buttons in every window are a plain question mark, which no
+  longer depends on the icon theme. The preview's help button opens the short lock
+  guide instead of the full guide.
+- The preview no longer shows a "Wayland · Preview" banner; it looks like the lock
+  screen. Its window title and the notice shown on submit still say it is a preview.
+
+### Fixed
+
+- The A button confirms like Enter while the on-screen keyboard holds the controller,
+  at login and on the lock screen. The keyboard captures A along with the other
+  buttons and ignored it, so with the keyboard open the password could only be sent
+  with the keyboard's own Enter key, or by hiding the keyboard and clicking.
+
 ## [0.3.5] - 2026-10-10
 
 ### Fixed

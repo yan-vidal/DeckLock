@@ -12,7 +12,7 @@ decklock --settings
 
 Abra o preview para experimentar mudanças. Ele não bloqueia a sessão, não autentica senhas e não executa ações de energia. Escape fecha o preview da tela de bloqueio. Fechá-lo nunca desbloqueia uma sessão real.
 
-Use F1 ou o botão de interrogação para abrir este guia. Geral explica o uso diário; Avançada apresenta a implementação. O guia acompanha o idioma selecionado nas configurações e funciona sem internet.
+Nas configurações, use F1 ou o botão de interrogação para abrir este guia. Na tela de bloqueio, no login e no preview, o mesmo botão abre um resumo curto na própria tela. Geral explica o uso diário; Avançada apresenta a implementação. O guia acompanha o idioma selecionado nas configurações e funciona sem internet.
 
 ## Salvar e controles das janelas
 
@@ -77,9 +77,9 @@ O DeckLock não faz isso por você. Contar falhas e bloquear contas é política
 
 ## Teclado e energia
 
-Use o teclado físico ou virtual. Shift altera a caixa das letras, dois toques em Shift mantêm Caps Lock e Alt mostra caracteres alternativos. O olho ao lado da senha alterna sua visibilidade. A integração opcional com sc-controller usa seu daemon externo e o teclado embutido.
+Use o teclado físico ou virtual. Shift altera a caixa das letras, dois toques em Shift mantêm Caps Lock e Alt mostra caracteres alternativos. O olho ao lado da senha alterna sua visibilidade. A integração opcional com sc-controller usa seu daemon externo e o teclado embutido. Com o teclado na tela aberto, o botão A do controle confirma como Enter.
 
-A troca de usuário delega ao LightDM, GDM, a uma sessão de greeter existente que o `loginctl` possa ativar ou ao `switch_user_command`. Uma instância única do greetd não cria uma segunda sessão de greeter simultânea. Suspender, hibernar, reiniciar e desligar são pedidos ao systemctl. Dependem do suporte, permissões e configuração do sistema; o DeckLock não configura a hibernação. Essas ações ficam desativadas no preview.
+A troca de usuário delega ao LightDM, GDM, a uma sessão de greeter existente que o `loginctl` possa ativar ou ao `switch_user_command`. Uma instância única do greetd não cria uma segunda sessão de greeter simultânea. Suspender, hibernar, reiniciar e desligar são pedidos ao systemctl. Dependem do suporte, permissões e configuração do sistema; o DeckLock não configura a hibernação. Essas ações ficam desativadas no preview. Em aparelhos com bateria, o nível de carga aparece logo acima desses botões; em Layout, desmarque a porcentagem para mostrar só o ícone.
 
 ## Temas, mídias e terminal
 

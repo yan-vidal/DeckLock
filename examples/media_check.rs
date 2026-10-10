@@ -99,6 +99,7 @@ fn main() {
             start_idle: true,
             username: "Test".into(),
             greeter: false,
+            power_supply: None,
         })
     };
     let view = ui::build(

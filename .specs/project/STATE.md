@@ -697,3 +697,80 @@ package builds and the Fedora guest passed. The user approved publishing the fix
 from the same PR (#64): version bump, dated changelog and README examples are in it, and
 both READMEs say the Hyprland setup needs 0.3.5. Next: tag v0.3.5 after main's checks, then
 the device procedure again from the installation step.
+
+2026-10-10 login polish after the device test of 0.3.5 (branch feat/greeter-login-polish): the
+user activated the 0.3.5 login on the Steam Deck OLED and reported that everything worked
+(wrong password refused at 12:45, correct one accepted at 12:46 in greetd's journal). They
+asked for four changes. (1) No "DeckLock — Login" title; the help button becomes a question
+mark in the same top-left corner. The button is now a plain "?" label in every window,
+independent of the icon theme; the window title keeps the name. (2) The login's help opens one
+short page about signing in (docs/guide/*/login.md), not the general and advanced chapters.
+(3) Sign in with Enter, which on the Steam Deck is the A button: the visible keyboard captures A
+with the other buttons (controller SOURCES) and the event handler ignored it, so with the
+keyboard open the only ways to submit were the ghost keyboard's own Enter key or hiding the
+keyboard and clicking. A now presses the keyboard's Enter key, as LB and RB press Backspace and
+Space, at login and on the lock screen. A physical Enter already submitted: the new XTest
+assertion in greeter_keys_check passed before any change. (4) The battery level above the power
+buttons in the top-right corner: src/battery.rs reads /sys/class/power_supply (system batteries
+only; mains, absent cells and scope=Device batteries such as a controller's are ignored; several
+are averaged), refreshed every 30 s, hidden without a battery and in rest mode. ui::Settings gains
+power_supply (main and the settings preview use /sys/class/power_supply; every test uses None
+or a fixture directory, never the host battery). Regressions failed first: the battery GTK case
+(no widget), the A button (no submission), the login title and help button, the help label and
+the login guide; the battery unit tests failed against a stub. A first run of the Portuguese
+login guide case failed because the test did not set config.locale, which the help follows as
+on the lock screen; the test now sets it. An early manual run of greeter_keys_check from this
+agent omitted the gate's environment and briefly opened a preview window on the user's Wayland
+desktop before failing; later runs used the gate's isolated environment. Not established: the
+battery on real hardware (the Deck's BAT1 matches the fixture's layout), the A button with a
+physical controller, and the login help window on the Deck's Hyprland greeter.
+
+Same branch, second commit: the user asked that the battery be configurable in CSS and visible
+in the preview. The settings preview already read /sys/class/power_supply like the lock screen.
+The icon had a fixed pixel size in code, which overrides CSS; it now takes -gtk-icon-size from
+the theme (16 px in the default theme, 24 px in contrast), and #battery gets .low (20 % or less,
+not charging) and .charging classes. The class assertions failed first; the icon-size assertion
+was confirmed to fail by putting the fixed size back (16 against a theme rule of 32). Without a
+battery the preview shows nothing, as the lock screen would.
+
+Same branch, third change: the user asked that the lock screen work like the login, with the
+full guide only in settings, and for an option to show the battery percentage or the icon
+alone. A session lock displays no other window, which is why the lock had no help (help_check
+asserted that exclusion). The help of the lock, login and preview is now a panel inside the
+screen's own surface (help::screen), not a window: a ? button in the top-left corner (below the
+preview banner), F1 to toggle, Esc and its x to close, hidden in rest mode; opening it hides the
+keyboard and closing it refocuses the password. Short guides: docs/guide/*/lock.md (new) and
+login.md. The settings window and its editors keep the full guide window. This changes the
+documented lock contract: the lock now has a help button and F1 controller, still no window
+controls, and help_check asserts that opening it creates no other window and authenticates
+nothing. layout.battery_percentage (default true) with a settings check box beside the power
+options; off hides the percentage and keeps it in the tooltip. Each new assertion failed first:
+no help button on the lock, no settings check box, the percentage still shown.
+
+Same branch, fourth change: the user asked for the battery left of the power buttons, in their
+row, instead of on a line above, and for its position to be adjustable through CSS. The top-right
+corner (#top-right) is now one row; the battery is alone in the corner when the power buttons
+are hidden. The row assertions failed first (gap -208 px with the battery above). GTK CSS has no
+order or position property, so CSS adjusts placement with margins: #battery relative to the
+buttons and #top-right for the whole corner. That assertion passed once the row existed (a
+theme rule replaces the default theme's 4 px margin rather than adding to it; the test first
+assumed it added). Moving the battery elsewhere on the screen would need a layout option.
+
+Same branch, fifth change: the user preferred the battery back on its own row above the power
+buttons, with that row's height reserved across the full width so the help button in the
+top-left corner comes down to the power buttons' height. The top of the screen is now one bar
+(#top-bar): a status row (preview banner left, battery right) over a controls row (help left,
+power right). Without a battery or banner the status row takes no space and the help button and
+power buttons rise together; the preview banner moved into the status row so the help button
+never overlaps it (its default margin is now below it only). The new layout assertions failed
+first (the help button was not level with the power buttons). CSS placement: margins on #battery
+within its row and on #top-bar for the whole bar.
+The first capture of the bar showed the power buttons stretched to about 170 px each: their
+icons expand within their slots, which made the power box expand once it shared a row with a
+spacer. The layout test had not caught it; an assertion that each power button stays within
+64 px failed first, and the power box no longer expands.
+
+Same branch, sixth change: the user asked to remove the "Wayland · Preview" banner; the preview
+now looks like the lock screen, and the preview-banner string and CSS rules are gone. The
+assertion that the preview shows no banner failed first. Still identifying a preview: its window
+title and, on submit, the notice that authentication is disabled in preview.

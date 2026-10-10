@@ -88,6 +88,15 @@ fn main() {
         .unwrap();
     assert!(power.is_active(), "Power options must default to visible");
     power.set_active(false);
+    // The battery shows its percentage by default; without it only the icon remains.
+    let battery_percentage = get("settings-battery-percentage")
+        .downcast::<gtk::CheckButton>()
+        .unwrap();
+    assert!(
+        battery_percentage.is_active(),
+        "The battery percentage must default to visible"
+    );
+    battery_percentage.set_active(false);
     get("settings-save")
         .downcast::<gtk::Button>()
         .unwrap()
@@ -99,6 +108,7 @@ fn main() {
     assert_eq!(layout.alignment, Alignment::End);
     assert!(!layout.clock_visible);
     assert!(!layout.power_visible);
+    assert!(!layout.battery_percentage);
     // Restore returns the layout group to its defaults and leaves the rest alone,
     // and writes nothing until the form is saved again.
     get("settings-restore-layout")
@@ -108,6 +118,7 @@ fn main() {
     while glib::MainContext::default().iteration(false) {}
     assert!(
         power.is_active()
+            && battery_percentage.is_active()
             && get("settings-clock")
                 .downcast::<gtk::CheckButton>()
                 .unwrap()
@@ -138,7 +149,7 @@ fn main() {
         restored.padding,
         decklock::config::Layout::default().padding
     );
-    assert!(restored.power_visible && restored.clock_visible);
+    assert!(restored.power_visible && restored.clock_visible && restored.battery_percentage);
     // Put the edited layout back so the checks below see what they expect.
     get("settings-padding")
         .downcast::<gtk::SpinButton>()

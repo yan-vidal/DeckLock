@@ -385,6 +385,7 @@ disables it. Real greetd login then owns a separate foreground daemon and an
 embedded login profile in private runtime storage. It does not read the desktop
 controller profiles or start another keyboard/OSD. Closing the keyboard releases
 pad capture; the right pad and triggers provide mouse/click input via the profile.
+While the keyboard is open, A confirms like Enter.
 Normal exit stops and reaps the daemon; a killed greeter also kills its daemon.
 Missing sc-controller, device access or a failed daemon leaves the mouse/touch
 keyboard available. The greetd account needs the controller/uinput access granted
@@ -430,7 +431,9 @@ uses installed GStreamer codecs.
 
 ## Help and roadmap
 
-F1 or the help icon opens an offline guide that follows the settings language.
+In settings, F1 or the ? button opens an offline guide that follows the settings language.
+The lock screen, login and preview show a short guide inside the screen instead
+([unlocking](docs/guide/en-US/lock.md), [signing in](docs/guide/en-US/login.md)).
 Read [General](docs/guide/en-US/general.md) and [Advanced](docs/guide/en-US/advanced.md).
 Ordinary windows have close controls; the title-bar preference is also available through `decklock config set window_decorations false`.
 

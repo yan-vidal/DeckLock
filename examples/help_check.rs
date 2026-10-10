@@ -1,6 +1,7 @@
 //! Help, language and decorations on the gate's private display; no real lock.
 use decklock::{
     config::{Config, Theme},
+    greeter::UserEntry,
     i18n::I18n,
     settings, ui,
 };
@@ -48,20 +49,20 @@ fn help(parent: &gtk::Window) -> gtk::Window {
         .find(|w| w.widget_name() == "decklock-help" && w.transient_for().as_ref() == Some(parent))
         .expect("Help window")
 }
-fn f1(window: &impl IsA<gtk::Widget>) {
+fn press(window: &impl IsA<gtk::Widget>, key: gdk::Key) -> bool {
     let controllers = window.observe_controllers();
-    let key = (0..controllers.n_items())
+    let controller = (0..controllers.n_items())
         .filter_map(|i| {
             controllers
                 .item(i)
                 .and_downcast::<gtk::EventControllerKey>()
         })
         .find(|c| c.name().as_deref() == Some("decklock-help-shortcut"))
-        .expect("F1 controller");
-    assert!(key.emit_by_name::<bool>(
-        "key-pressed",
-        &[&gdk::Key::F1, &0u32, &gdk::ModifierType::empty()]
-    ));
+        .expect("Help key controller");
+    controller.emit_by_name::<bool>("key-pressed", &[&key, &0u32, &gdk::ModifierType::empty()])
+}
+fn f1(window: &impl IsA<gtk::Widget>) {
+    assert!(press(window, gdk::Key::F1));
 }
 fn chrome(window: &gtk::Window) {
     let bar = window
@@ -134,11 +135,16 @@ fn main() {
     capture(&guide, "help-general");
     tabs.set_current_page(Some(1));
     assert!(text(guide.upcast_ref()).contains("Inside DeckLock"));
-    find(window.upcast_ref(), "help-button")
+    let help_button = find(window.upcast_ref(), "help-button")
         .unwrap()
         .downcast::<gtk::Button>()
-        .unwrap()
-        .emit_clicked();
+        .unwrap();
+    assert_eq!(
+        help_button.label().as_deref(),
+        Some("?"),
+        "Help is a question mark"
+    );
+    help_button.emit_clicked();
     assert_eq!(
         help(window.upcast_ref()),
         guide,
@@ -190,52 +196,155 @@ fn main() {
     pump(50);
     assert!(!reopened.is_visible(), "Help closes with parent");
 
-    // Building lock widgets does not acquire a compositor lock (main owns that).
-    // Even a config requesting decorations must not expose help or close there.
-    for preview in [false, true] {
+    // Lock, login and preview show a short guide inside their own surface: a
+    // session lock displays no other window, so their help never opens one. The
+    // full guide stays in settings. Building lock widgets does not acquire a
+    // compositor lock (main owns that), and the lock still has no window controls.
+    for (greeter, preview, locale, heading) in [
+        (false, false, "en-US", "Unlocking"),
+        (false, false, "pt-BR", "Como desbloquear"),
+        (false, true, "en-US", "Unlocking"),
+        (true, false, "en-US", "Signing in"),
+        (true, true, "pt-BR", "Como entrar"),
+    ] {
+        let case = format!("greeter={greeter} preview={preview} {locale}");
+        // The guide follows the configured language, as the rest of the screen.
         let config = Config {
+            locale: Some(locale.into()),
             background_pool: Some(vec![]),
             idle_pool: Some(vec![]),
             ..Default::default()
         };
-        let view = ui::build(
-            &app,
-            Rc::new(ui::Settings {
-                theme: Theme::from_config(&config).unwrap(),
-                config,
-                strings: I18n::new(Some("en-US"), None).unwrap(),
-                preview,
-                show_keyboard: false,
-                start_idle: false,
-                username: "test".into(),
-                greeter: false,
-            }),
-            Rc::new(|_| panic!("Help must not authenticate")),
-        );
-        assert_eq!(view.window.is_decorated(), preview);
-        assert_eq!(
-            find(view.window.upcast_ref(), "help-button").is_some(),
-            preview
-        );
-        if preview {
-            chrome(view.window.upcast_ref());
-            view.window.present();
-            pump(50);
-            f1(&view.window);
-            pump(50);
-            assert!(help(view.window.upcast_ref()).is_visible());
+        let settings = Rc::new(ui::Settings {
+            theme: Theme::from_config(&config).unwrap(),
+            config,
+            strings: I18n::new(Some(locale), None).unwrap(),
+            preview,
+            show_keyboard: false,
+            start_idle: false,
+            username: "alice".into(),
+            greeter,
+            power_supply: None,
+        });
+        let view = if greeter {
+            ui::build_greeter_with_users(
+                &app,
+                settings,
+                vec![UserEntry {
+                    username: "alice".into(),
+                    display_name: "alice".into(),
+                    uid: 1000,
+                    icon_path: None,
+                }],
+                Rc::new(|_| panic!("Help must not authenticate")),
+            )
         } else {
-            assert!(view.window.titlebar().is_none());
-            let controls = view.window.observe_controllers();
+            ui::build(
+                &app,
+                settings,
+                Rc::new(|_| panic!("Help must not authenticate")),
+            )
+        };
+        assert_eq!(view.window.is_decorated(), preview && !greeter, "{case}");
+        if !preview {
+            assert!(view.window.titlebar().is_none(), "{case}");
+        }
+        view.window.present();
+        pump(50);
+        let button = find(view.window.upcast_ref(), "help-button")
+            .unwrap_or_else(|| panic!("Help button: {case}"))
+            .downcast::<gtk::Button>()
+            .unwrap();
+        assert_eq!(button.label().as_deref(), Some("?"), "{case}");
+        let panel = find(view.window.upcast_ref(), "help-panel")
+            .unwrap_or_else(|| panic!("In-screen help: {case}"));
+        assert!(!panel.is_visible(), "Help starts closed: {case}");
+        let windows = gtk::Window::list_toplevels().len();
+        f1(&view.window);
+        pump(50);
+        assert!(
+            panel.is_visible(),
+            "F1 shows the help in the screen: {case}"
+        );
+        assert_eq!(
+            gtk::Window::list_toplevels().len(),
+            windows,
+            "Help must not open another window: {case}"
+        );
+        let content = text(&panel);
+        assert!(content.contains(heading), "Short guide missing: {case}");
+        for full in ["Using DeckLock", "Usando o DeckLock", "Inside DeckLock"] {
             assert!(
-                !(0..controls.n_items())
-                    .filter_map(|i| controls.item(i).and_downcast::<gtk::EventController>())
-                    .any(|c| c.name().as_deref() == Some("decklock-help-shortcut"))
+                !content.contains(full),
+                "The full guide stays in settings: {case}"
             );
         }
+        // Plain words for whoever is at the screen: no commands or system paths.
+        for technical in ["sudo", "/etc/", "/var/", "PAM", "greetd", "systemctl"] {
+            assert!(
+                !content.contains(technical),
+                "Help mentions {technical}: {case}"
+            );
+        }
+        assert!(
+            press(&view.window, gdk::Key::Escape),
+            "Esc closes the help first: {case}"
+        );
+        pump(20);
+        assert!(!panel.is_visible(), "Esc closes the help: {case}");
+        assert!(
+            view.window.is_visible(),
+            "Esc on help keeps the screen: {case}"
+        );
+        button.emit_clicked();
+        pump(20);
+        assert!(panel.is_visible(), "The ? button shows the help: {case}");
+        find(&panel, "help-close")
+            .unwrap_or_else(|| panic!("Help close button: {case}"))
+            .downcast::<gtk::Button>()
+            .unwrap()
+            .emit_clicked();
+        pump(20);
+        assert!(
+            !panel.is_visible(),
+            "The close button hides the help: {case}"
+        );
         view.window.destroy();
+        pump(30);
     }
+
+    // Rest mode hides the help with the other controls.
+    let config = Config {
+        background_pool: Some(vec![]),
+        idle_pool: Some(vec![]),
+        ..Default::default()
+    };
+    let resting = ui::build(
+        &app,
+        Rc::new(ui::Settings {
+            theme: Theme::from_config(&config).unwrap(),
+            config,
+            strings: I18n::new(Some("en-US"), None).unwrap(),
+            preview: false,
+            show_keyboard: false,
+            start_idle: true,
+            username: "alice".into(),
+            greeter: false,
+            power_supply: None,
+        }),
+        Rc::new(|_| panic!("Help must not authenticate")),
+    );
+    resting.window.present();
+    pump(400);
+    assert!(
+        !find(resting.window.upcast_ref(), "help-button")
+            .unwrap()
+            .is_visible(),
+        "Rest mode hides the help button"
+    );
+    resting.window.destroy();
+    pump(30);
     println!(
-        "PASS: F1, bilingual chapters, live language, help reuse/cleanup, window chrome, GUI preference save and lock UI exclusion"
+        "PASS: F1, bilingual chapters, live language, help reuse/cleanup, window chrome, GUI preference save, and the short in-screen guides of lock, login and preview"
     );
 }

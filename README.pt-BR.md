@@ -397,6 +397,7 @@ A integração é opcional. O setup preserva a escolha nas reaplicações;
 exclusivo, em primeiro plano, com perfil embutido e diretórios privados no runtime.
 Ele não lê os perfis do desktop nem inicia outro teclado/OSD. Fechar o teclado
 libera os pads; o pad direito e os gatilhos oferecem mouse/cliques pelo perfil.
+Com o teclado aberto, o botão A confirma como Enter.
 A saída normal encerra o daemon; matar o greeter também mata seu daemon. Sem
 sc-controller, acesso ao dispositivo ou daemon funcional, o teclado por mouse/toque
 continua disponível. A conta do greetd precisa do acesso ao controle/uinput concedido
@@ -441,7 +442,9 @@ a reprodução depende dos codecs GStreamer instalados.
 
 ## Ajuda e roadmap
 
-F1 ou o ícone de ajuda abre um guia offline que acompanha o idioma das configurações.
+Nas configurações, F1 ou o botão ? abre um guia offline que acompanha o idioma das configurações.
+A tela de bloqueio, o login e o preview mostram um guia curto na própria tela
+([desbloquear](docs/guide/pt-BR/lock.md), [entrar](docs/guide/pt-BR/login.md)).
 Leia [Geral](docs/guide/pt-BR/general.md) e [Avançada](docs/guide/pt-BR/advanced.md).
 As janelas comuns têm botão de fechar; a opção de barras de título também pode ser alterada com `decklock config set window_decorations false`.
 

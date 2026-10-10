@@ -24,6 +24,9 @@ pub struct Settings {
     pub start_idle: bool,
     pub username: String,
     pub greeter: bool,
+    /// Linux power-supply class directory the battery level is read from
+    /// (/sys/class/power_supply); None shows no battery.
+    pub power_supply: Option<std::path::PathBuf>,
 }
 
 #[derive(Clone)]
@@ -736,10 +739,15 @@ fn build_keyboard(
                         }
                     } else if matches!(name.as_str(), "B" | "X" | "Y" | "C") {
                         container.set_visible(false);
-                    } else if (name == "LB" || name == "RB")
-                        && let Some((button, _)) = keys.iter().find(|(_, key)| {
-                            key.normal == if name == "LB" { "Backspace" } else { "Space" }
-                        })
+                    } else if let Some(target) = match name.as_str() {
+                        "LB" => Some("Backspace"),
+                        "RB" => Some("Space"),
+                        // A is Enter on a Steam Deck. The visible keyboard holds
+                        // the controller, so A reaches DeckLock instead of the profile.
+                        "A" => Some("Enter"),
+                        _ => None,
+                    } && let Some((button, _)) =
+                        keys.iter().find(|(_, key)| key.normal == target)
                     {
                         button.emit_clicked();
                     }
@@ -971,39 +979,57 @@ fn build_in(
     outer.set_hexpand(true);
     outer.set_vexpand(true);
     overlay.add_overlay(&outer);
-    if settings.preview || settings.greeter {
-        let banner_text = if settings.greeter {
-            settings.strings.text("greeter-title")
-        } else {
-            settings.strings.text("preview-banner")
-        };
-        let banner = gtk::Label::new(Some(&banner_text));
-        banner.set_widget_name("preview-banner");
-        banner.set_max_width_chars(24);
-        banner.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        banner.set_halign(gtk::Align::Start);
-        banner.set_valign(gtk::Align::Start);
-        banner.set_can_target(false);
-        overlay.add_overlay(&banner);
-        let strings =
-            Rc::new(I18n::new(settings.config.locale.as_deref(), None).expect("Validated locale"));
-        let (help, key) = crate::help::controls(&window, strings);
-        help.set_halign(gtk::Align::Start);
-        help.set_valign(gtk::Align::Start);
-        help.set_margin_top(36);
-        overlay.add_overlay(&help);
-        window.add_controller(key.clone());
-        bindings.controllers.borrow_mut().push(key.upcast());
-    }
+    // The top bar spans the width: a status row (the battery on the right) over a
+    // controls row (help on the left, power on the right). The battery's row thus
+    // lowers the help button and the power buttons alike; without a battery it
+    // takes no space. The preview looks the same, with no banner.
+    let top_bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    top_bar.set_widget_name("top-bar");
+    top_bar.set_valign(gtk::Align::Start);
+    top_bar.set_margin_top(12);
+    top_bar.set_margin_start(12);
+    top_bar.set_margin_end(12);
+    let status_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    let controls_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    top_bar.append(&status_row);
+    top_bar.append(&controls_row);
+    overlay.add_overlay(&top_bar);
+    let status_space = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    status_space.set_hexpand(true);
+    status_row.append(&status_space);
+    // Lock, login and preview carry a short guide in their own surface, opened by
+    // the ? or F1. Its panel goes above the keyboard, further down.
+    let help = crate::help::screen(&settings.strings, settings.greeter);
+    help.button.set_halign(gtk::Align::Start);
+    help.button.set_valign(gtk::Align::Center);
+    controls_row.append(&help.button);
+    let controls_space = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    controls_space.set_hexpand(true);
+    controls_row.append(&controls_space);
+    window.add_controller(help.key.clone());
+    bindings
+        .controllers
+        .borrow_mut()
+        .push(help.key.clone().upcast());
     let status = gtk::Label::new(None);
     status.set_widget_name("status");
     status.set_wrap(true);
+    let battery = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    battery.set_widget_name("battery");
+    battery.set_valign(gtk::Align::Center);
+    battery.set_visible(false);
+    // Size, colors and state styles (.low, .charging) come from the theme CSS.
+    let battery_icon = gtk::Image::new();
+    let battery_label = gtk::Label::new(None);
+    battery.append(&battery_icon);
+    battery.append(&battery_label);
+    status_row.append(&battery);
     let power = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     power.set_widget_name("power");
-    power.set_halign(gtk::Align::End);
-    power.set_valign(gtk::Align::Start);
-    power.set_margin_top(12);
-    power.set_margin_end(12);
+    power.set_valign(gtk::Align::Center);
+    // Each icon expands within its slot; the bar's spare width stays between the
+    // help button and these buttons instead of stretching them.
+    power.set_hexpand(false);
 
     #[derive(Clone, Copy)]
     enum PowerAction {
@@ -1083,7 +1109,57 @@ fn build_in(
         power.append(&button);
     }
     power.set_visible(settings.theme.layout.power_visible);
-    overlay.add_overlay(&power);
+    controls_row.append(&power);
+    let idle = Rc::new(Cell::new(false));
+    let battery_present = Rc::new(Cell::new(false));
+    let refresh_battery = {
+        let battery = battery.downgrade();
+        let icon = battery_icon.downgrade();
+        let label = battery_label.downgrade();
+        let present = battery_present.clone();
+        let idle = idle.clone();
+        let settings = settings.clone();
+        move || {
+            let (Some(battery), Some(icon), Some(label)) =
+                (battery.upgrade(), icon.upgrade(), label.upgrade())
+            else {
+                return glib::ControlFlow::Break;
+            };
+            let level = settings
+                .power_supply
+                .as_deref()
+                .and_then(crate::battery::read);
+            if let Some(level) = level {
+                icon.set_icon_name(Some(&crate::battery::icon_name(level)));
+                label.set_text(&format!("{}%", level.percent));
+                label.set_visible(settings.theme.layout.battery_percentage);
+                // The tooltip keeps the level when the layout shows the icon alone.
+                let name = settings.strings.text(if level.charging {
+                    "battery-charging"
+                } else {
+                    "battery"
+                });
+                battery.set_tooltip_text(Some(&format!("{name}: {}%", level.percent)));
+                for (class, active) in [
+                    ("charging", level.charging),
+                    ("low", !level.charging && level.percent <= 20),
+                ] {
+                    if active {
+                        battery.add_css_class(class);
+                    } else {
+                        battery.remove_css_class(class);
+                    }
+                }
+            }
+            present.set(level.is_some());
+            battery.set_visible(level.is_some() && !idle.get());
+            glib::ControlFlow::Continue
+        }
+    };
+    refresh_battery();
+    if settings.power_supply.is_some() {
+        glib::timeout_add_seconds_local(30, refresh_battery);
+    }
     let layout = &settings.theme.layout;
     let content = gtk::Box::new(
         if layout.arrangement == Arrangement::Horizontal {
@@ -1669,6 +1745,22 @@ fn build_in(
     keyboard.set_valign(gtk::Align::End);
     keyboard.set_margin_bottom(16);
     overlay.add_overlay(&keyboard);
+    overlay.add_overlay(&help.panel);
+    {
+        // The open help clears the keyboard (and its controller capture) out of
+        // the way; closing it returns typing to the password.
+        let keyboard = keyboard.downgrade();
+        let entry = entry.downgrade();
+        help.panel.connect_visible_notify(move |panel| {
+            if panel.is_visible() {
+                if let Some(keyboard) = keyboard.upgrade() {
+                    keyboard.set_visible(false);
+                }
+            } else if let Some(entry) = entry.upgrade() {
+                entry.grab_focus();
+            }
+        });
+    }
     // Compact mode is triggered by visibility, so mouse, signal and controller
     // toggles all keep exactly the same space available for the password.
     let compact: Rc<dyn Fn(&gtk::Box)> = Rc::new({
@@ -1818,9 +1910,11 @@ fn build_in(
     let weak_window = window.downgrade();
     let weak_form = form.downgrade();
     let weak_keyboard = keyboard.downgrade();
-    let idle = Rc::new(Cell::new(false));
     let weak_clock_box = clock_box.downgrade();
     let weak_power = power.downgrade();
+    let weak_battery = battery.downgrade();
+    let weak_help = help.button.downgrade();
+    let weak_help_panel = help.panel.downgrade();
     let mut changed_at = Instant::now();
     let settings_idle = settings.clone();
     if settings.start_idle {
@@ -1848,6 +1942,15 @@ fn build_in(
         if idle.replace(is_idle) != is_idle {
             if let Some(power) = weak_power.upgrade() {
                 power.set_visible(!is_idle);
+            }
+            if let Some(battery) = weak_battery.upgrade() {
+                battery.set_visible(!is_idle && battery_present.get());
+            }
+            if let Some(help) = weak_help.upgrade() {
+                help.set_visible(!is_idle);
+            }
+            if is_idle && let Some(panel) = weak_help_panel.upgrade() {
+                panel.set_visible(false);
             }
             if let Some(clock) = weak_clock_box.upgrade() {
                 clock.set_visible(if is_idle {

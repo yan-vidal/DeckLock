@@ -1,4 +1,4 @@
-//! Greeter account selection by physical arrow keys, through GTK's own event
+//! Greeter account selection by physical arrow keys and submission by Enter, through GTK's own event
 //! dispatch. Run by scripts/check under a private Xvfb: XTest reaches the view
 //! the way a keyboard (or wtype under Cage) does, which a synthesized GTK
 //! signal cannot, because the focused text child sees the key first.
@@ -129,6 +129,7 @@ fn main() {
         start_idle: false,
         username: "alice".into(),
         greeter: true,
+        power_supply: None,
     });
     ui::apply_css(&settings.theme.css).unwrap();
     let view = ui::build_greeter_with_users(
@@ -189,6 +190,18 @@ fn main() {
             || w.is_ancestor(&view.entry)),
         "Password entry must keep focus"
     );
+
+    // Enter on a physical keyboard submits the typed password, as the submit
+    // button does. Preview reports instead of starting a session.
+    keys.press("x");
+    settle("typed key before Enter", || view.entry.text() == "x");
+    keys.press("Return");
+    let notice = I18n::new(Some("en-US"), None)
+        .unwrap()
+        .text("preview-greeter-notice");
+    settle("Enter submits the login", || {
+        view.status.text() == notice && view.entry.text().is_empty()
+    });
     view.window.destroy();
-    println!("PASS: greeter arrow keys select accounts through GTK dispatch");
+    println!("PASS: greeter arrow keys select accounts and Enter submits, through GTK dispatch");
 }

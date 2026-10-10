@@ -65,6 +65,7 @@ impl LivePreview {
             start_idle: self.idle,
             username: crate::auth::current_username()?,
             greeter: false,
+            power_supply: Some("/sys/class/power_supply".into()),
         });
         let view = if self.is_open() {
             ui::rebuild_preview(self.view.take().unwrap(), app, settings)

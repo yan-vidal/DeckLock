@@ -9,6 +9,7 @@ use gtk::{gio, prelude::*};
 use std::{
     cell::Cell,
     os::unix::fs::PermissionsExt,
+    path::Path,
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -50,6 +51,7 @@ fn check_adaptive_controls(app: &gtk::Application) {
                 start_idle: false,
                 username: "Fixed fixture".into(),
                 greeter: false,
+                power_supply: None,
             }),
             Rc::new(|_| panic!("Adaptive preview must never authenticate")),
         );
@@ -150,6 +152,444 @@ fn check_adaptive_controls(app: &gtk::Application) {
     }
 }
 
+fn pump_for(ms: u64) {
+    let end = Instant::now() + Duration::from_millis(ms);
+    while Instant::now() < end {
+        while glib::MainContext::default().iteration(false) {}
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// Battery level from a fixed power-supply fixture, never the host's battery.
+fn check_battery(app: &gtk::Application) {
+    let supplies = tempfile::tempdir().unwrap();
+    let supply = |name: &str, fields: &[(&str, &str)]| {
+        let path = supplies.path().join(name);
+        std::fs::create_dir(&path).unwrap();
+        for (field, value) in fields {
+            std::fs::write(path.join(field), format!("{value}\n")).unwrap();
+        }
+    };
+    supply("ACAD", &[("type", "Mains"), ("online", "0")]);
+    supply(
+        "BAT1",
+        &[
+            ("type", "Battery"),
+            ("present", "1"),
+            ("capacity", "67"),
+            ("status", "Discharging"),
+        ],
+    );
+    // A controller reports its own battery; it is not the system's.
+    supply(
+        "controller-battery",
+        &[
+            ("type", "Battery"),
+            ("scope", "Device"),
+            ("capacity", "5"),
+            ("status", "Discharging"),
+        ],
+    );
+    let no_battery = tempfile::tempdir().unwrap();
+    // The top bar spans the width: the battery's row on top, then the help
+    // button and the power buttons in one row.
+    for (greeter, preview, root, start_idle, power_visible, expected) in [
+        (true, true, Some(supplies.path()), false, true, Some("67%")),
+        (
+            false,
+            false,
+            Some(supplies.path()),
+            false,
+            true,
+            Some("67%"),
+        ),
+        (false, true, Some(supplies.path()), false, true, Some("67%")),
+        // Without power buttons the battery takes the corner alone.
+        (
+            false,
+            false,
+            Some(supplies.path()),
+            false,
+            false,
+            Some("67%"),
+        ),
+        // Without a battery its row takes no space.
+        (true, true, Some(no_battery.path()), false, true, None),
+        (false, false, None, false, true, None),
+        (false, true, Some(no_battery.path()), false, true, None),
+        // Rest mode hides the top controls, the battery with them.
+        (false, false, Some(supplies.path()), true, true, None),
+    ] {
+        let view = ui::build(
+            app,
+            Rc::new(ui::Settings {
+                config: Config {
+                    system_keyboard: false,
+                    window_decorations: false,
+                    background_pool: Some(vec![]),
+                    idle_pool: Some(vec![]),
+                    ..Config::default()
+                },
+                theme: Theme {
+                    layout: decklock::config::Layout {
+                        power_visible,
+                        ..decklock::config::Layout::default()
+                    },
+                    ..Theme::load(None).unwrap()
+                },
+                strings: I18n::new(Some("pt-BR"), None).unwrap(),
+                preview,
+                show_keyboard: false,
+                start_idle,
+                username: "Fixed fixture".into(),
+                greeter,
+                power_supply: root.map(Path::to_path_buf),
+            }),
+            Rc::new(|_| panic!("Battery check must never authenticate")),
+        );
+        view.window.set_titlebar(None::<&gtk::Widget>);
+        view.window.set_decorated(false);
+        view.window.set_default_size(1280, 800);
+        view.window.present();
+        pump_for(400);
+        let widgets = descendants(view.window.upcast_ref());
+        let named = |name: &str| {
+            widgets
+                .iter()
+                .find(|w| w.widget_name() == name)
+                .cloned()
+                .unwrap_or_else(|| panic!("Missing {name}"))
+        };
+        let (battery, power, help) = (named("battery"), named("power"), named("help-button"));
+        let case = format!(
+            "greeter={greeter} preview={preview} root={root:?} idle={start_idle} power={power_visible}"
+        );
+        if start_idle {
+            assert!(
+                !battery.is_visible() && !power.is_visible() && !help.is_visible(),
+                "Rest mode hides the top controls: {case}"
+            );
+            view.window.destroy();
+            pump_for(30);
+            continue;
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while help.width() == 0 && Instant::now() < deadline {
+            pump_for(10);
+        }
+        let bounds = |widget: &gtk::Widget| widget.compute_bounds(&view.window).unwrap();
+        let middle = |r: &gtk::graphene::Rect| r.y() + r.height() / 2.0;
+        let h = bounds(&help);
+        let buttons: Vec<_> = descendants(&power)
+            .into_iter()
+            .filter_map(|w| w.downcast::<gtk::Button>().ok())
+            .filter_map(|button| button.compute_bounds(&view.window))
+            .collect();
+        if power_visible {
+            let first = buttons.first().expect("Power buttons");
+            assert!(
+                (middle(&h) - middle(first)).abs() <= 2.0,
+                "The help button lines up with the power buttons: {case}"
+            );
+            // The bar's spare width goes between the two sides, never into the buttons.
+            for button in &buttons {
+                assert!(
+                    button.width() <= 64.0,
+                    "Power buttons keep their size ({} px): {case}",
+                    button.width()
+                );
+            }
+        }
+        match expected {
+            None => {
+                assert!(!battery.is_visible(), "No battery level expected: {case}");
+                assert!(
+                    h.y() <= 30.0,
+                    "Without a battery nothing is reserved above the help button: {case}"
+                );
+            }
+            Some(level) => {
+                assert!(battery.is_visible(), "Battery level hidden: {case}");
+                let label = descendants(&battery)
+                    .into_iter()
+                    .find_map(|w| w.downcast::<gtk::Label>().ok())
+                    .expect("Battery percentage");
+                assert_eq!(label.text(), level, "{case}");
+                let b = bounds(&battery);
+                assert!(
+                    b.y() < 60.0 && b.x() > 640.0,
+                    "Battery must be in the top-right corner: {case}"
+                );
+                assert!(
+                    b.y() + b.height() <= h.y(),
+                    "The battery's row is reserved above the help button: {case}"
+                );
+                if power_visible {
+                    let p = bounds(&power);
+                    assert!(
+                        b.y() + b.height() <= p.y(),
+                        "Battery must sit above the power buttons: {case}"
+                    );
+                    let buttons_right = buttons
+                        .iter()
+                        .map(|bounds| bounds.x() + bounds.width())
+                        .fold(0.0_f32, f32::max);
+                    assert!(
+                        (b.x() + b.width() - buttons_right).abs() <= 1.0,
+                        "Battery must align with the right edge of the power buttons: {case}"
+                    );
+                } else {
+                    assert!(!power.is_visible(), "{case}");
+                    assert!(
+                        b.x() + b.width() >= 1280.0 - 40.0,
+                        "Without power buttons the battery takes the corner: {case}"
+                    );
+                }
+            }
+        }
+        // The preview looks like the lock screen: no banner over it.
+        assert!(
+            !widgets.iter().any(|w| w.widget_name() == "preview-banner"),
+            "The preview shows no banner: {case}"
+        );
+        view.window.destroy();
+        pump_for(30);
+    }
+
+    // Themes place the battery through CSS margins: #battery within its row,
+    // and #top-bar for the whole bar.
+    let display = gtk::gdk::Display::default().unwrap();
+    let mut placements = Vec::new();
+    // Measured from zero margins: a theme rule replaces the default theme's.
+    for rule in [
+        Some("#battery { margin-right: 0; margin-top: 0; }"),
+        Some("#battery { margin-right: 40px; margin-top: 30px; }"),
+        Some("#top-bar { margin-top: 50px; margin-right: 100px; }"),
+    ] {
+        let provider = rule.map(|rule| {
+            let provider = gtk::CssProvider::new();
+            provider.load_from_string(rule);
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+            provider
+        });
+        let view = ui::build(
+            app,
+            Rc::new(ui::Settings {
+                config: Config {
+                    system_keyboard: false,
+                    window_decorations: false,
+                    background_pool: Some(vec![]),
+                    idle_pool: Some(vec![]),
+                    ..Config::default()
+                },
+                theme: Theme::load(None).unwrap(),
+                strings: I18n::new(Some("pt-BR"), None).unwrap(),
+                preview: false,
+                show_keyboard: false,
+                start_idle: false,
+                username: "Fixed fixture".into(),
+                greeter: false,
+                power_supply: Some(supplies.path().to_path_buf()),
+            }),
+            Rc::new(|_| panic!("Battery check must never authenticate")),
+        );
+        view.window.set_default_size(1280, 800);
+        view.window.present();
+        pump_for(400);
+        let widgets = descendants(view.window.upcast_ref());
+        let bounds = |name: &str| {
+            widgets
+                .iter()
+                .find(|w| w.widget_name() == name)
+                .and_then(|w| w.compute_bounds(&view.window))
+                .unwrap_or_else(|| panic!("{name} bounds"))
+        };
+        let (battery, power) = (bounds("battery"), bounds("power"));
+        placements.push((
+            battery.x() + battery.width(),
+            battery.y(),
+            power.x() + power.width(),
+            power.y(),
+        ));
+        view.window.destroy();
+        pump_for(30);
+        if let Some(provider) = provider {
+            gtk::style_context_remove_provider_for_display(&display, &provider);
+        }
+    }
+    let [
+        (battery_right, battery_y, power_right, power_y),
+        (moved_right, moved_y, ..),
+        (.., bar_right, bar_y),
+    ] = placements[..]
+    else {
+        unreachable!()
+    };
+    assert!(
+        (battery_right - moved_right - 40.0).abs() <= 1.0,
+        "#battery margin-right moves it left ({battery_right} -> {moved_right})"
+    );
+    assert!(
+        (moved_y - battery_y - 30.0).abs() <= 1.0,
+        "#battery margin-top moves it down ({battery_y} -> {moved_y})"
+    );
+    assert!(
+        (power_right - bar_right - 100.0).abs() <= 1.0 && (bar_y - power_y - 50.0).abs() <= 1.0,
+        "#top-bar margins move the whole bar"
+    );
+
+    // Themes style the battery through CSS: state classes and the icon size.
+    let low = tempfile::tempdir().unwrap();
+    let charging = tempfile::tempdir().unwrap();
+    for (root, status) in [(&low, "Discharging"), (&charging, "Charging")] {
+        let path = root.path().join("BAT0");
+        std::fs::create_dir(&path).unwrap();
+        for (field, value) in [("type", "Battery"), ("capacity", "15"), ("status", status)] {
+            std::fs::write(path.join(field), format!("{value}\n")).unwrap();
+        }
+    }
+    // The layout can show the icon alone; the tooltip still gives the level.
+    let icon_only = ui::build(
+        app,
+        Rc::new(ui::Settings {
+            config: Config {
+                system_keyboard: false,
+                window_decorations: false,
+                background_pool: Some(vec![]),
+                idle_pool: Some(vec![]),
+                ..Config::default()
+            },
+            theme: Theme {
+                layout: decklock::config::Layout {
+                    battery_percentage: false,
+                    ..decklock::config::Layout::default()
+                },
+                ..Theme::load(None).unwrap()
+            },
+            strings: I18n::new(Some("pt-BR"), None).unwrap(),
+            preview: true,
+            show_keyboard: false,
+            start_idle: false,
+            username: "Fixed fixture".into(),
+            greeter: false,
+            power_supply: Some(supplies.path().to_path_buf()),
+        }),
+        Rc::new(|_| panic!("Battery check must never authenticate")),
+    );
+    icon_only.window.present();
+    pump_for(300);
+    let battery = descendants(icon_only.window.upcast_ref())
+        .into_iter()
+        .find(|w| w.widget_name() == "battery")
+        .expect("Battery level");
+    assert!(battery.is_visible(), "Icon-only battery stays visible");
+    let parts = descendants(&battery);
+    assert!(
+        parts
+            .iter()
+            .filter_map(|w| w.downcast_ref::<gtk::Image>())
+            .any(|icon| icon.is_visible()),
+        "Icon-only battery keeps its icon"
+    );
+    assert!(
+        !parts
+            .iter()
+            .filter_map(|w| w.downcast_ref::<gtk::Label>())
+            .any(|label| label.is_visible()),
+        "Icon-only battery hides the percentage"
+    );
+    assert!(
+        battery
+            .tooltip_text()
+            .is_some_and(|tip| tip.contains("67%")),
+        "The tooltip keeps the level when the percentage is hidden"
+    );
+    icon_only.window.destroy();
+    pump_for(30);
+
+    for (root, classes, theme_rule, icon_size) in [
+        (supplies.path(), [false, false], None, 16),
+        (low.path(), [true, false], None, 16),
+        (charging.path(), [false, true], None, 16),
+        (
+            supplies.path(),
+            [false, false],
+            Some("#battery image { -gtk-icon-size: 32px; }"),
+            32,
+        ),
+    ] {
+        let provider = theme_rule.map(|rule| {
+            let provider = gtk::CssProvider::new();
+            provider.load_from_string(rule);
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+            provider
+        });
+        let view = ui::build(
+            app,
+            Rc::new(ui::Settings {
+                config: Config {
+                    system_keyboard: false,
+                    window_decorations: false,
+                    background_pool: Some(vec![]),
+                    idle_pool: Some(vec![]),
+                    ..Config::default()
+                },
+                theme: Theme::load(None).unwrap(),
+                strings: I18n::new(Some("pt-BR"), None).unwrap(),
+                preview: true,
+                show_keyboard: false,
+                start_idle: false,
+                username: "Fixed fixture".into(),
+                greeter: false,
+                power_supply: Some(root.to_path_buf()),
+            }),
+            Rc::new(|_| panic!("Battery check must never authenticate")),
+        );
+        view.window.set_default_size(1280, 800);
+        view.window.present();
+        pump_for(300);
+        let battery = descendants(view.window.upcast_ref())
+            .into_iter()
+            .find(|w| w.widget_name() == "battery")
+            .expect("Battery level");
+        let case = format!("root={root:?} rule={theme_rule:?}");
+        assert_eq!(
+            [
+                battery.has_css_class("low"),
+                battery.has_css_class("charging")
+            ],
+            classes,
+            "Battery state classes: {case}"
+        );
+        let icon = descendants(&battery)
+            .into_iter()
+            .find_map(|w| w.downcast::<gtk::Image>().ok())
+            .expect("Battery icon");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while icon.width() == 0 && Instant::now() < deadline {
+            pump_for(10);
+        }
+        assert_eq!(
+            icon.width(),
+            icon_size,
+            "Battery icon size follows the theme CSS: {case}"
+        );
+        view.window.destroy();
+        pump_for(30);
+        if let Some(provider) = provider {
+            gtk::style_context_remove_provider_for_display(&display, &provider);
+        }
+    }
+}
+
 fn main() {
     gtk::init().expect("Wayland display required for the preview check");
     let app = gtk::Application::new(
@@ -159,6 +599,7 @@ fn main() {
     app.register(None::<&gio::Cancellable>).unwrap();
     ui::apply_css(&Theme::load(None).unwrap().css).unwrap();
     check_adaptive_controls(&app);
+    check_battery(&app);
     let settings = Rc::new(ui::Settings {
         config: Config {
             system_keyboard: false,
@@ -171,6 +612,7 @@ fn main() {
         start_idle: false,
         username: "Preview".into(),
         greeter: false,
+        power_supply: None,
     });
     ui::apply_css(&settings.theme.css).unwrap();
     let submitted = Rc::new(Cell::new(false));
@@ -265,6 +707,7 @@ fn main() {
         start_idle: false,
         username: "Preview".into(),
         greeter: false,
+        power_supply: None,
     });
     let preview_view = ui::build(&app, preview_settings, Rc::new(|_| {}));
     preview_view.window.present();
@@ -304,6 +747,7 @@ fn main() {
         start_idle: false,
         username: "User".into(),
         greeter: false,
+        power_supply: None,
     });
     let normal_view = ui::build(&app, normal_settings, Rc::new(|_| {}));
     normal_view.window.present();
@@ -345,6 +789,7 @@ fn main() {
         start_idle: false,
         username: "PreviewUser".into(),
         greeter: true,
+        power_supply: None,
     });
     let greeter_view = ui::build(&app, greeter_settings, Rc::new(|_| {}));
     assert!(
@@ -406,6 +851,25 @@ fn main() {
     );
     (greeter_view.controller_event)(ControllerEvent::Connected);
     assert!(greeter_view.keyboard.has_css_class("ghost"));
+    // On a Steam Deck the A button is Enter. While the keyboard holds the
+    // controller, DeckLock receives A itself, so A must submit like Enter.
+    for pressed in [true, false] {
+        (greeter_view.controller_event)(ControllerEvent::Button {
+            name: "A".into(),
+            pressed,
+        });
+    }
+    assert_eq!(
+        greeter_view.status.text(),
+        I18n::new(Some("pt-BR"), None)
+            .unwrap()
+            .text("preview-greeter-notice"),
+        "A must submit the login while the keyboard holds the controller"
+    );
+    assert!(
+        greeter_view.entry.text().is_empty(),
+        "A must submit the typed password"
+    );
     let greeter_power = descendants(greeter_view.window.upcast_ref())
         .into_iter()
         .find(|w| w.widget_name() == "power")
@@ -460,6 +924,29 @@ fn main() {
     assert!(
         all_descendants.iter().any(|w| w.widget_name() == "avatar"),
         "Greeter must display avatar widget"
+    );
+    assert!(
+        !all_descendants
+            .iter()
+            .any(|w| w.widget_name() == "preview-banner"),
+        "Login must not show a title over the background"
+    );
+    let login_help = all_descendants
+        .iter()
+        .find(|w| w.widget_name() == "help-button")
+        .expect("Login help button")
+        .clone()
+        .downcast::<gtk::Button>()
+        .unwrap();
+    assert_eq!(
+        login_help.label().as_deref(),
+        Some("?"),
+        "Login help is a question mark"
+    );
+    assert_eq!(login_help.halign(), gtk::Align::Start);
+    assert!(
+        login_help.margin_top() <= 12,
+        "Login help takes the top-left corner the title used to share"
     );
     if decklock::greeter::list_system_users().len() > 1 {
         assert!(
@@ -549,6 +1036,7 @@ fn main() {
             start_idle: false,
             username: "locktest".into(),
             greeter: false,
+            power_supply: None,
         }),
         Rc::new(|_| {}),
     );
@@ -615,6 +1103,7 @@ fn main() {
         start_idle: false,
         username: "Preview".into(),
         greeter: false,
+        power_supply: None,
     });
     let view = ui::build(&app, settings, Rc::new(|_| panic!("Preview authenticated")));
     view.window.present();

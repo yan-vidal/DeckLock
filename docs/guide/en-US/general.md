@@ -12,7 +12,7 @@ decklock --settings
 
 Open preview to try your changes. Preview does not lock your session, authenticate a password or run power actions. Escape closes the lock-screen preview. Closing it never unlocks a real session.
 
-Use F1 or the question-mark button for this guide. General covers everyday use; Advanced explains the implementation. The guide follows the language selected in settings and works without an internet connection.
+In settings, use F1 or the question-mark button for this guide. On the lock screen, the login and the preview, the same button opens a short summary inside the screen. General covers everyday use; Advanced explains the implementation. The guide follows the language selected in settings and works without an internet connection.
 
 ## Save and window controls
 
@@ -77,9 +77,9 @@ DeckLock does not do this for you. Counting failures and locking accounts is the
 
 ## Keyboard and power
 
-Use the physical or virtual keyboard. Shift changes case, double Shift latches Caps Lock, and Alt exposes alternate characters. The eye beside the password toggles its visibility. Optional sc-controller integration uses its external daemon and the embedded keyboard.
+Use the physical or virtual keyboard. Shift changes case, double Shift latches Caps Lock, and Alt exposes alternate characters. The eye beside the password toggles its visibility. Optional sc-controller integration uses its external daemon and the embedded keyboard. While the on-screen keyboard is open, the controller's A button confirms like Enter.
 
-User switching delegates to LightDM, GDM, an existing greeter session that `loginctl` can activate, or `switch_user_command`. A single greetd instance cannot create a simultaneous greeter session. Suspend, hibernate, restart and shutdown delegate to systemctl. They depend on your system's support, permissions and configuration; DeckLock does not configure hibernation for you. These actions are disabled in preview.
+User switching delegates to LightDM, GDM, an existing greeter session that `loginctl` can activate, or `switch_user_command`. A single greetd instance cannot create a simultaneous greeter session. Suspend, hibernate, restart and shutdown delegate to systemctl. They depend on your system's support, permissions and configuration; DeckLock does not configure hibernation for you. These actions are disabled in preview. On devices with a battery, its charge level appears just above those buttons; under Layout, turn off the percentage to show the icon alone.
 
 ## Themes, media and command line
 

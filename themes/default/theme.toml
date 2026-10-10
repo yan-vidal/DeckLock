@@ -10,4 +10,5 @@ padding = 0
 clock_visible = true
 idle_clock_visible = true
 avatar_visible = true
+battery_percentage = true # false shows the battery icon alone
 keyboard_scale = 1.0

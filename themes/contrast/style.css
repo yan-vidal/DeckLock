@@ -13,8 +13,12 @@ button.user-avatar-side { background: transparent; padding: 0; margin: 0; min-wi
 #session-selector, #session-selector button { background: transparent; border: none; box-shadow: none; color: #ffffff; min-height: 28px; }
 button:hover, #submit { background-color: #ffffff; color: #000000; }
 button:focus-visible, entry:focus { outline: 3px solid #ffff00; outline-offset: 3px; }
-#preview-banner { padding: 12px; background-color: #ffffff; color: #000000; }
 #status { color: #ffff00; font-size: 18px; }
+#battery { color: #ffffff; font-size: 18px; font-weight: bold; }
+#battery image { -gtk-icon-size: 24px; }
+#battery.low { color: #ff5555; }
+#help-panel { background-color: #000000; color: #ffffff; border: 2px solid #ffffff; padding: 12px; }
+#help-panel .title-1, #help-panel .title-2 { font-weight: bold; }
 #status.warning { color: #ffffff; }
 #status.locked { color: #ff5555; font-weight: bold; }
 #keyboard { padding: 12px; }
