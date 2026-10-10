@@ -256,6 +256,36 @@ impl LayoutForm {
         }
     }
 }
+/// What "Apply to login" reports once pkexec returns. The terminal command is the
+/// fallback when polkit cannot ask for the password here.
+fn login_result(strings: &I18n, result: std::io::Result<std::process::Output>) -> String {
+    let terminal = "sudo decklock setup login-appearance";
+    match result {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            format!(
+                "{} {terminal}",
+                strings.text("settings-apply-login-no-pkexec")
+            )
+        }
+        Err(error) => error.to_string(),
+        Ok(output) if output.status.success() => strings.text("settings-apply-login-done"),
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            match output.status.code() {
+                // pkexec: the dialog was dismissed or authorization refused.
+                Some(126) => strings.text("settings-apply-login-cancelled"),
+                Some(127) if stderr.contains("authentication agent") => {
+                    format!(
+                        "{} {terminal}",
+                        strings.text("settings-apply-login-no-agent")
+                    )
+                }
+                _ if stderr.trim().is_empty() => format!("pkexec: {}", output.status),
+                _ => stderr.trim().to_owned(),
+            }
+        }
+    }
+}
 fn validate_theme(config: &Config) -> Result<(), String> {
     config.validate()?;
     let theme = Theme::from_config(config)?;
@@ -317,7 +347,7 @@ pub fn build(
     app: &gtk::Application,
     path: PathBuf,
     locale: Option<&str>,
-    _executable: PathBuf,
+    executable: PathBuf,
 ) -> Result<gtk::ApplicationWindow, String> {
     crate::branding::install();
     let path = absolute(&path)?;
@@ -612,6 +642,17 @@ pub fn build(
     );
     login_own.append(&login_layout.widget);
     login_own.set_visible(!login_same.is_active());
+    // Root applies the login: pkexec asks for the administrator's password in the
+    // session's polkit agent, on this explicit click. DeckLock never sees it.
+    let apply_login = gtk::Button::with_label(&strings.text("settings-apply-login"));
+    apply_login.set_widget_name("settings-apply-login");
+    apply_login.set_halign(gtk::Align::Start);
+    login_page.append(&apply_login);
+    let apply_hint = gtk::Label::new(Some(&strings.text("settings-apply-login-help")));
+    apply_hint.set_wrap(true);
+    apply_hint.set_xalign(0.0);
+    apply_hint.add_css_class("dim-label");
+    login_page.append(&apply_hint);
     let weak_own = login_own.downgrade();
     login_same.connect_toggled(move |same| {
         if let Some(own) = weak_own.upgrade() {
@@ -852,6 +893,57 @@ pub fn build(
             status.set_text(&error);
         }
     });
+    {
+        let (read, drafts, path) = (read.clone(), drafts.clone(), path.clone());
+        let (status, strings) = (status.downgrade(), strings.clone());
+        apply_login.connect_clicked(move |button| {
+            let show = |text: &str| {
+                if let Some(status) = status.upgrade() {
+                    status.set_text(text);
+                }
+            };
+            // The login exports the saved settings, so they are saved first.
+            if let Err(error) = read().and_then(|mut config| {
+                drafts.persist(&mut config, &path)?;
+                config.save(&path)
+            }) {
+                show(&error);
+                return;
+            }
+            button.set_sensitive(false);
+            show(&strings.text("settings-apply-login-waiting"));
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let executable = executable.clone();
+            std::thread::spawn(move || {
+                let _ = sender.send(
+                    std::process::Command::new("pkexec")
+                        .arg(&executable)
+                        .args(["setup", "login-appearance"])
+                        .stdin(std::process::Stdio::null())
+                        .output(),
+                );
+            });
+            let (button, status, strings) = (button.downgrade(), status.clone(), strings.clone());
+            glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+                let result = match receiver.try_recv() {
+                    Ok(result) => result,
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        return glib::ControlFlow::Continue;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        Err(std::io::Error::other("pkexec did not report a result"))
+                    }
+                };
+                if let Some(status) = status.upgrade() {
+                    status.set_text(&login_result(&strings, result));
+                }
+                if let Some(button) = button.upgrade() {
+                    button.set_sensitive(true);
+                }
+                glib::ControlFlow::Break
+            });
+        });
+    }
     let read_save = read.clone();
     let save_status = status.downgrade();
     let save_strings = strings.clone();

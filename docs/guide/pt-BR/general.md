@@ -38,7 +38,7 @@ O visualizador informa FPS gerados, CPU de desenho, CPU total do processo de con
 
 ## Bloqueio, login e repouso
 
-As configurações têm três abas. Bloqueio define o fundo, o intervalo e as opções de exibição da tela de bloqueio. Login fica igual ao Bloqueio enquanto "Igual à tela de bloqueio" estiver marcada; desmarcada, o login ganha fundo, intervalo e opções próprios. Repouso vale para as duas telas. O preview mostra a tela da aba aberta. A tela de login recebe as mudanças quando o setup do login é aplicado de novo. Pelo terminal, a seção `[login]` faz o mesmo (`decklock config set login.same_as_lock false`).
+As configurações têm três abas. Bloqueio define o fundo, o intervalo e as opções de exibição da tela de bloqueio. Login fica igual ao Bloqueio enquanto "Igual à tela de bloqueio" estiver marcada; desmarcada, o login ganha fundo, intervalo e opções próprios. Repouso vale para as duas telas. O preview mostra a tela da aba aberta. "Aplicar ao login", na aba Login, salva e leva as mudanças à tela de login: o sistema pede a senha de administrador por um agente do polkit, e o DeckLock nunca a vê. GNOME e KDE trazem esse agente; no Hyprland, Sway, labwc ou Wayfire, instale e inicie um (por exemplo, o `hyprpolkitagent`). Sem agente, o botão mostra o comando para o terminal, `sudo decklock setup login-appearance`. Pelo terminal, a seção `[login]` faz o mesmo (`decklock config set login.same_as_lock false`).
 
 ## Repouso
 

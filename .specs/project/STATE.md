@@ -797,3 +797,18 @@ requests fullscreen; ui::build keeps the kiosk behavior for the real and standal
 tab and login assertions failed first. While adding them, the settings cleanup check failed
 because the new test code held the tab stack until the end; scoping those references fixed it,
 which shows the window itself releases its controls.
+Phase 3: "Apply to login" in the Login tab saves and runs `pkexec <decklock> setup
+login-appearance`. That new subcommand refreshes only the login's appearance snapshot in the
+storage directory its greetd command names, refusing a login without DECKLOCK_GREETER_APPEARANCE
+in its command; it never rewrites the greetd command, so compositor, keyboard and controller
+choices stay (a plain repeat of setup greeter regenerates a Cage command from its flags).
+setup::invoking_uid reads SUDO_UID or PKEXEC_UID, never root. Packages carry
+packaging/polkit/io.github.yan_vidal.DeckLock.policy (exec.path /usr/bin/decklock, exec.argv1
+setup, auth_admin_keep for the active session); Arch optdepends polkit, Fedora recommends polkit,
+Ubuntu recommends pkexec. AGENTS.md gains the exception line the user approved. setup status
+now recognizes the generated Hyprland login (it looked only for `decklock --greeter` in the
+command). Each test failed first: the status regression, the uid helper, the package contract,
+the login-appearance CLI and the settings button with a fake pkexec. Not exercised: the real
+polkit dialog and agent, and a root write to /etc/greetd through pkexec. This Deck runs polkitd
+but no polkit agent in its Hyprland session, so the button would show the terminal command
+until one (such as hyprpolkitagent) is installed and started.

@@ -214,10 +214,7 @@ pub(super) fn prepare(
         ));
     }
     let caller = if unsafe { libc::geteuid() } == 0 {
-        std::env::var("SUDO_UID")
-            .ok()
-            .and_then(|s| s.parse::<u32>().ok())
-            .filter(|uid| *uid != 0)
+        super::invoking_uid(|name| std::env::var(name).ok())
             .map(super::caller_by_uid)
             .transpose()?
     } else {
@@ -230,7 +227,7 @@ pub(super) fn prepare(
         return Err("Sharing user appearance needs --state-dir with a custom --target".into());
     }
     if unsafe { libc::geteuid() } == 0 && caller.is_none() {
-        return Err("Share user appearance through sudo from the desktop account".into());
+        return Err("Share user appearance through sudo or pkexec from the desktop account".into());
     }
     let export_uid = caller
         .as_ref()

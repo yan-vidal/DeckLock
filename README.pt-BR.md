@@ -273,6 +273,8 @@ Estas melhorias de instalação são publicadas a partir da 0.3.3; os pacotes 0.
 
 O DeckLock pode atuar como greeter de login do `greetd` e bloqueador de sessão do compositor (`hypridle`), com a mesma interface e teclado virtual. O greeter roda na conta de serviço configurada no greetd (`greeter` no Arch, `greetd` no Fedora), com configuração/estado privados. O setup usa uma única biblioteca de mídias com leitura pública, compartilhada com o bloqueio; o login não precisa atravessar sua HOME. Uma configuração compartilhada manual com `--config` continua exigindo arquivos legíveis. `--greeter` sem socket do greetd é uma prévia segura: não faz login nem executa ações de energia.
 
+Depois que o login usa o DeckLock, "Aplicar ao login", na aba Login das configurações, leva as mudanças seguintes a ele, pedindo a senha de administrador pelo polkit (no Hyprland, Sway, labwc ou Wayfire, instale e inicie um agente do polkit, como o `hyprpolkitagent`). Pelo terminal: `sudo decklock setup login-appearance`. Ele atualiza só a aparência e as mídias do login.
+
 Inspecione o estado atual de integração do sistema:
 
 ```sh

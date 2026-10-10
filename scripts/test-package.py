@@ -19,14 +19,17 @@ machine = subprocess.check_output(['uname', '-m'], text=True).strip()
 deb_arch = 'amd64' if machine == 'x86_64' else 'arm64'
 TARGETS = {
     'arch': {'slug': 'linux', 'recipe': 'PKGBUILD', 'include': 'system-auth',
-             'markers': ["backup=('etc/pam.d/decklock')", '"$pkgdir/etc/pam.d/decklock"']},
+             'markers': ["backup=('etc/pam.d/decklock')", '"$pkgdir/etc/pam.d/decklock"',
+                         "'polkit: apply settings to the login screen from the interface'"]},
     'fedora': {'slug': 'fedora', 'recipe': 'decklock.spec', 'include': 'system-auth',
                'markers': ['%config(noreplace) %{_sysconfdir}/pam.d/decklock',
                            'install -Dm644 pam/decklock %{buildroot}%{_sysconfdir}/pam.d/decklock',
-                           '%global debug_package %{nil}']},
+                           '%global debug_package %{nil}',
+                           '%{_datadir}/polkit-1/actions/io.github.yan_vidal.DeckLock.policy',
+                           'Recommends:     polkit']},
     'ubuntu': {'slug': 'ubuntu', 'recipe': 'control', 'include': 'common-auth',
                'markers': [f'Architecture: {deb_arch}', 'libgtk4-layer-shell0',
-                           'gstreamer1.0-plugins-good', 'Depends: ']},
+                           'gstreamer1.0-plugins-good', 'Depends: ', 'pkexec']},
 }
 parser.add_argument('--target', choices=sorted(TARGETS), default='arch')
 args = parser.parse_args()
@@ -66,6 +69,18 @@ with tempfile.TemporaryDirectory(prefix='decklock-package-test-') as directory:
     for path in (root/'docs/guide').rglob('*.md'):
         assert (stage/'share/doc/decklock/guide'/path.relative_to(root/'docs/guide')).read_bytes() == path.read_bytes()
     assert (stage/'share/doc/decklock/CHANGELOG.md').read_bytes() == (root/'CHANGELOG.md').read_bytes()
+    # The polkit action lets the settings run login setup as root on an explicit
+    # click, through pkexec: only /usr/bin/decklock with "setup" as its first argument.
+    policy = root/'packaging/polkit/io.github.yan_vidal.DeckLock.policy'
+    assert (stage/'share/polkit-1/actions'/policy.name).read_bytes() == policy.read_bytes()
+    import xml.etree.ElementTree as ElementTree
+    actions = ElementTree.parse(policy).getroot().findall('action')
+    assert [a.get('id') for a in actions] == ['io.github.yan_vidal.DeckLock.setup'], actions
+    notes = {n.get('key'): n.text for n in actions[0].findall('annotate')}
+    assert notes == {'org.freedesktop.policykit.exec.path': '/usr/bin/decklock',
+                     'org.freedesktop.policykit.exec.argv1': 'setup'}, notes
+    defaults = {d.tag: d.text for d in actions[0].find('defaults')}
+    assert set(defaults.values()) <= {'auth_admin', 'auth_admin_keep'}, defaults
     assert (stage/'pam/decklock').read_bytes()==(root/f'packaging/{args.target}/pam/decklock').read_bytes()
     assert f'auth     include  {target["include"]}' in (stage/'pam/decklock').read_text()
     for marker in target['markers']:

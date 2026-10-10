@@ -30,6 +30,7 @@ Requires:       pam
 Requires:       policycoreutils-python-utils
 Recommends:     gstreamer1-plugins-bad-free
 Recommends:     systemd
+Recommends:     polkit
 Recommends:     greetd
 Recommends:     cage
 Recommends:     hypridle
@@ -62,6 +63,7 @@ install -Dm644 BUILD-INFO.json %{buildroot}%{_datadir}/doc/decklock/BUILD-INFO.j
 %{_datadir}/applications/io.github.yan_vidal.DeckLock.desktop
 %{_datadir}/icons/hicolor/*/apps/io.github.yan_vidal.DeckLock*.svg
 %{_datadir}/doc/decklock/
+%{_datadir}/polkit-1/actions/io.github.yan_vidal.DeckLock.policy
 # Authentication policy the administrator may edit; rpm must not replace it.
 %config(noreplace) %{_sysconfdir}/pam.d/decklock
 

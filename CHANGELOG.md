@@ -19,6 +19,15 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
   both screens. Each layout has its own "Restore defaults". The preview shows the
   screen of the open tab, the login included, in an ordinary window. "Layout and
   preferences" keeps the options shared by all screens.
+- "Apply to login" in the Login tab saves the settings and applies them to the login
+  screen through polkit: the session's authentication agent asks for the
+  administrator password, which DeckLock never sees. It runs the new
+  `decklock setup login-appearance`, which refreshes only the login's appearance and
+  media and refuses a login that does not use DeckLock; the greetd command,
+  compositor, keyboard and controller stay as they are. Packages install a polkit
+  action limited to `/usr/bin/decklock setup`. Without a polkit agent (common on
+  Hyprland, Sway, labwc or Wayfire) or without `pkexec`, the button shows the terminal
+  command instead. Setup run through `pkexec` finds the desktop user like `sudo` does.
 
 - The lock, login and preview screens show the battery level on devices with a
   system battery, in the top-right corner on its own row above the power buttons.
@@ -49,6 +58,8 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 ### Fixed
 
+- `decklock setup status` recognizes a login generated for Hyprland, which starts
+  DeckLock from its Lua file; it reported it as not configured.
 - The A button confirms like Enter while the on-screen keyboard holds the controller,
   at login and on the lock screen. The keyboard captures A along with the other
   buttons and ignored it, so with the keyboard open the password could only be sent

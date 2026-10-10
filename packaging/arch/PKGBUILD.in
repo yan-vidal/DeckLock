@@ -12,6 +12,7 @@ optdepends=('systemd: power actions'
             'gst-plugins-ugly: additional video formats'
             'greetd: display manager / login greeter integration'
             'cage: Wayland kiosk compositor for greeter mode'
+            'polkit: apply settings to the login screen from the interface'
             'hypridle: idle and screen lock management')
 options=('!strip' '!debug')
 # Authentication policy the administrator may edit; pacman must not replace it.

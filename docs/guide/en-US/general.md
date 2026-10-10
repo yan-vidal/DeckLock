@@ -38,7 +38,7 @@ The viewer reports generated FPS, drawing CPU, total settings-process CPU and pr
 
 ## Lock, login and rest
 
-Settings have three tabs. Lock screen sets the lock's background, interval and display options. Login matches the lock screen while "Same as the lock screen" is checked; unchecked, the login gets its own background, interval and options. Rest applies to both screens. The preview shows the screen of the open tab. The login screen receives changes when its setup is applied again. From a terminal, the `[login]` section does the same (`decklock config set login.same_as_lock false`).
+Settings have three tabs. Lock screen sets the lock's background, interval and display options. Login matches the lock screen while "Same as the lock screen" is checked; unchecked, the login gets its own background, interval and options. Rest applies to both screens. The preview shows the screen of the open tab. "Apply to login", in the Login tab, saves and carries the changes to the login screen: the system asks for the administrator password through a polkit agent, and DeckLock never sees it. GNOME and KDE include that agent; on Hyprland, Sway, labwc or Wayfire, install and start one (for example `hyprpolkitagent`). Without an agent, the button shows the terminal command, `sudo decklock setup login-appearance`. From a terminal, the `[login]` section does the same (`decklock config set login.same_as_lock false`).
 
 ## Rest mode
 

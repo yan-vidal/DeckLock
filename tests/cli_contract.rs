@@ -1041,6 +1041,84 @@ fn greeter_setup_carries_a_separate_login_appearance_and_its_media() {
 }
 
 #[test]
+fn login_appearance_refreshes_only_an_existing_decklock_login() {
+    let cli = Cli::new();
+    let home = cli.home.path();
+    let config = home.join("personal.toml");
+    std::fs::write(&config, "background_pool = ['procedural:starfield']\n").unwrap();
+    let greetd = home.join("greetd.toml");
+    // Another greeter: refused, and nothing is written.
+    std::fs::write(
+        &greetd,
+        "[default_session]\ncommand = \"agreety --cmd /bin/sh\"\nuser = \"greeter\"\n",
+    )
+    .unwrap();
+    let before = std::fs::read(&greetd).unwrap();
+    let refresh = |success| {
+        cli.run(
+            &[
+                "setup",
+                "login-appearance",
+                "--target",
+                greetd.to_str().unwrap(),
+                "--user-config",
+                config.to_str().unwrap(),
+            ],
+            success,
+        )
+    };
+    let refused = refresh(false);
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("does not use DeckLock"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert_eq!(std::fs::read(&greetd).unwrap(), before);
+
+    // A DeckLock login: its appearance follows the settings, its command stays.
+    std::fs::remove_file(&greetd).unwrap();
+    let storage = home.join("login");
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            greetd.to_str().unwrap(),
+            "--state-dir",
+            storage.to_str().unwrap(),
+            "--user-config",
+            config.to_str().unwrap(),
+            "--no-keyboard",
+        ],
+        true,
+    );
+    let command = std::fs::read(&greetd).unwrap();
+    std::fs::write(
+        &config,
+        "background_pool = ['procedural:starfield']\n\
+         [login]\nsame_as_lock = false\nbackground_pool = ['procedural:matrix']\n",
+    )
+    .unwrap();
+    let applied = refresh(true);
+    assert!(
+        String::from_utf8_lossy(&applied.stdout).contains("next time"),
+        "{}",
+        String::from_utf8_lossy(&applied.stdout)
+    );
+    let copied = decklock::config::Config::load(Some(&storage.join("appearance.toml"))).unwrap();
+    assert!(!copied.login.same_as_lock);
+    assert_eq!(
+        copied.login.background_pool.unwrap(),
+        vec![PathBuf::from("procedural:matrix")]
+    );
+    assert_eq!(
+        std::fs::read(&greetd).unwrap(),
+        command,
+        "The greetd command, with its --no-keyboard choice, is not rewritten"
+    );
+}
+
+#[test]
 fn documented_options_round_trip_in_the_real_binary() {
     let cli = Cli::new();
     for (key, value) in [

@@ -57,7 +57,7 @@ fn main() {
         .parent()
         .unwrap()
         .join("decklock");
-    let window = settings::build(&app, path.clone(), Some("en-US"), executable).unwrap();
+    let window = settings::build(&app, path.clone(), Some("en-US"), executable.clone()).unwrap();
     assert!(
         window.titlebar().is_some(),
         "Settings must provide its own close control"
@@ -131,6 +131,85 @@ fn main() {
         assert!(!get("settings-login-own").is_visible());
         save();
         assert!(Config::load(Some(&path)).unwrap().login.same_as_lock);
+    }
+    // "Apply to login" saves, then runs the login refresh through pkexec. A fake
+    // pkexec in a private PATH records the command; never the real polkit or sudo.
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let fake = dir.path().join("fake-bin");
+        std::fs::create_dir(&fake).unwrap();
+        let marker = dir.path().join("pkexec-args");
+        std::fs::write(
+            fake.join("pkexec"),
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nprintf '%s' \"$FAKE_PKEXEC_ERR\" >&2\nexit \"$FAKE_PKEXEC_EXIT\"\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(fake.join("pkexec"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        let empty = dir.path().join("empty-bin");
+        std::fs::create_dir(&empty).unwrap();
+        let original_path = std::env::var_os("PATH");
+        let apply = get("settings-apply-login")
+            .downcast::<gtk::Button>()
+            .unwrap();
+        let status = get("settings-status").downcast::<gtk::Label>().unwrap();
+        let run = |bin: &std::path::Path, code: &str, err: &str| {
+            let _ = std::fs::remove_file(&marker);
+            // SAFETY: this GTK contract is single-process; the fake PATH and the
+            // fake's knobs are restored after these cases.
+            unsafe {
+                std::env::set_var("PATH", bin);
+                std::env::set_var("FAKE_PKEXEC_EXIT", code);
+                std::env::set_var("FAKE_PKEXEC_ERR", err);
+            }
+            status.set_text("");
+            apply.emit_clicked();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while (status.text().is_empty() || !apply.is_sensitive())
+                && std::time::Instant::now() < deadline
+            {
+                glib::MainContext::default().iteration(false);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            assert!(apply.is_sensitive(), "Apply to login must finish");
+            status.text().to_string()
+        };
+        let done = run(&fake, "0", "");
+        assert!(done.contains("next time"), "{done}");
+        assert_eq!(
+            std::fs::read_to_string(&marker).unwrap(),
+            format!("{}\nsetup\nlogin-appearance\n", executable.display())
+        );
+        let cancelled = run(&fake, "126", "");
+        assert!(cancelled.contains("nothing was changed"), "{cancelled}");
+        let no_agent = run(
+            &fake,
+            "127",
+            "Error executing command as another user: No authentication agent found.",
+        );
+        assert!(
+            no_agent.contains("sudo decklock setup login-appearance"),
+            "{no_agent}"
+        );
+        let refused = run(&fake, "1", "The login does not use DeckLock yet");
+        assert!(refused.contains("does not use DeckLock"), "{refused}");
+        let missing = run(&empty, "0", "");
+        assert!(
+            missing.contains("sudo decklock setup login-appearance"),
+            "{missing}"
+        );
+        assert!(!marker.exists(), "No pkexec, nothing ran");
+        unsafe {
+            match original_path {
+                Some(path) => std::env::set_var("PATH", path),
+                None => std::env::remove_var("PATH"),
+            }
+            std::env::remove_var("FAKE_PKEXEC_EXIT");
+            std::env::remove_var("FAKE_PKEXEC_ERR");
+        }
     }
     get("settings-layout-options")
         .downcast::<gtk::Expander>()

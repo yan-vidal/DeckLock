@@ -271,6 +271,8 @@ These installation improvements are published from 0.3.3; the 0.3.2 and earlier 
 
 DeckLock can serve as a greetd login greeter and compositor screen locker (`hypridle`) with the same UI and on-screen keyboard. The greeter runs as the configured greetd service account (`greeter` on Arch, `greetd` on Fedora), with private configuration/state storage. Setup uses one publicly readable media library shared with the locker, so login does not need permission to traverse your HOME. A manually configured shared `--config` still requires readable files. `--greeter` without a greetd socket is a safe preview: it cannot log in or run power actions.
 
+Once the login uses DeckLock, "Apply to login" in the settings' Login tab carries later changes to it, asking for the administrator password through polkit (install and start a polkit agent such as `hyprpolkitagent` on Hyprland, Sway, labwc or Wayfire). From a terminal: `sudo decklock setup login-appearance`. It refreshes only the login's appearance and media.
+
 Inspect your system's current integration:
 
 ```sh
