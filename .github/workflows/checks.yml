@@ -237,19 +237,15 @@ jobs:
   # no /dev/kvm, so the guest is emulated (TCG) and its waits are scaled; the
   # x86_64 jobs above keep requiring KVM.
   vm-ubuntu-aarch64:
-    name: Real Wayland and PAM (Ubuntu aarch64, ${{ matrix.tcg_pauth }})
+    name: Real Wayland and PAM (Ubuntu aarch64)
     needs: package-ubuntu-aarch64
     runs-on: ubuntu-24.04-arm
-    # Temporary A/B comparison: both run every assertion on the same candidate.
-    strategy:
-      fail-fast: false
-      matrix:
-        tcg_pauth: [default, impdef]
     # Above the sum of test-vm.py's own bounds on the native path (host provisioning
     # 76 min, boot 32, copying 10, guest phase 80, evidence 8 = 206), so a stuck guest
     # still ends in its log rather than a cancelled job. A passing run takes about
-    # 35 min (run 37117073212), down from about 94 before the harness packages were
-    # installed on the host. The timeout only caps a hang.
+    # 18 min (run 38012670359) with QEMU's implementation-defined pointer
+    # authentication, down from about 35 with QARMA5 and about 94 before the harness
+    # packages were installed on the host. The timeout only caps a hang.
     timeout-minutes: 210
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -271,12 +267,12 @@ jobs:
       - name: Verify candidate and run disposable VM
         run: |
           (cd dist && sha256sum --check SHA256SUMS)
-          python3 scripts/test-vm.py --target ubuntu --arch aarch64 --allow-emulation --provision-native --tcg-pauth "${{ matrix.tcg_pauth }}" --package dist/*.deb
+          python3 scripts/test-vm.py --target ubuntu --arch aarch64 --allow-emulation --provision-native --package dist/*.deb
       - name: VM evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: vm-evidence-ubuntu-aarch64-${{ matrix.tcg_pauth }}
+          name: vm-evidence-ubuntu-aarch64
           path: target/vm-logs/
           if-no-files-found: warn
           retention-days: 14

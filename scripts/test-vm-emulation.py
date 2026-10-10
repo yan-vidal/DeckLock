@@ -13,7 +13,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRATCH = ROOT / "target/dev-arm"
-FAST_PAUTH = "max,pauth=on,pauth-impdef=on,pauth-qarma3=off"
+# The one profile an emulated aarch64 guest gets: pointer authentication stays
+# enabled, with QEMU's implementation-defined algorithm instead of QARMA5.
+EMULATED_ARM = "max,pauth=on,pauth-impdef=on,pauth-qarma3=off"
 
 # Runs in the CLI subprocess, intercepting host boundaries rather than runner
 # helpers. PATH stubs also keep accidental external commands in the fixture.
@@ -126,51 +128,51 @@ class VmEmulationCLI(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         return json.loads(result.stdout)
 
-    def expected(self, target, arch, pauth="default"):
+    def expected(self, target, arch):
         distro = self.distros[target] | self.distros[target].get(arch, {})
         return {"target": target, "arch": arch, "image": distro["image"],
-                "image_sha256": distro["sha256"], "tcg_pauth": pauth,
-                "memory_mib": 2048,
-                "cpu_models": {"kvm": "host", "tcg": FAST_PAUTH if pauth == "impdef" else "max"},
+                "image_sha256": distro["sha256"], "memory_mib": 2048,
+                "cpu_models": {"kvm": "host", "tcg": EMULATED_ARM if arch == "aarch64" else "max"},
                 "cpus": {"kvm": 2, "tcg": 4}, "slowdown": {"kvm": 1, "tcg": 8}}
 
-    def test_arm_impdef_plan_keeps_pauth_enabled_and_runtime_bounds(self):
-        self.assertEqual(self.plan("ubuntu", "aarch64", "--allow-emulation", "--tcg-pauth", "impdef"),
-                         self.expected("ubuntu", "aarch64", "impdef"))
-
-    def test_default_arm_profile_preserves_the_original_cpu(self):
+    def test_emulated_arm_keeps_pauth_with_the_implementation_defined_algorithm(self):
         expected = self.expected("ubuntu", "aarch64")
+        self.assertEqual(expected["cpu_models"], {"kvm": "host", "tcg": EMULATED_ARM})
         self.assertEqual(self.plan("ubuntu", "aarch64"), expected)
-        self.assertEqual(self.plan("ubuntu", "aarch64", "--tcg-pauth", "default"), expected)
+        self.assertEqual(self.plan("ubuntu", "aarch64", "--allow-emulation"), expected)
 
-    def test_default_x86_plan_keeps_each_distribution_pin(self):
+    def test_x86_plan_keeps_each_distribution_pin_and_cpu(self):
         for target in ("arch", "fedora", "ubuntu"):
             with self.subTest(target=target):
-                self.assertEqual(self.plan(target, "x86_64"), self.expected(target, "x86_64"))
+                plan = self.plan(target, "x86_64")
+                self.assertEqual(plan, self.expected(target, "x86_64"))
+                self.assertEqual(plan["cpu_models"], {"kvm": "host", "tcg": "max"})
 
     def test_plan_needs_neither_a_package_nor_permission_to_emulate(self):
         # Execution flags and nonexistent paths must not activate their effects.
-        self.assertEqual(self.plan("ubuntu", "aarch64", "--tcg-pauth", "impdef",
-                                   "--provision-native", "--package", "absent-candidate.deb",
+        self.assertEqual(self.plan("ubuntu", "aarch64", "--provision-native",
+                                   "--package", "absent-candidate.deb",
                                    "--logs", "must-not-create-logs"),
-                         self.expected("ubuntu", "aarch64", "impdef"))
+                         self.expected("ubuntu", "aarch64"))
 
-    def test_impdef_refuses_x86_before_any_runtime_work(self):
-        for print_plan in (True, False):
-            with self.subTest(print_plan=print_plan):
-                arguments = ["--target", "ubuntu", "--arch", "x86_64",
-                             "--tcg-pauth", "impdef", "--package", "absent-candidate.deb"]
-                if print_plan:
-                    arguments.append("--print-plan")
-                result = self.invoke(*arguments)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(result.stdout, "")
-                self.assertIn("aarch64", result.stderr)
-                self.assertIn("impdef", result.stderr)
+    def test_the_comparison_selector_is_gone(self):
+        # Run 38012670359 settled the comparison: no option selects another algorithm.
+        for arch in ("aarch64", "x86_64"):
+            for profile in ("default", "impdef"):
+                for print_plan in (True, False):
+                    with self.subTest(arch=arch, profile=profile, print_plan=print_plan):
+                        arguments = ["--target", "ubuntu", "--arch", arch, "--allow-emulation",
+                                     "--tcg-pauth", profile, "--package", "absent-candidate.deb"]
+                        if print_plan:
+                            arguments.append("--print-plan")
+                        result = self.invoke(*arguments)
+                        self.assertEqual(result.returncode, 2, result.stderr)
+                        self.assertEqual(result.stdout, "")
+                        self.assertIn("unrecognized arguments", result.stderr)
+                        self.assertIn("--tcg-pauth", result.stderr)
 
     def test_invalid_or_unpinned_plans_are_rejected(self):
         selections = (
-            (("--target", "ubuntu", "--arch", "aarch64", "--tcg-pauth", "qarma5"), "invalid choice"),
             (("--target", "ubuntu", "--arch", "armv7l"), "invalid choice"),
             (("--target", "debian", "--arch", "x86_64"), "invalid choice"),
             (("--target", "arch", "--arch", "aarch64"), "No pinned aarch64 image"),
@@ -184,10 +186,9 @@ class VmEmulationCLI(unittest.TestCase):
                 self.assertIn(diagnostic, result.stderr)
 
     def test_execution_still_requires_a_candidate_package(self):
-        for profile in ("default", "impdef"):
-            with self.subTest(profile=profile):
-                result = self.invoke("--target", "ubuntu", "--arch", "aarch64",
-                                     "--allow-emulation", "--tcg-pauth", profile)
+        for arch in ("aarch64", "x86_64"):
+            with self.subTest(arch=arch):
+                result = self.invoke("--target", "ubuntu", "--arch", arch, "--allow-emulation")
                 self.assertEqual(result.returncode, 2, result.stderr)
                 self.assertEqual(result.stdout, "")
                 self.assertIn("--package", result.stderr)

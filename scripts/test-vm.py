@@ -66,12 +66,14 @@ AARCH64_FIRMWARE = ['/usr/share/qemu-efi-aarch64/QEMU_EFI.fd', '/usr/share/AAVMF
 MINIMUM_QEMU_IMG = (6, 0)
 
 
-def cpu_model(arch, kvm, tcg_pauth):
+def cpu_model(arch, kvm):
     if kvm:
         return 'host'
-    if arch == 'aarch64' and tcg_pauth == 'impdef':
-        # QEMU 8.2's implementation-defined PAC is faster to emulate. It keeps
-        # the instruction semantics but is not evidence of cryptographic strength.
+    if arch == 'aarch64':
+        # Before QEMU 10.0, `max` signs pointers with QARMA5, which cost half of an
+        # emulated guest's time: 33m21s against 16m54s for the same 41 assertions (run
+        # 38012670359, QEMU 8.2.2). The implementation-defined algorithm keeps the
+        # instructions; it is no evidence of pointer-authentication strength.
         return 'max,pauth=on,pauth-impdef=on,pauth-qarma3=off'
     return 'max'
 
@@ -129,14 +131,9 @@ def main():
                              'guest architectures to match; without passwordless sudo, or on any failure, '
                              'it warns and installs inside the guest as usual')
     parser.add_argument('--logs', type=Path, default=ROOT / 'target/vm-logs')
-    parser.add_argument('--tcg-pauth', choices=['default', 'impdef'], default='default',
-                        help='ARM TCG pointer-authentication implementation; impdef is a faster, '
-                             'non-cryptographic test implementation. KVM always uses the host CPU')
     parser.add_argument('--print-plan', action='store_true',
                         help='Print pinned image and CPU options without inspecting or starting a VM')
     args = parser.parse_args()
-    if args.tcg_pauth == 'impdef' and args.arch != 'aarch64':
-        parser.error('--tcg-pauth impdef requires --arch aarch64')
     distro = DISTROS[args.target]
     if args.arch != 'x86_64':
         if args.arch not in distro:
@@ -145,8 +142,8 @@ def main():
     if args.print_plan:
         print(json.dumps({'target': args.target, 'arch': args.arch,
                           'image': distro['image'], 'image_sha256': distro['sha256'],
-                          'tcg_pauth': args.tcg_pauth, 'memory_mib': 2048,
-                          'cpu_models': {mode: cpu_model(args.arch, mode == 'kvm', args.tcg_pauth)
+                          'memory_mib': 2048,
+                          'cpu_models': {mode: cpu_model(args.arch, mode == 'kvm')
                                          for mode in ['kvm', 'tcg']},
                           'cpus': {'kvm': 2, 'tcg': 4}, 'slowdown': {'kvm': 1, 'tcg': 8}}, indent=2))
         return
@@ -160,7 +157,7 @@ def main():
     # inside the guest and on this side scales by this estimate, never below 1.
     slowdown = 1 if kvm else 8
     qemu = f'qemu-system-{args.arch}'
-    selected_cpu = cpu_model(args.arch, kvm, args.tcg_pauth)
+    selected_cpu = cpu_model(args.arch, kvm)
     package = args.package.resolve(strict=True)
     if not package.name.endswith(distro['suffix']):
         raise SystemExit(f'{args.target} expects a {distro["suffix"]} candidate, got {package.name}')
@@ -189,7 +186,7 @@ def main():
               'target': args.target, 'arch': args.arch, 'image': distro['image'], 'image_sha256': distro['sha256'],
               'package_sha256': digest(package), 'package': package.name,
               'memory_mib': 2048, 'cpus': 2 if kvm else 4, 'accelerator': 'kvm' if kvm else 'tcg',
-              'cpu_model': selected_cpu, 'tcg_pauth': args.tcg_pauth,
+              'cpu_model': selected_cpu,
               'qemu_version': subprocess.check_output([qemu, '--version'], text=True, timeout=10).splitlines()[0],
               'host_phase_seconds': {},
               'slowdown': slowdown, 'provisioning': 'in-guest', 'status': 'running'}

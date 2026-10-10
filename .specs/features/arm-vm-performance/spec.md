@@ -40,3 +40,36 @@ memory, installation and all assertions identical. No gain is assumed.
    commits until that merges. It is not merged as is.
 3. Compare complete guest evidence and timings. Adoption is a separate decision
    after evidence; no release tag, runner purchase or device activation.
+
+## Outcome (2026-10-09)
+
+Run 38012670359 compared both profiles on one candidate (package SHA256
+`3a2ed010...6a8295`), each passing the same 41 assertions in the same order:
+
+| | QARMA5 (`max`) | implementation-defined |
+|---|---|---|
+| Job | 34m05s | 17m45s |
+| `test-vm.py` total | 2001 s | 1014 s |
+| Boot to guest-ready | 535 s | 192 s |
+| Candidate and dependencies | 390 s | 160 s |
+| Reinstall | 134 s | 41 s |
+| Sway, PAM and X11 | 292 s | 208 s |
+| labwc and Wayfire | 163 s | 85 s |
+| Greeter | 323 s | 193 s |
+| Host provisioning (not emulated) | 51 s | 87 s |
+
+One sample per profile on separate hosted runners; the host step's 36 s spread is
+runner variance and went against the faster profile.
+
+The user approved adoption the same day. ARM-01 to ARM-03 are superseded: an
+emulated aarch64 guest always gets `max,pauth=on,pauth-impdef=on,pauth-qarma3=off`,
+the `--tcg-pauth` selector and the two-profile matrix are removed, and the job and
+its evidence artifact have their original names again. KVM still uses `host` and
+emulated x86 `max`. ARM-04 stays: reports keep the CPU model, QEMU version and
+phase times. `--print-plan` and `scripts/test-vm-emulation.py` stay as the public
+regression for the CPU choice (six cases, one of which refuses the old selector).
+
+Not done here: the remaining 17m45s is 8.3 min before any suite starts and 8.1 min
+of suites, about 2.6 min of that in fixed sleeps scaled by 8. Lowering that scale,
+running suites in parallel guests and starting the boot before the package build
+ends each need their own measurement and decision.

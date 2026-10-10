@@ -63,16 +63,17 @@ assert '--privileged' not in native and '/dev/' not in native
 for vm in vms:
     assert 'uses: ./.github/actions/cache-vm' in job(vm)
 
-# This experiment compares complete suites; neither profile is optional.
+# The comparison of pointer-authentication algorithms ended (run 38012670359):
+# test-vm.py chooses the one emulated profile, and the job runs the whole suite once.
 arm = job('vm-ubuntu-aarch64')
-assert re.search(r'^        tcg_pauth: \[default, impdef\]$', arm, re.MULTILINE), (
-    'ARM experiment must compare the default and explicit impdef profiles')
-assert 'fail-fast: false' in arm and 'continue-on-error:' not in arm
-assert '--tcg-pauth "${{ matrix.tcg_pauth }}"' in arm
+assert '    name: Real Wayland and PAM (Ubuntu aarch64)\n' in arm
+assert 'strategy:' not in arm and 'matrix' not in arm, 'The ARM VM runs one profile, once'
+assert 'continue-on-error:' not in arm
+assert '--tcg-pauth' not in arm, 'The CPU profile is test-vm.py\'s choice, not the workflow\'s'
 assert 'name: ubuntu-package-aarch64' in arm
-assert '--allow-emulation --provision-native' in arm
-assert 'name: vm-evidence-ubuntu-aarch64-${{ matrix.tcg_pauth }}' in arm
-assert '--suite' not in arm, 'The experiment must run the whole guest suite'
+assert '--allow-emulation --provision-native --package dist/*.deb' in arm
+assert '          name: vm-evidence-ubuntu-aarch64\n' in arm
+assert '--suite' not in arm, 'The ARM VM must run the whole guest suite'
 
 recipe = (ROOT / '.github/ci/native-tests.Dockerfile').read_text()
 for line in recipe.splitlines():

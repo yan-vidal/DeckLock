@@ -519,3 +519,29 @@ The draft PR targets main because checks.yml runs only for pull requests to main
 carries PR #60's commits until that merges; it is not to be merged as is, since the matrix
 doubles ARM runner time. Not adopted: a faster default, shorter waits, sharding. Limits: the
 impdef profile is no evidence of pointer-authentication strength or of real ARM hardware.
+
+2026-10-09 ARM VM emulation result and adoption: run 38012670359 (PR #61 at c7fdf8a, CI merge
+commit e2fcde4, QEMU 8.2.2) ran both profiles on one candidate (package SHA256
+3a2ed010...6a8295) and each passed the same 41 assertions in the same order. The job took
+34m05s with QARMA5 and 17m45s with the implementation-defined algorithm; test-vm.py took
+2001 s against 1014 s. By phase: boot to guest-ready 535 s against 192 s; the candidate and
+its dependencies 390 against 160; the reinstall 134 against 41; Sway, PAM and X11 292 against
+208; labwc and Wayfire 163 against 85; the greeter 323 against 193. Host provisioning, which
+is not emulated, took 51 s against 87 s: runner variance, and against the faster profile. One
+sample per profile on separate hosted runners. The user approved adoption: an emulated aarch64
+guest now always gets `max,pauth=on,pauth-impdef=on,pauth-qarma3=off`; the `--tcg-pauth`
+selector and the two-profile matrix are gone, and the job and its evidence artifact have their
+original names again, so checks.yml differs from main only in the timing comment. KVM (`host`)
+and emulated x86 (`max`) are unchanged. The new contracts failed first against the comparison
+(13 CLI failures and the workflow's job name) and pass now; scripts/test-vm-emulation.py has six
+cases, one refusing the old selector. Kept: `--print-plan`, cpu_model and qemu_version in
+result.json, host phase durations and guest phase marks. PR #60 was merged first (4d862a1),
+so this branch merges main; main's tree equalled the branch's base. Limits: the gate is no
+evidence of pointer-authentication strength or of real ARM hardware, and the 18 minutes rest on
+one run until this PR's own run. What is left of the 17m45s: 8.3 min before any suite (host
+1.4, boot 3.2, candidate 2.7, reinstall 0.7) and 8.1 min of suites, about 2.6 min of it fixed
+sleeps scaled by 8 (the PAM lockout alone is 96 s); cloud-init is down to 65 s and an SSH
+connection to 12-16 s. Not done, each needing its own measurement and decision: a lower wait
+scale, suites in parallel guests, starting the boot before the package build ends. Deferred
+minor: `--print-plan` repeats the memory, CPU-count and wait-scale literals instead of sharing
+them with the run path. PR #59 stays a draft: its accompanied Steam Deck validation is pending.
