@@ -1011,8 +1011,9 @@ fn build_in(
     let status = gtk::Label::new(None);
     status.set_widget_name("status");
     status.set_wrap(true);
-    // The battery level sits just above the power buttons in the top-right corner.
-    let corner = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    // The battery level sits left of the power buttons, in their row in the
+    // top-right corner, and takes the corner alone when they are hidden.
+    let corner = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     corner.set_widget_name("top-right");
     corner.set_halign(gtk::Align::End);
     corner.set_valign(gtk::Align::Start);
@@ -1020,7 +1021,7 @@ fn build_in(
     corner.set_margin_end(12);
     let battery = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     battery.set_widget_name("battery");
-    battery.set_halign(gtk::Align::End);
+    battery.set_valign(gtk::Align::Center);
     battery.set_visible(false);
     // Size, colors and state styles (.low, .charging) come from the theme CSS.
     let battery_icon = gtk::Image::new();

@@ -24,7 +24,7 @@ Depois de um tempo sem uso, a tela entra em repouso e mostra só o fundo e o rel
 
 ## Canto superior direito
 
-Trocar de usuário, suspender, hibernar, reiniciar e desligar. Em aparelhos com bateria, o nível de carga aparece logo acima desses botões.
+Trocar de usuário, suspender, hibernar, reiniciar e desligar. Em aparelhos com bateria, o nível de carga aparece logo à esquerda desses botões.
 
 ## Esta ajuda
 

@@ -24,7 +24,7 @@ Pressione Enter, o botão A do controle ou a seta ao lado do campo. Se a senha e
 
 ## Energia
 
-No canto superior direito ficam suspender, hibernar, reiniciar e desligar. Em aparelhos com bateria, o nível de carga aparece logo acima desses botões.
+No canto superior direito ficam suspender, hibernar, reiniciar e desligar. Em aparelhos com bateria, o nível de carga aparece logo à esquerda desses botões.
 
 ## Esta ajuda
 

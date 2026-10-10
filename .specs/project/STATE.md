@@ -746,3 +746,12 @@ controls, and help_check asserts that opening it creates no other window and aut
 nothing. layout.battery_percentage (default true) with a settings check box beside the power
 options; off hides the percentage and keeps it in the tooltip. Each new assertion failed first:
 no help button on the lock, no settings check box, the percentage still shown.
+
+Same branch, fourth change: the user asked for the battery left of the power buttons, in their
+row, instead of on a line above, and for its position to be adjustable through CSS. The top-right
+corner (#top-right) is now one row; the battery is alone in the corner when the power buttons
+are hidden. The row assertions failed first (gap -208 px with the battery above). GTK CSS has no
+order or position property, so CSS adjusts placement with margins: #battery relative to the
+buttons and #top-right for the whole corner. That assertion passed once the row existed (a
+theme rule replaces the default theme's 4 px margin rather than adding to it; the test first
+assumed it added). Moving the battery elsewhere on the screen would need a layout option.

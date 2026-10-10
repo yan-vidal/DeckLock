@@ -6,14 +6,16 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 ### Added
 
-- The lock, login and preview screens show the battery level just above the power
-  buttons on devices with a system battery. It is read from the Linux power-supply
+- The lock, login and preview screens show the battery level on devices with a
+  system battery, in the top-right corner just left of the power buttons, or alone
+  in the corner when they are hidden. It is read from the Linux power-supply
   class every 30 seconds; mains adapters and the batteries of peripherals such as a
   controller are ignored, and nothing is shown without a battery. Rest mode hides it
   together with the power buttons, and the settings preview shows it like the lock
   screen. Themes style it through CSS: `#battery`, its `image` and `label`, the icon
   size with `-gtk-icon-size`, and the `.low` (20 % or less, not charging) and
-  `.charging` states.
+  `.charging` states. Margins on `#battery` move it relative to the power buttons,
+  and margins on `#top-right` move the whole corner.
 - Layout option "Show battery percentage" (`layout.battery_percentage`, on by
   default); off shows the battery icon alone, with the level in its tooltip.
 - The lock screen, login and preview have a question-mark help button in the top-left

@@ -24,7 +24,7 @@ Press Enter, the A button on the controller or the arrow beside the field. If th
 
 ## Power
 
-Suspend, hibernate, restart and shut down are in the top-right corner. On devices with a battery, its charge level appears just above those buttons.
+Suspend, hibernate, restart and shut down are in the top-right corner. On devices with a battery, its charge level appears just left of those buttons.
 
 ## This help
 

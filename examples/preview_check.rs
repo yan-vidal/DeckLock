@@ -191,13 +191,15 @@ fn check_battery(app: &gtk::Application) {
         ],
     );
     let no_battery = tempfile::tempdir().unwrap();
-    for (greeter, root, start_idle, expected) in [
-        (true, Some(supplies.path()), false, Some("67%")),
-        (false, Some(supplies.path()), false, Some("67%")),
-        (true, Some(no_battery.path()), false, None),
-        (false, None, false, None),
+    for (greeter, root, start_idle, power_visible, expected) in [
+        (true, Some(supplies.path()), false, true, Some("67%")),
+        (false, Some(supplies.path()), false, true, Some("67%")),
+        // Without power buttons the battery takes the corner alone.
+        (false, Some(supplies.path()), false, false, Some("67%")),
+        (true, Some(no_battery.path()), false, true, None),
+        (false, None, false, true, None),
         // Rest mode hides the corner controls, the battery with them.
-        (false, Some(supplies.path()), true, None),
+        (false, Some(supplies.path()), true, true, None),
     ] {
         let view = ui::build(
             app,
@@ -209,7 +211,13 @@ fn check_battery(app: &gtk::Application) {
                     idle_pool: Some(vec![]),
                     ..Config::default()
                 },
-                theme: Theme::load(None).unwrap(),
+                theme: Theme {
+                    layout: decklock::config::Layout {
+                        power_visible,
+                        ..decklock::config::Layout::default()
+                    },
+                    ..Theme::load(None).unwrap()
+                },
                 strings: I18n::new(Some("pt-BR"), None).unwrap(),
                 preview: true,
                 show_keyboard: false,
@@ -227,7 +235,8 @@ fn check_battery(app: &gtk::Application) {
         pump_for(400);
         let widgets = descendants(view.window.upcast_ref());
         let battery = widgets.iter().find(|w| w.widget_name() == "battery");
-        let case = format!("greeter={greeter} root={root:?} idle={start_idle}");
+        let case =
+            format!("greeter={greeter} root={root:?} idle={start_idle} power={power_visible}");
         match expected {
             None => assert!(
                 !battery.is_some_and(|b| b.is_visible()),
@@ -243,34 +252,139 @@ fn check_battery(app: &gtk::Application) {
                 assert_eq!(label.text(), level, "{case}");
                 let power = widgets.iter().find(|w| w.widget_name() == "power").unwrap();
                 let deadline = Instant::now() + Duration::from_secs(2);
-                while (battery.width() == 0 || power.width() == 0) && Instant::now() < deadline {
+                while battery.width() == 0 && Instant::now() < deadline {
                     pump_for(10);
                 }
                 let b = battery.compute_bounds(&view.window).unwrap();
-                let p = power.compute_bounds(&view.window).unwrap();
-                assert!(
-                    b.y() + b.height() <= p.y(),
-                    "Battery must sit above the power buttons: {case}"
-                );
-                let buttons_right = descendants(power)
-                    .into_iter()
-                    .filter_map(|w| w.downcast::<gtk::Button>().ok())
-                    .filter_map(|button| button.compute_bounds(&view.window))
-                    .map(|bounds| bounds.x() + bounds.width())
-                    .fold(0.0_f32, f32::max);
-                assert!(
-                    (b.x() + b.width() - buttons_right).abs() <= 1.0,
-                    "Battery must align with the right edge of the power buttons: {case}"
-                );
                 assert!(
                     b.y() < 100.0 && b.x() > 640.0,
                     "Battery must be in the top-right corner: {case}"
                 );
+                if power_visible {
+                    while power.width() == 0 && Instant::now() < deadline {
+                        pump_for(10);
+                    }
+                    // In the same row, just left of the power buttons.
+                    let buttons: Vec<_> = descendants(power)
+                        .into_iter()
+                        .filter_map(|w| w.downcast::<gtk::Button>().ok())
+                        .filter_map(|button| button.compute_bounds(&view.window))
+                        .collect();
+                    let first = buttons
+                        .iter()
+                        .min_by(|a, b| a.x().total_cmp(&b.x()))
+                        .expect("Power buttons");
+                    let gap = first.x() - (b.x() + b.width());
+                    assert!(
+                        (0.0..=24.0).contains(&gap),
+                        "Battery must sit just left of the power buttons (gap {gap}): {case}"
+                    );
+                    let middle = |r: &gtk::graphene::Rect| r.y() + r.height() / 2.0;
+                    assert!(
+                        (middle(&b) - middle(first)).abs() <= 2.0,
+                        "Battery must share the power buttons' row: {case}"
+                    );
+                } else {
+                    assert!(!power.is_visible(), "{case}");
+                    assert!(
+                        b.x() + b.width() >= 1280.0 - 40.0,
+                        "Without power buttons the battery takes the corner: {case}"
+                    );
+                }
             }
         }
         view.window.destroy();
         pump_for(30);
     }
+
+    // Themes place the battery through CSS margins: relative to the power
+    // buttons with #battery, and the whole corner with #top-right.
+    let display = gtk::gdk::Display::default().unwrap();
+    let mut placements = Vec::new();
+    // Measured from zero margins: a theme rule replaces the default theme's.
+    for rule in [
+        Some("#battery { margin-right: 0; margin-top: 0; }"),
+        Some("#battery { margin-right: 40px; margin-top: 30px; }"),
+        Some("#top-right { margin-top: 50px; margin-right: 100px; }"),
+    ] {
+        let provider = rule.map(|rule| {
+            let provider = gtk::CssProvider::new();
+            provider.load_from_string(rule);
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+            provider
+        });
+        let view = ui::build(
+            app,
+            Rc::new(ui::Settings {
+                config: Config {
+                    system_keyboard: false,
+                    window_decorations: false,
+                    background_pool: Some(vec![]),
+                    idle_pool: Some(vec![]),
+                    ..Config::default()
+                },
+                theme: Theme::load(None).unwrap(),
+                strings: I18n::new(Some("pt-BR"), None).unwrap(),
+                preview: true,
+                show_keyboard: false,
+                start_idle: false,
+                username: "Fixed fixture".into(),
+                greeter: false,
+                power_supply: Some(supplies.path().to_path_buf()),
+            }),
+            Rc::new(|_| panic!("Battery check must never authenticate")),
+        );
+        view.window.set_titlebar(None::<&gtk::Widget>);
+        view.window.set_decorated(false);
+        view.window.set_default_size(1280, 800);
+        view.window.present();
+        pump_for(400);
+        let widgets = descendants(view.window.upcast_ref());
+        let bounds = |name: &str| {
+            widgets
+                .iter()
+                .find(|w| w.widget_name() == name)
+                .and_then(|w| w.compute_bounds(&view.window))
+                .unwrap_or_else(|| panic!("{name} bounds"))
+        };
+        let (battery, power) = (bounds("battery"), bounds("power"));
+        placements.push((
+            power.x() - (battery.x() + battery.width()),
+            battery.y(),
+            power.x() + power.width(),
+            power.y(),
+        ));
+        view.window.destroy();
+        pump_for(30);
+        if let Some(provider) = provider {
+            gtk::style_context_remove_provider_for_display(&display, &provider);
+        }
+    }
+    let [
+        (gap, battery_y, power_right, power_y),
+        (moved_gap, moved_y, ..),
+        (.., corner_right, corner_y),
+    ] = placements[..]
+    else {
+        unreachable!()
+    };
+    assert!(
+        (moved_gap - gap - 40.0).abs() <= 1.0,
+        "#battery margin-right moves it away from the power buttons ({gap} -> {moved_gap})"
+    );
+    assert!(
+        moved_y > battery_y,
+        "#battery margin-top moves it down ({battery_y} -> {moved_y})"
+    );
+    assert!(
+        (power_right - corner_right - 100.0).abs() <= 1.0
+            && (corner_y - power_y - 50.0).abs() <= 1.0,
+        "#top-right margins move the whole corner"
+    );
 
     // Themes style the battery through CSS: state classes and the icon size.
     let low = tempfile::tempdir().unwrap();
@@ -341,7 +455,6 @@ fn check_battery(app: &gtk::Application) {
     icon_only.window.destroy();
     pump_for(30);
 
-    let display = gtk::gdk::Display::default().unwrap();
     for (root, classes, theme_rule, icon_size) in [
         (supplies.path(), [false, false], None, 16),
         (low.path(), [true, false], None, 16),
