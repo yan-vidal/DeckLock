@@ -16,6 +16,11 @@ SCRATCH = ROOT / "target/dev-arm"
 # The one profile an emulated aarch64 guest gets: pointer authentication stays
 # enabled, with QEMU's implementation-defined algorithm instead of QARMA5.
 EMULATED_ARM = "max,pauth=on,pauth-impdef=on,pauth-qarma3=off"
+# Every suite and the phase marks the guest prints when it has finished. Guests that
+# share the suites must be told which, and held to exactly those.
+ALL_SUITES = ("package", "session", "compositors", "greeter")
+MARKS = {"package": ["candidate_reinstalled"], "session": ["sway_pam_x11_complete"],
+         "compositors": ["labwc_complete", "wayfire_complete"], "greeter": ["greeter_complete"]}
 
 # Runs in the CLI subprocess, intercepting host boundaries rather than runner
 # helpers. PATH stubs also keep accidental external commands in the fixture.
@@ -90,6 +95,7 @@ class VmEmulationCLI(unittest.TestCase):
             (checkout / "scripts").mkdir(parents=True)
             for name in ("test-vm.py", "vm_native.py"):
                 shutil.copy2(ROOT / "scripts" / name, checkout / "scripts" / name)
+            shutil.copytree(ROOT / "scripts/vm/distros", checkout / "scripts/vm/distros")
             guard = work / "guard"
             guard.mkdir()
             (guard / "sitecustomize.py").write_text(HOST_GUARD)
@@ -128,10 +134,12 @@ class VmEmulationCLI(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         return json.loads(result.stdout)
 
-    def expected(self, target, arch):
+    def expected(self, target, arch, suites=ALL_SUITES):
         distro = self.distros[target] | self.distros[target].get(arch, {})
         return {"target": target, "arch": arch, "image": distro["image"],
                 "image_sha256": distro["sha256"], "memory_mib": 2048,
+                "suites": list(suites),
+                "completion_marks": [mark for suite in suites for mark in MARKS[suite]],
                 "cpu_models": {"kvm": "host", "tcg": EMULATED_ARM if arch == "aarch64" else "max"},
                 "cpus": {"kvm": 2, "tcg": 4}, "slowdown": {"kvm": 1, "tcg": 8}}
 
@@ -155,6 +163,33 @@ class VmEmulationCLI(unittest.TestCase):
                                    "--package-fetch", "touch fetched-by-plan; exit 7",
                                    "--logs", "must-not-create-logs"),
                          self.expected("ubuntu", "aarch64"))
+
+    def test_a_guest_runs_every_suite_unless_some_are_selected(self):
+        for target in ("arch", "fedora", "ubuntu"):
+            with self.subTest(target=target):
+                self.assertEqual(self.plan(target, "x86_64")["suites"], list(ALL_SUITES))
+        selections = {"session": ("session",), "greeter": ("greeter",),
+                      "package+compositors": ("package", "compositors"),
+                      "compositors+package": ("package", "compositors"),
+                      "package+session+compositors+greeter": ALL_SUITES}
+        for selection, suites in selections.items():
+            with self.subTest(selection=selection):
+                self.assertEqual(self.plan("ubuntu", "aarch64", "--suites", selection),
+                                 self.expected("ubuntu", "aarch64", suites))
+
+    def test_an_invalid_suite_selection_is_refused(self):
+        for selection in ("", "sessions", "session+", "session+session", "session greeter",
+                          "session,greeter", "all"):
+            for print_plan in (True, False):
+                with self.subTest(selection=selection, print_plan=print_plan):
+                    arguments = ["--target", "ubuntu", "--arch", "aarch64", "--allow-emulation",
+                                 "--package", "absent-candidate.deb", "--suites", selection]
+                    if print_plan:
+                        arguments.append("--print-plan")
+                    result = self.invoke(*arguments)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("--suites", result.stderr)
 
     def test_the_comparison_selector_is_gone(self):
         # Run 38012670359 settled the comparison: no option selects another algorithm.

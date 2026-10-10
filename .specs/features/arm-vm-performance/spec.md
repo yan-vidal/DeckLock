@@ -118,3 +118,34 @@ the candidate, and the build takes 235 s. Run them together.
 Not established by this change: the release path, which only a tag exercises;
 a real run in which the package job fails (covered at the awaiter's CLI with a
 fake `gh`); behavior during a GitHub API outage longer than thirty listings.
+
+### Outcome of booting while the candidate builds
+
+Run 38019167502 (PR #62, `14e6771`): the workflow took 17m13s against 20m37s.
+The ARM VM job started 7 s into the run instead of 3m58s, took 17m01s and its
+guest waited 0.003 s for the candidate; 41 assertions. One sample.
+
+## Round 2, second lever: guests that share the suites
+
+With the boot overlapped, the ARM job is the whole critical path: about 8m20s
+before the first suite, then the suites in turn for 8m03s (reinstall 41 s,
+session 205 s, labwc and Wayfire 84 s, greeter 194 s).
+
+Three guests take `session`, `package+compositors` and `greeter`. Each prepares,
+boots and installs the candidate as before; only the suites differ.
+
+### Acceptance
+
+- SHARE-01: Across its guests the ARM gate runs each suite of
+  `scripts/vm/suites.sh` exactly once, and every guest is required.
+- SHARE-02: A guest validates its selection before any work and refuses unknown
+  or malformed names. No selection means every suite, in the original order.
+- SHARE-03: `test-vm.py` fails a guest whose log lacks a completion mark of its
+  own suites or shows one of another's.
+- SHARE-04: The KVM guests are unchanged: every suite, one guest, original order.
+- SHARE-05: No assertion, wait or package step changes. The ARM guests together
+  pass the same 41 assertions, each once.
+
+Costs and limits: three ARM runners for about as long as one ran before; on ARM
+the suites no longer run after one another in one guest, so an effect of one
+suite on a later one is exercised only by the KVM guests.

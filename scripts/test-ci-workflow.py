@@ -95,17 +95,27 @@ assert '--privileged' not in native and '/dev/' not in native
 for vm in vms:
     assert 'uses: ./.github/actions/cache-vm' in job(vm)
 
-# The comparison of pointer-authentication algorithms ended (run 38012670359):
-# test-vm.py chooses the one emulated profile, and the job runs the whole suite once.
+# An emulated guest is too slow to run every suite in turn, so three guests share them.
+# Together they must run each suite of scripts/vm/suites.sh exactly once, all required.
 arm = job('vm-ubuntu-aarch64')
-assert '    name: Real Wayland and PAM (Ubuntu aarch64)\n' in arm
-assert 'strategy:' not in arm and 'matrix' not in arm, 'The ARM VM runs one profile, once'
+every = re.search(r"^ALL_SUITES='([^']*)'$", (ROOT / 'scripts/vm/suites.sh').read_text(),
+                  re.MULTILINE).group(1).split()
+shards = re.search(r'^    strategy:\n      fail-fast: false\n      matrix:\n        suites: \[([^\]]*)\]\n',
+                   arm, re.MULTILINE)
+assert shards, 'The ARM VM must share its suites between guests that all report'
+shared = [suite for shard in shards.group(1).split(',') for suite in shard.strip().split('+')]
+assert sorted(shared) == sorted(every), f'ARM guests run {shared}, not each of {every} once'
+assert arm.count('matrix.') == arm.count('matrix.suites'), 'Guests may differ in their suites only'
+assert '    name: Real Wayland and PAM (Ubuntu aarch64, ${{ matrix.suites }})\n' in arm
+assert '--suites "${{ matrix.suites }}"' in arm
 assert 'continue-on-error:' not in arm
+for kvm in ('vm', 'vm-fedora', 'vm-ubuntu'):
+    assert '--suites' not in job(kvm).split('\n  #', 1)[0], f'{kvm} runs every suite in one guest'
+    assert 'matrix' not in job(kvm).split('\n  #', 1)[0]
 assert '--tcg-pauth' not in arm, 'The CPU profile is test-vm.py\'s choice, not the workflow\'s'
 assert '--artifact ubuntu-package-aarch64 ' in arm
 assert '--allow-emulation --provision-native' in arm
-assert '          name: vm-evidence-ubuntu-aarch64\n' in arm
-assert '--suite' not in arm, 'The ARM VM must run the whole guest suite'
+assert '          name: vm-evidence-ubuntu-aarch64-${{ matrix.suites }}\n' in arm
 
 recipe = (ROOT / '.github/ci/native-tests.Dockerfile').read_text()
 for line in recipe.splitlines():

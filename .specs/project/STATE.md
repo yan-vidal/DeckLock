@@ -571,3 +571,25 @@ GitHub's documented rule for called workflows), a real run whose package job fai
 outage longer than thirty listings. No timing is claimed until this change's own run. Still
 open from the first round: suites in parallel guests, a PAM-lockout-only wait scale, SSH
 connection reuse (12-16 s per connection).
+
+2026-10-10 ARM VM, second round, result and second lever (branch perf/arm-vm-parallel-suites,
+on top of PR #62's commit): run 38019167502 on 14e6771 took 17m13s against 20m37s. The ARM VM
+job started 7 s into the run instead of 3m58s, took 17m01s, and its guest waited 0.003 s for
+the candidate, which candidate-fetch.log shows arriving after the builder job succeeded; 41
+assertions; one sample. That job is now the whole critical path: about 8m20s before the first
+suite and 8m03s of suites in turn (reinstall 41 s, session 205, labwc and Wayfire 84, greeter
+194). Change: three ARM guests share the suites, `session`, `package+compositors` and
+`greeter`, as a job matrix whose results are all required. scripts/vm/suites.sh, sourced by
+setup.sh before any work, names the four suites and refuses unknown names; unset means all of
+them in the original order, which is what the KVM guests still run. setup.sh runs each suite's
+commands under that suite's guard: apart from guards, indentation and comments its commands
+are unchanged (checked by diff). The reinstall check became the `package` suite so that each
+of the 41 assertions runs in exactly one ARM guest. test-vm.py `--suites A+B` passes the
+selection, records it, and fails a guest whose log lacks a completion mark of its own suites
+or shows another's; `--print-plan` names those marks. Contracts failed first: the selector
+through the real script (seven accepted and five refused selections), setup.sh's guards, the
+CLI (plan and seven malformed selections) and the workflow (the matrix covers each suite
+once, guests differ in suites only, KVM jobs take no selection). Costs: three ARM runners for
+about as long as one ran before; on ARM the suites no longer follow one another in one guest,
+so an effect of one suite on a later one is exercised by the KVM guests only. No timing is
+claimed until this change's own run.
