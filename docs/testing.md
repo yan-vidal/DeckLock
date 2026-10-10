@@ -76,7 +76,9 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | X11 lock backend | `scripts/test-lock-x11.py`, `examples/x11_intruder` | Override-redirect window covering the screen, grabs another client cannot take, stacking and focus recovered from an intruding window, stacking independent of deliberately slow GTK event processing, blank/wake, refusal when the keyboard cannot be grabbed, and the two gaps X11 leaves |
 | Video path on X11 | `examples/x11_video_check.rs`, run by both gates | Frames keep arriving on an X11 display, through the software path without the `x11` feature and the accelerated one with it |
 | Reduced-guarantee notice | `examples/guarantee_check.rs` | Catalog text, silence when a backend keeps its guarantees, and a theme that cannot hide it |
-| Guest provisioning fixture | `scripts/test-vm-fixture.py` | The readiness decision made before a guest is tested, and the cloud-init status recorded with it, checked against a stubbed cloud-init |
+| Guest provisioning fixture | `scripts/test-vm-fixture.py` | The readiness decision made before a guest is tested, and the cloud-init status recorded with it, checked against a stubbed cloud-init. The suite selector `scripts/vm/suites.sh`, sourced as `setup.sh` sources it: no selection runs every suite, a selection runs exactly its suites in the guest's own order, and unknown or malformed names are refused; `setup.sh` validates it before any work and runs each suite's commands under that suite's guard only |
+| Candidate awaiter | `scripts/test-ci-await-candidate.py` | The real `ci-await-candidate` CLI against a fake `gh`, never GitHub: nothing is downloaded until the named job has succeeded in this run attempt; a job that fails, is cancelled, skipped or times out ends the wait at once; the wait is bounded; only the named job counts, also under a caller's prefix, and two jobs with the name are refused; a transient listing error is retried while persistent ones, a missing `gh` or a missing run identity end it early; `SHA256SUMS` must exist, list files and match; a destination that already holds files is refused |
+| VM runner CPU plan | `scripts/test-vm-emulation.py` | The real `test-vm.py` CLI behind PATH stubs and a host-boundary guard: `--print-plan` reports the pinned image and CPU options without reading `/dev/kvm`, starting a process, opening a socket or writing a file; an emulated aarch64 guest gets `max` with pointer authentication enabled and QEMU's implementation-defined algorithm, KVM the host CPU and emulated x86 plain `max`; the comparison's `--tcg-pauth` selector is refused; unpinned targets are refused; execution still requires a candidate, with or without `--package-fetch`, whose command a plan never runs; a guest runs every suite unless `--suites` selects some, the plan names the completion marks owed for them, and a malformed selection is refused. It never starts QEMU |
 | Greeter IPC and preview | `src/greeter.rs` protocol tests, `examples/preview_check.rs` | Several greetd prompts, denied session start, JSON parsing, no power actions in greeter preview, and activation of an existing greeter |
 | Greeter arrow keys | `examples/greeter_keys_check.rs`, X11 gate | Left/Right from an empty password entry select accounts through GTK's own key dispatch, wrap at both ends, keep entry focus, and still move the cursor while a password is being typed |
 | Greeter setup command | `tests/cli_contract.rs` | The command `setup greeter` writes starts when run as greetd runs it (`sh -c "exec <command>"`), with a fake Cage. Replacing a greetd config keeps its mode (0644 for a file setup creates), and `config set` keeps the mode of the config it replaces, because the atomic write goes through a private temporary file |
@@ -88,7 +90,7 @@ compositor, its own socket and no PAM authentication. They cover different layer
 | Real greetd login | `scripts/vm/greeter.py`, run by each distribution VM | Packaged setup command, greetd as a system service, logind runtime directories for the greeter and user sessions, real greetd and PAM rejection/acceptance, Cage Wayland greeter, chosen session running as the authenticated user, and a second account selected by arrow key |
 | Lock boundary on further compositors | `scripts/vm/compositor.py`, run by each distribution VM for its `EXTRA_COMPOSITORS` (labwc with pixman, Wayfire with software GLES on vgem) | Input reaching an ordinary client before lock, compositor lock confirmation, real PAM denial with no input leak, one protocol unlock, input restored, and a killed locker leaving the compositor locked. PAM policy cases stay on Sway only |
 | aarch64 packages | `package-fedora-aarch64` and `package-ubuntu-aarch64` jobs on `ubuntu-24.04-arm` | The same release build, `cli_contract` and `session_invariants` tests and package contract as x86_64. Ubuntu arm64 is published from 0.3.2; Fedora arm64 stays a candidate until it has a VM target |
-| aarch64 VM gate | `vm-ubuntu-aarch64` on `ubuntu-24.04-arm`, `scripts/test-vm.py --arch aarch64 --allow-emulation` | The whole Ubuntu guest suite (Sway with real PAM, X11, labwc, Wayfire, greetd) on the arm64 package, in a TCG-emulated guest with every bounded wait scaled by 8, after the harness packages are installed on the host (`--provision-native`); about 35 minutes, down from about 94. Fedora arm64 has no VM target yet |
+| aarch64 VM gate | `vm-ubuntu-aarch64` on `ubuntu-24.04-arm`, three guests, `scripts/test-vm.py --arch aarch64 --allow-emulation --suites ...` | The whole Ubuntu guest suite (Sway with real PAM, X11, labwc, Wayfire, greetd) on the arm64 package, shared between three TCG-emulated guests so that each suite runs in exactly one of them (session; package reinstall with the further compositors; greeter), each guest installing the candidate itself and held to the completion marks of its own suites and no other. Each is a TCG-emulated guest with every bounded wait scaled by 8, after the harness packages are installed on the host (`--provision-native`). The emulated CPU keeps pointer authentication but signs with QEMU's implementation-defined algorithm instead of QARMA5, so the gate is no evidence of pointer-authentication strength; about 18 minutes, down from about 35 with QARMA5 and about 94 before native provisioning. The job starts with the package build instead of after it: the guest boots while `scripts/ci-await-candidate` waits for that job to succeed, and nothing is installed before its artifact is downloaded and checked against `SHA256SUMS`. Fedora arm64 has no VM target yet |
 | Package boundary | `scripts/test-package.py`, Arch package CI | Archive paths/checksums, executable identity, original media, settings launcher and actual packaged CLI |
 
 Counts are not a coverage target. Add a contract test when a behavior can break;
@@ -115,7 +117,7 @@ on Arch and include their linked-library provenance.
 - PR targeting main: required **DeckLock checks** (all isolated, package and VM jobs) and **Arch package contract**.
   Fedora and Ubuntu packages also build. Download any `<target>-package`
   candidate from the workflow's artifacts if needed.
-- After packaging: **Real Wayland and PAM** for each target, using that exact
+- Package builds start alongside the isolated suite. After each package: **Real Wayland and PAM** for each target, using that exact
   package in QEMU/KVM. Every package and VM is required by the final **DeckLock checks** aggregator. Failed, skipped or cancelled gates fail the aggregator.
 - Main: the same checks after merge. No public release just because a PR exists.
 - Version/revision tag: `Release` invokes the checks and Arch package build, then
@@ -124,6 +126,60 @@ on Arch and include their linked-library provenance.
 - CI has read-only repository permissions except the final tag-publishing job.
   PR code receives no publishing token. Actions are pinned; checkout credentials
   are not persisted. Existing release tags/assets are never overwritten.
+
+### CI preparation and caches
+
+The native compatibility gate builds a dependency-only Ubuntu 24.04 image from
+`.github/ci/native-tests.Dockerfile`. Its Ubuntu and Rust 1.93.0 bases are pinned
+by digest. A small build context includes only the recipe, entrypoint and
+`bootstrap-native`; no project executable or source is baked into the image.
+Docker BuildKit caches those layers in GitHub Actions. The UTC ISO week is a
+build argument before apt/native preparation, so the first run of a new week
+refreshes packages. Recipe changes also invalidate the affected layers. Cold
+caches build normally; image build failure fails the native gate. Cache eviction
+only removes the speed benefit.
+
+The gate mounts its exact checkout, creates a container account matching its
+owner and runs `scripts/check --all` without root privileges, with private test
+displays and a fresh target directory. The pinned native library/mock compositor
+comes from the image. Missing dependencies still fail; no suite is skipped.
+
+Cargo caches contain only registry/git downloads under `.ci-cargo`, keyed by
+build target, OS/architecture, dependency image/toolchain identity and Cargo.lock.
+They never contain `target` or DeckLock executables. Each distribution still
+installs its current build stack and builds/tests/packages its own checkout.
+VM caches select a single pristine image using `scripts/vm-cache-key`, whose key
+includes the runner's pinned image SHA256. The VM runner verifies the hash after
+restore. Overlays, prepared disks, SSH keys, logs and the candidate package stay
+outside the cache. The candidate and its dependencies are still installed in the
+running guest, including the ARM native-harness path.
+
+The three KVM guests wait for their candidate through `needs:`. The emulated ARM
+guest takes about as long to prepare and boot as its candidate takes to build, so
+that job starts with the build. `scripts/ci-await-candidate` lists the run
+attempt's jobs and accepts the artifact only after the job that builds it has
+succeeded in this attempt; any other conclusion ends the wait at once and the
+wait is bounded. It needs `actions: read`, which `release.yml` grants to the
+checks it calls. The costs are a guest booted for nothing when the build fails,
+and a dependence on the GitHub API during the wait: thirty consecutive failed
+listings fail the job.
+
+An emulated guest would also spend about eight minutes running the suites in
+turn, so three ARM guests share them: `session`, `package+compositors` and
+`greeter`. Each boots and installs the candidate itself, each suite runs in
+exactly one guest, and the three results are required like any other job.
+`test-vm.py` fails a guest whose log does not show the completion marks of its
+own suites, or shows another's. The KVM guests still run every suite in one
+guest, in the original order. The cost is three ARM runners for about as long
+as one ran before, and an order of suites the ARM guests no longer share.
+
+All ten prerequisite jobs remain required by **DeckLock checks**, including when
+packaging finishes before isolated tests. Release publication still depends on
+the whole quality workflow. Superseded PR runs are cancelled; main, tags and
+merge-group runs retain their independent evidence. The tradeoffs are cache
+storage/transfer, weekly cold preparation and speculative package/VM work if the
+parallel isolated job fails. The ARM guest still uses TCG and remains the longest
+gate; cached downloads do not remove its assertions or prove physical-device UAT.
 
 `AGENTS.md` is guidance, not a security boundary. Required GitHub checks and branch
 protection enforce the merge policy. A repository administrator can still change

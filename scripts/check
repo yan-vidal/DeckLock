@@ -59,7 +59,12 @@ with tempfile.TemporaryDirectory(prefix='decklock-check-') as temporary:
     step('rust-tests',[cargo,'test','--locked','--offline'],env)
     step('build-examples',[cargo,'build','--locked','--offline','--examples','--bin','decklock'],env)
     step('package-contract',[sys.executable,'scripts/test-package.py','--binary','target/debug/decklock'],env)
+    step('ci-entrypoint',[sys.executable,'scripts/test-ci-entrypoint.py'],env,60)
+    step('ci-workflow',[sys.executable,'scripts/test-ci-workflow.py'],env,60)
+    step('ci-cache',[sys.executable,'scripts/test-ci-cache.py'],env,60)
+    step('ci-await-candidate',[sys.executable,'scripts/test-ci-await-candidate.py'],env,60)
     step('vm-fixture',[sys.executable,'scripts/test-vm-fixture.py'],env,60)
+    step('vm-emulation',[sys.executable,'scripts/test-vm-emulation.py'],env,60)
     step('whitespace',['git','diff','--check'],env)
     if args.all:
         step('isolated-gtk',['xvfb-run','-a','-s','-screen 0 1280x800x24 -nolisten tcp','dbus-run-session','--',sys.executable,'scripts/test-gui-isolated.py'],env,240)

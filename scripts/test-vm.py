@@ -10,12 +10,14 @@ Never mounts the host home, devices, desktop sockets or credentials into the gue
 Requires QEMU/KVM, qemu-img, genisoimage, curl, OpenSSH and 3 GiB available RAM.
 """
 import argparse
+import glob
 import hashlib
 import json
 import os
 from pathlib import Path
 import platform
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -64,6 +66,55 @@ AARCH64_FIRMWARE = ['/usr/share/qemu-efi-aarch64/QEMU_EFI.fd', '/usr/share/AAVMF
 # a bundled Android SDK. Refuse it rather than creating an overlay with a tool
 # that old and failing later in a way that looks like a guest problem.
 MINIMUM_QEMU_IMG = (6, 0)
+# The suites of scripts/vm/suites.sh, in the order a guest runs them. A KVM guest runs
+# them all. Emulated guests share them, each suite in exactly one guest.
+SUITES = ('package', 'session', 'compositors', 'greeter')
+
+
+def selected_suites(text):
+    names = text.split('+')
+    if len(set(names)) != len(names) or any(name not in SUITES for name in names):
+        raise argparse.ArgumentTypeError(f"distinct suites out of {', '.join(SUITES)}, joined by '+'")
+    return [name for name in SUITES if name in names]
+
+
+def completion_marks(suites, manifest):
+    """The phase marks setup.sh prints once each of these suites has finished."""
+    compositors = vm_native.read_manifest(manifest).get('EXTRA_COMPOSITORS', '').split()
+    marks = {'package': ['candidate_reinstalled'], 'session': ['sway_pam_x11_complete'],
+             'compositors': [f'{name}_complete' for name in compositors], 'greeter': ['greeter_complete']}
+    return [mark for suite in suites for mark in marks[suite]]
+
+
+def phase_marks(log):
+    """(phase, guest clock seconds) for every mark in the guest's log."""
+    if not log.exists():
+        return []
+    return [(fields[1], float(fields[2])) for line in log.read_text(errors='replace').splitlines()
+            if (fields := line.split()) and len(fields) == 3 and fields[0] == 'DECKLOCK_VM_PHASE']
+
+
+def cpu_model(arch, kvm):
+    if kvm:
+        return 'host'
+    if arch == 'aarch64':
+        # Before QEMU 10.0, `max` signs pointers with QARMA5, which cost half of an
+        # emulated guest's time: 33m21s against 16m54s for the same 41 assertions (run
+        # 38012670359, QEMU 8.2.2). The implementation-defined algorithm keeps the
+        # instructions; it is no evidence of pointer-authentication strength.
+        return 'max,pauth=on,pauth-impdef=on,pauth-qarma3=off'
+    return 'max'
+
+
+def candidate(pattern, suffix, target):
+    """The single file --package names: a plain path, or a glob a fetch command filled."""
+    matches = sorted(glob.glob(str(pattern)))
+    if len(matches) != 1:
+        raise SystemExit(f'--package must name exactly one file; {pattern} matches {len(matches)}')
+    package = Path(matches[0]).resolve(strict=True)
+    if not package.name.endswith(suffix):
+        raise SystemExit(f'{target} expects a {suffix} candidate, got {package.name}')
+    return package
 
 
 def qemu_img():
@@ -105,7 +156,14 @@ def main():
         raise KeyboardInterrupt(f'Interrupted by signal {signum}')
     signal.signal(signal.SIGTERM, interrupted)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--package', type=Path, required=True, help='Candidate package built by CI')
+    parser.add_argument('--package', type=Path,
+                        help='Candidate package built by CI (required for execution). With '
+                             '--package-fetch, a quoted glob that the command fills')
+    parser.add_argument('--package-fetch', metavar='COMMAND',
+                        help='Run COMMAND while the guest boots, then require it to have exited 0 and '
+                             '--package to match one file. For CI, where the candidate is still building')
+    parser.add_argument('--package-fetch-timeout', type=float, default=3600,
+                        help='Seconds, from the start of COMMAND, the booted guest waits for it')
     parser.add_argument('--target', choices=sorted(DISTROS), default='arch')
     parser.add_argument('--arch', choices=['x86_64', 'aarch64'], default=platform.machine(),
                         help='Guest architecture; KVM needs it to match the host')
@@ -119,12 +177,34 @@ def main():
                              'guest architectures to match; without passwordless sudo, or on any failure, '
                              'it warns and installs inside the guest as usual')
     parser.add_argument('--logs', type=Path, default=ROOT / 'target/vm-logs')
+    parser.add_argument('--suites', type=selected_suites, default=list(SUITES), metavar='A+B',
+                        help=f"Suites this guest runs, out of {', '.join(SUITES)}; all by default. Guests "
+                             'that share them must together run each one')
+    parser.add_argument('--print-plan', action='store_true',
+                        help='Print pinned image and CPU options without inspecting or starting a VM')
     args = parser.parse_args()
     distro = DISTROS[args.target]
     if args.arch != 'x86_64':
         if args.arch not in distro:
             raise SystemExit(f'No pinned {args.arch} image for {args.target}')
         distro = distro | distro[args.arch]
+    manifest = ROOT / 'scripts/vm/distros' / f'{args.target}.env'
+    if args.print_plan:
+        print(json.dumps({'target': args.target, 'arch': args.arch,
+                          'image': distro['image'], 'image_sha256': distro['sha256'],
+                          'memory_mib': 2048, 'suites': args.suites,
+                          'completion_marks': completion_marks(args.suites, manifest),
+                          'cpu_models': {mode: cpu_model(args.arch, mode == 'kvm')
+                                         for mode in ['kvm', 'tcg']},
+                          'cpus': {'kvm': 2, 'tcg': 4}, 'slowdown': {'kvm': 1, 'tcg': 8}}, indent=2))
+        return
+    if args.package is None:
+        parser.error('the following arguments are required: --package')
+    # Only the fetch command may use the run's token: sudo, the emulator and ssh never see it.
+    fetch_env = os.environ.copy()
+    for name in ('GH_TOKEN', 'GITHUB_TOKEN'):
+        os.environ.pop(name, None)
+    started = time.monotonic()
     kvm = args.arch == platform.machine() and os.access('/dev/kvm', os.R_OK | os.W_OK)
     if not kvm and not args.allow_emulation:
         raise SystemExit('KVM required: refusing slow software emulation on the shared machine')
@@ -132,9 +212,8 @@ def main():
     # inside the guest and on this side scales by this estimate, never below 1.
     slowdown = 1 if kvm else 8
     qemu = f'qemu-system-{args.arch}'
-    package = args.package.resolve(strict=True)
-    if not package.name.endswith(distro['suffix']):
-        raise SystemExit(f'{args.target} expects a {distro["suffix"]} candidate, got {package.name}')
+    selected_cpu = cpu_model(args.arch, kvm)
+    package = None if args.package_fetch else candidate(args.package, distro['suffix'], args.target)
     logs = args.logs.resolve()
     logs.mkdir(parents=True, exist_ok=True)
     for name in [qemu, 'genisoimage', 'curl', 'ssh', 'scp', 'ssh-keygen']:
@@ -158,8 +237,12 @@ def main():
         raise SystemExit('Cached image SHA256 mismatch')
     report = {'test_source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
               'target': args.target, 'arch': args.arch, 'image': distro['image'], 'image_sha256': distro['sha256'],
-              'package_sha256': digest(package), 'package': package.name,
+              'package_sha256': digest(package) if package else None,
+              'package': package.name if package else None,
               'memory_mib': 2048, 'cpus': 2 if kvm else 4, 'accelerator': 'kvm' if kvm else 'tcg',
+              'cpu_model': selected_cpu, 'suites': args.suites,
+              'qemu_version': subprocess.check_output([qemu, '--version'], text=True, timeout=10).splitlines()[0],
+              'host_phase_seconds': {},
               'slowdown': slowdown, 'provisioning': 'in-guest', 'status': 'running'}
     (logs / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
     # The copy-on-write overlay grows with every guest write, and a package
@@ -178,6 +261,7 @@ def main():
         subprocess.run(['genisoimage', '-quiet', '-output', str(work / 'seed.iso'), '-volid', 'cidata', '-joliet', '-rock', str(seed)], check=True)
         disk = f'file={work}/disk.qcow2,if=virtio,format=qcow2'
         guest_env = ROOT / 'scripts/vm/distros' / f'{args.target}.env'
+        preparation_started = time.monotonic()
         if args.provision_native:
             manifest = ROOT / 'scripts/vm/distros' / f'{args.target}.env'
             raw, reason = vm_native.try_native(
@@ -193,12 +277,13 @@ def main():
                 print(f"::warning title=Native provisioning skipped::{reason.replace(chr(10), ' ')}", flush=True)
         if report['provisioning'] == 'in-guest':
             subprocess.run([image_tool, 'create', '-q', '-f', 'qcow2', '-F', 'qcow2', '-b', str(base), str(work / 'disk.qcow2'), '12G'], check=True)
+        report['host_phase_seconds']['disk_and_harness'] = round(time.monotonic() - preparation_started, 3)
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
         accel = ['-enable-kvm'] if kvm else ['-accel', 'tcg,thread=multi']
         if args.arch == 'x86_64':
-            machine = ['-cpu', 'host' if kvm else 'max']
+            machine = ['-cpu', selected_cpu]
             seed = ['-drive', f'file={work}/seed.iso,media=cdrom,readonly=on']
         else:
             # The virt machine has no IDE for a CD-ROM; cloud-init finds the seed
@@ -207,7 +292,7 @@ def main():
             if firmware is None:
                 raise SystemExit('Missing dependency: aarch64 UEFI firmware (qemu-efi-aarch64)')
             machine = ['-machine', 'virt,gic-version=' + ('host' if kvm else '3'),
-                       '-cpu', 'host' if kvm else 'max', '-bios', firmware]
+                       '-cpu', selected_cpu, '-bios', firmware]
             seed = ['-drive', f'file={work}/seed.iso,if=virtio,format=raw,readonly=on']
         command = [qemu, '-name', 'decklock-isolated-test', *accel, *machine,
                    '-m', '2048', '-smp', str(report['cpus']), '-display', 'none', '-monitor', 'none', '-no-reboot',
@@ -233,41 +318,87 @@ def main():
                         vm.terminate()
                         return
         with (logs / 'qemu.log').open('w') as output:
+            boot_started = time.monotonic()
             vm = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT)
             thread = threading.Thread(target=guard, args=(vm,), daemon=True)
             thread.start()
+            fetch = fetch_log = None
             try:
+                if args.package_fetch:
+                    # The candidate is still building: its artifact is awaited while this
+                    # guest boots, and nothing is installed before the command succeeds.
+                    fetch_log = (logs / 'candidate-fetch.log').open('w')
+                    fetch_started = time.monotonic()
+                    fetch = subprocess.Popen(['bash', '-c', args.package_fetch], env=fetch_env, stdout=fetch_log,
+                                             stderr=subprocess.STDOUT, start_new_session=True)
                 print(f"VM started: pid={vm.pid}, {report['accelerator'].upper()}, 2048 MiB, {report['cpus']} CPUs, "
                       f'waits x{slowdown}. Logs: {logs}', flush=True)
                 deadline = time.monotonic() + 240 * slowdown
                 while True:
                     if vm.poll() is not None:
                         raise RuntimeError('VM exited before SSH; see serial.log/qemu.log')
+                    if fetch and fetch.poll():
+                        raise RuntimeError(f'Candidate fetch failed ({fetch.returncode}); see candidate-fetch.log')
                     ready = subprocess.run([*ssh, 'test -f /etc/decklock-test-vm'], capture_output=True, timeout=8 * slowdown)
                     if ready.returncode == 0:
                         break
                     if time.monotonic() > deadline:
                         raise TimeoutError('VM boot/SSH deadline exceeded')
                     time.sleep(2)
+                if fetch:
+                    report['host_phase_seconds']['guest_ready'] = round(time.monotonic() - boot_started, 3)
+                    guest_ready = time.monotonic()
+                    try:
+                        code = fetch.wait(timeout=max(0, fetch_started + args.package_fetch_timeout - guest_ready))
+                    except subprocess.TimeoutExpired:
+                        raise TimeoutError(f'No candidate after {args.package_fetch_timeout:g} s; see candidate-fetch.log') from None
+                    if code:
+                        raise RuntimeError(f'Candidate fetch failed ({code}); see candidate-fetch.log')
+                    package = candidate(args.package, distro['suffix'], args.target)
+                    report.update(package_sha256=digest(package), package=package.name)
+                    report['host_phase_seconds']['candidate_wait'] = round(time.monotonic() - guest_ready, 3)
                 subprocess.run([*ssh, 'mkdir -p /root/decklock-fixture /var/tmp/decklock-evidence'], check=True, timeout=15 * slowdown)
                 fixture = sorted(p for p in (ROOT / 'scripts/vm').iterdir() if p.suffix in {'.py', '.sh'})
                 fixture.append(guest_env)
                 subprocess.run(['scp', *ssh_options, '-P', str(port), str(package), *map(str, fixture), 'root@127.0.0.1:/root/decklock-fixture/'], check=True, timeout=60 * slowdown)
+                report['host_phase_seconds']['boot_ssh_and_copy'] = round(time.monotonic() - boot_started, 3)
                 print('Guest ready; installing dependencies and exercising the candidate.', flush=True)
+                guest_started = time.monotonic()
                 with (logs / 'guest.log').open('w') as guest_log:
                     # needrestart, an apt hook on Ubuntu images, scans every process after each install:
                     # about 14 minutes apiece under emulation, to report nothing a disposable guest needs.
                     quiet = 'NEEDRESTART_SUSPEND=1 ' if slowdown > 1 else ''
-                    result = subprocess.run([*ssh, f'{quiet}DECKLOCK_VM_SLOWDOWN={slowdown} bash /root/decklock-fixture/setup.sh {args.target}'],
+                    chosen = shlex.quote(' '.join(args.suites))
+                    result = subprocess.run([*ssh, f'{quiet}DECKLOCK_VM_SLOWDOWN={slowdown} DECKLOCK_VM_SUITES={chosen} bash /root/decklock-fixture/setup.sh {args.target}'],
                                             stdout=guest_log, stderr=subprocess.STDOUT, timeout=(600 if report['provisioning'] == 'native' else 1200) * slowdown)
+                report['host_phase_seconds']['guest_execution'] = round(time.monotonic() - guest_started, 3)
                 if result.returncode:
                     raise RuntimeError(f'Guest test failed ({result.returncode}); see guest.log')
+                # A guest that shares the suites must have finished its own and no other:
+                # a selection the guest read differently would otherwise pass having run less.
+                finished = [phase for phase, _ in phase_marks(logs / 'guest.log')]
+                owed = completion_marks(args.suites, manifest)
+                if [mark for mark in finished if mark in completion_marks(SUITES, manifest)] != owed:
+                    raise RuntimeError(f"Guest finished {finished}, not {owed} for {'+'.join(args.suites)}")
                 report['status'] = 'passed'
             except BaseException as error:
                 report['status'] = 'failed'
                 report['error'] = str(error)
                 raise
             finally:
+                evidence_started = time.monotonic()
+                if fetch and fetch.poll() is None:
+                    os.killpg(fetch.pid, signal.SIGTERM)
+                    try:
+                        fetch.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(fetch.pid, signal.SIGKILL)
+                        fetch.wait()
+                if fetch_log:
+                    fetch_log.close()
+                    # Which job and artifact the candidate came from belongs in the job log.
+                    print('--- candidate-fetch.log ---', (logs / 'candidate-fetch.log').read_text(errors='replace').rstrip(),
+                          '--- end candidate-fetch.log ---', sep='\n', flush=True)
                 if vm.poll() is None:
                     try:
                         transfer = subprocess.run(['scp', *ssh_options, '-P', str(port), '-r', 'root@127.0.0.1:/var/tmp/decklock-evidence', str(logs)], timeout=30 * slowdown, check=False)
@@ -287,6 +418,11 @@ def main():
                     vm.kill()
                     vm.wait()
                 thread.join(timeout=5)
+                report['host_phase_seconds']['evidence_and_shutdown'] = round(time.monotonic() - evidence_started, 3)
+                report['total_seconds'] = round(time.monotonic() - started, 3)
+                report['guest_phase_timestamps'] = [
+                    {'phase': phase, 'guest_epoch_seconds': seconds}
+                    for phase, seconds in phase_marks(logs / 'guest.log')]
                 (logs / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
                 # The job log is often the only evidence a reviewer can read, so a
                 # failure names its assertion there instead of only in guest.log.
@@ -297,7 +433,7 @@ def main():
                           sep='\n', file=sys.stderr, flush=True)
     if report['status'] != 'passed':
         raise SystemExit('FAIL: VM evidence incomplete')
-    print(f'PASS: real Sway/PAM package VM on {args.target} {args.arch}', flush=True)
+    print(f"PASS: real Sway/PAM package VM on {args.target} {args.arch}, suites {'+'.join(args.suites)}", flush=True)
 
 
 if __name__ == '__main__':

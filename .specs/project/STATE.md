@@ -516,3 +516,129 @@ the generated Lua with private runtime storage; invalid Lua was still rejected.
 This is isolated parser evidence, not root package installation or real login.
 The corrected commit needs its own full local/CI checks and a new candidate
 before accompanied service activation and physical controller/PAM validation.
+
+2026-10-09 CI preparation: user authorized dependency images, download caches and
+concurrent package builds after reviewing their costs. Separate worktree/branch
+perf/ci-dependency-cache keeps PR #59's accompanied Deck UAT candidate intact.
+Spec: .specs/features/ci-speed/spec.md. Baseline run38000779070 spent745 seconds
+installing native dependencies and271 seconds in its isolated gate; overall56m35s,
+including35m00s in the ARM VM. Its eleven required jobs all passed at source
+21342b4 (the controller/greeter candidate, not this CI change).
+New regressions first rejected serial package scheduling and absent cache actions/
+metadata CLI. Eight cache contracts now pass, and the real final aggregate step
+rejects failure/cancelled/skipped across all ten prerequisites (40 result cases).
+Dependency image built locally from its pinned bases. Initial image preparation
+failed because the official slim Rust image omits rustfmt/clippy; pinned components
+are now added explicitly. The first container invocation then failed at an unset
+GID from an apostrophe in a shell parameter error message. Its public entrypoint
+regression reproduced that error before correction and additionally requires
+private HOME/CARGO_HOME after runuser, argument forwarding and root-UID refusal.
+A concurrency regression also rejected main/tag grouping by identical source SHA;
+non-PR groups now use run_id. All failure logs retained in target/ci-development.
+Full local gate on 9bb22da and separate PR validation in progress; no measured
+speed claim or merge/release yet. Native bases/actions remain digest/SHA pinned,
+weekly preparation refreshes apt/native layers, Cargo caches downloaded sources
+only, and each VM cache is one pristine hash-pinned image. Candidate install and
+all assertions remain in the running guest.
+
+2026-10-09 ARM VM emulation experiment (branch perf/arm-vm-emulation, on top of PR #60's
+commits; spec .specs/features/arm-vm-performance/spec.md): the aarch64 VM is the only long gate
+left. Run 38006310277 (6b444a2, PR #60) took 40m20s; every other job had ended within 10m11s
+and the ARM VM job took 36m00s. Its report had no phase times, so they were reconstructed from
+that run's job log, serial log, journal, dpkg.log and apt history: host preparation 1.4 min;
+boot to guest-ready 9.6 min (apparmor.service 157 s, the four cloud-init stages 188 s, about
+30 s per SSH connection); the candidate with its 98 dependencies 7.1 min (dpkg 271 s, apt
+resolution 69 s, 83 s after dpkg ended); the reinstall 2.2 min (dpkg 9 s); the suites 13.6 min
+(exercise.py 5m03s including the 96 s scaled lockout, labwc 1m24s, Wayfire 1m22s, the greeter
+about 6 min). Hypothesis: QEMU 8.2.2, the runner's, signs pointers with QARMA5 under
+`-cpu max`, which its documentation calls slow to emulate; QEMU 10.0 made the
+implementation-defined algorithm the default for that reason. `--tcg-pauth impdef` selects
+`max,pauth=on,pauth-impdef=on,pauth-qarma3=off`; the default profile, KVM and x86 are
+unchanged. The ARM job is temporarily a two-profile matrix: each profile runs the whole suite
+on the same candidate in its own guest and both are required. result.json now records
+cpu_model, qemu_version, host phase durations and guest-clock phase marks. `--print-plan`
+prints the pinned image and CPU options without touching the host, and
+scripts/test-vm-emulation.py (seven public-CLI cases) is a new `vm-emulation` gate step.
+Checked before CI: QEMU 8.2.2 (1:8.2.2+ds-0ubuntu1.18, installed into a throwaway container of
+the Ubuntu 24.04 dependency image) initializes `virt` with that CPU string without booting,
+refuses impdef together with qarma3 and refuses an unknown property; actionlint 1.7.12 reports only SC2046 on the three x86 `setfacl` lines
+main already has, and reports a wrong `needs` or matrix key in the ARM job when one is
+introduced. No timing is claimed: the comparison is one CI run with one sample per profile.
+The draft PR targets main because checks.yml runs only for pull requests to main, so its diff
+carries PR #60's commits until that merges; it is not to be merged as is, since the matrix
+doubles ARM runner time. Not adopted: a faster default, shorter waits, sharding. Limits: the
+impdef profile is no evidence of pointer-authentication strength or of real ARM hardware.
+
+2026-10-09 ARM VM emulation result and adoption: run 38012670359 (PR #61 at c7fdf8a, CI merge
+commit e2fcde4, QEMU 8.2.2) ran both profiles on one candidate (package SHA256
+3a2ed010...6a8295) and each passed the same 41 assertions in the same order. The job took
+34m05s with QARMA5 and 17m45s with the implementation-defined algorithm; test-vm.py took
+2001 s against 1014 s. By phase: boot to guest-ready 535 s against 192 s; the candidate and
+its dependencies 390 against 160; the reinstall 134 against 41; Sway, PAM and X11 292 against
+208; labwc and Wayfire 163 against 85; the greeter 323 against 193. Host provisioning, which
+is not emulated, took 51 s against 87 s: runner variance, and against the faster profile. One
+sample per profile on separate hosted runners. The user approved adoption: an emulated aarch64
+guest now always gets `max,pauth=on,pauth-impdef=on,pauth-qarma3=off`; the `--tcg-pauth`
+selector and the two-profile matrix are gone, and the job and its evidence artifact have their
+original names again, so checks.yml differs from main only in the timing comment. KVM (`host`)
+and emulated x86 (`max`) are unchanged. The new contracts failed first against the comparison
+(13 CLI failures and the workflow's job name) and pass now; scripts/test-vm-emulation.py has six
+cases, one refusing the old selector. Kept: `--print-plan`, cpu_model and qemu_version in
+result.json, host phase durations and guest phase marks. PR #60 was merged first (4d862a1),
+so this branch merges main; main's tree equalled the branch's base. Limits: the gate is no
+evidence of pointer-authentication strength or of real ARM hardware, and the 18 minutes rest on
+one run until this PR's own run. What is left of the 17m45s: 8.3 min before any suite (host
+1.4, boot 3.2, candidate 2.7, reinstall 0.7) and 8.1 min of suites, about 2.6 min of it fixed
+sleeps scaled by 8 (the PAM lockout alone is 96 s); cloud-init is down to 65 s and an SSH
+connection to 12-16 s. Not done, each needing its own measurement and decision: a lower wait
+scale, suites in parallel guests, starting the boot before the package build ends. Deferred
+minor: `--print-plan` repeats the memory, CPU-count and wait-scale literals instead of sharing
+them with the run path. PR #59 stays a draft: its accompanied Steam Deck validation is pending.
+
+2026-10-10 ARM VM, second round (branch perf/arm-vm-await-candidate): PR #61's own run
+38016488097 confirmed the adopted profile (ARM job 16m30s, test-vm.py 957 s, 41 assertions,
+workflow 20m37s; isolated gates 5m47s with a warm dependency image). The ARM path is still the
+longest: package build 3m55s, then the VM job. Comparing that run's TCG and KVM reports, fixed
+scaled sleeps removed, an emulated guest is 4.0-4.3 times slower in the session suites but
+11.3 in the greeter, 11.9 installing the candidate and 15.7 reinstalling it. The wait scale of
+8 therefore stays: halving it, proposed earlier, would leave the greeter and package bounds
+with under half of their KVM margin. Change: the guest's preparation and boot (41 s + 207 s) do
+not depend on the candidate and its build takes 235 s, so the ARM VM job no longer has
+`needs:` and starts with the build. test-vm.py `--package-fetch COMMAND` starts COMMAND with
+the boot, ends the boot wait if it fails, requires exit 0 before anything is copied into the
+guest and only then resolves `--package` (a quoted glob). scripts/ci-await-candidate lists the
+run attempt's jobs through `gh`, downloads the artifact only after the named job succeeded in
+this attempt, ends at once on any other conclusion, is bounded (3000 s in the workflow; thirty
+consecutive failed listings) and checks SHA256SUMS. The job gets `actions: read`, which
+release.yml now grants to the checks it calls, and its timeout is 240 min (bounds sum to 234).
+The KVM jobs keep `needs:`. New `ci-await-candidate` gate step: eleven cases against a fake
+`gh`, failed first for the missing script. The CLI, workflow and step-order contracts failed
+first too; the order contract was checked against three mutations. report: guest_ready and
+candidate_wait phases, package fields filled once the candidate arrives, candidate-fetch.log.
+Not established: the release path (only a tag exercises it; the permission grant follows
+GitHub's documented rule for called workflows), a real run whose package job fails, an API
+outage longer than thirty listings. No timing is claimed until this change's own run. Still
+open from the first round: suites in parallel guests, a PAM-lockout-only wait scale, SSH
+connection reuse (12-16 s per connection).
+
+2026-10-10 ARM VM, second round, result and second lever (branch perf/arm-vm-parallel-suites,
+on top of PR #62's commit): run 38019167502 on 14e6771 took 17m13s against 20m37s. The ARM VM
+job started 7 s into the run instead of 3m58s, took 17m01s, and its guest waited 0.003 s for
+the candidate, which candidate-fetch.log shows arriving after the builder job succeeded; 41
+assertions; one sample. That job is now the whole critical path: about 8m20s before the first
+suite and 8m03s of suites in turn (reinstall 41 s, session 205, labwc and Wayfire 84, greeter
+194). Change: three ARM guests share the suites, `session`, `package+compositors` and
+`greeter`, as a job matrix whose results are all required. scripts/vm/suites.sh, sourced by
+setup.sh before any work, names the four suites and refuses unknown names; unset means all of
+them in the original order, which is what the KVM guests still run. setup.sh runs each suite's
+commands under that suite's guard: apart from guards, indentation and comments its commands
+are unchanged (checked by diff). The reinstall check became the `package` suite so that each
+of the 41 assertions runs in exactly one ARM guest. test-vm.py `--suites A+B` passes the
+selection, records it, and fails a guest whose log lacks a completion mark of its own suites
+or shows another's; `--print-plan` names those marks. Contracts failed first: the selector
+through the real script (seven accepted and five refused selections), setup.sh's guards, the
+CLI (plan and seven malformed selections) and the workflow (the matrix covers each suite
+once, guests differ in suites only, KVM jobs take no selection). Costs: three ARM runners for
+about as long as one ran before; on ARM the suites no longer follow one another in one guest,
+so an effect of one suite on a later one is exercised by the KVM guests only. No timing is
+claimed until this change's own run.

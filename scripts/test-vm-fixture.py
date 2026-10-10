@@ -302,6 +302,107 @@ def check_native_wiring():
     return failures
 
 
+def check_candidate_fetch_wiring():
+    """A fetched candidate must be complete and verified before the guest receives anything.
+
+    test-vm.py cannot run here without a guest, so the order of its steps is pinned: the
+    fetch command starts with the boot, its failure ends the boot wait, it must have exited
+    0 before the fixture is copied, and only then is --package resolved.
+    """
+    source = VM_RUNNER.read_text()
+    order = ("fetch = subprocess.Popen(['bash', '-c', args.package_fetch]",
+             "if fetch and fetch.poll():",
+             "code = fetch.wait(timeout=",
+             "package = candidate(args.package",
+             "'root@127.0.0.1:/root/decklock-fixture/'")
+    positions = [source.find(needle) for needle in order]
+    failures = [f"test-vm.py lacks `{needle}`" for needle, at in zip(order, positions) if at < 0]
+    if not failures and positions != sorted(positions):
+        failures.append("test-vm.py copies the fixture before the fetched candidate is complete")
+    if "os.killpg(fetch.pid, signal.SIGTERM)" not in source:
+        failures.append("a fetch still running when the run ends is not stopped")
+    if "None if args.package_fetch else candidate(" not in source:
+        failures.append("without a fetch command the candidate is no longer required before boot")
+    withheld = source.find("os.environ.pop(name, None)")
+    if "for name in ('GH_TOKEN', 'GITHUB_TOKEN'):" not in source or "env=fetch_env" not in source \
+            or not 0 <= withheld < source.find("subprocess.run(") or withheld > source.find("vm_native.try_native("):
+        failures.append("the run's token reaches more than the fetch command")
+    return failures
+
+
+SUITES_SCRIPT = ROOT / "scripts/vm/suites.sh"
+ALL_SUITES = ["package", "session", "compositors", "greeter"]
+
+
+def chosen_suites(selection):
+    """What the real selector lets a guest run, by sourcing it as setup.sh does."""
+    env = {"PATH": os.environ["PATH"]}
+    if selection is not None:
+        env["DECKLOCK_VM_SUITES"] = selection
+    return subprocess.run(
+        ["bash", "-c", 'set -euo pipefail; source "$0"; for suite in $ALL_SUITES; do '
+                       'if runs "$suite"; then echo "$suite"; fi; done', str(SUITES_SCRIPT)],
+        env=env, capture_output=True, text=True, timeout=10)
+
+
+def check_suite_selection():
+    """Emulated guests share the suites; together they must still run each one, once.
+
+    The selector is exercised through the script setup.sh sources. setup.sh itself only
+    runs in a guest, so where it applies the selector is pinned in its text.
+    """
+    if not SUITES_SCRIPT.is_file():
+        return ["scripts/vm/suites.sh, the suite selector, does not exist"]
+    failures = []
+    cases = {None: ALL_SUITES, "": ALL_SUITES, "session": ["session"], "greeter": ["greeter"],
+             "package compositors": ["package", "compositors"],
+             "compositors package": ["package", "compositors"],
+             "package session compositors greeter": ALL_SUITES}
+    for selection, expected in cases.items():
+        result = chosen_suites(selection)
+        if result.returncode or result.stdout.split() != expected:
+            failures.append(f"selecting {selection!r} runs {result.stdout.split()} "
+                            f"({result.returncode}: {result.stderr.strip()}), not {expected}")
+    for selection in ("sessions", "session greeters", " ", "session,greeter", "package+compositors"):
+        result = chosen_suites(selection)
+        if result.returncode == 0 or result.stdout.strip():
+            failures.append(f"the invalid selection {selection!r} was accepted and ran {result.stdout.split()}")
+    setup = SETUP.read_text()
+    sourced = setup.find('source "$fixture/suites.sh"')
+    if not 0 <= sourced < setup.find("cloud-init-ready.sh"):
+        failures.append("setup.sh does not validate the suite selection before it does any work")
+    guarded = {
+        "package": ["$REINSTALL_CANDIDATE $fixture/$CANDIDATE_GLOB",
+                    "PASS: candidate reinstallation preserves user configuration",
+                    "phase candidate_reinstalled"],
+        "session": ["python3 /var/tmp/decklock-evidence/exercise.py", "phase sway_pam_x11_complete"],
+        "compositors": ['python3 /var/tmp/decklock-evidence/compositor.py "$compositor"',
+                        'phase "${compositor}_complete"'],
+        "greeter": ['python3 "$fixture/greeter.py"', "phase greeter_complete"],
+    }
+    for suite, needles in guarded.items():
+        opening = f"\nif runs {suite}; then\n"
+        if setup.count(opening) != 1:
+            failures.append(f"setup.sh does not guard the {suite} suite exactly once")
+            continue
+        block = setup.split(opening, 1)[1].split("\nfi\n", 1)[0]
+        for needle in needles:
+            if needle not in block or setup.count(needle) != 1:
+                failures.append(f"setup.sh runs `{needle}` outside the {suite} suite's guard")
+    # Unconditional: the greeter suite has always run with these groups applied.
+    if "\nusermod -aG render,video locktest\n" not in setup:
+        failures.append("setup.sh no longer adds the render and video groups in every guest")
+    try:
+        names = next(ast.literal_eval(node.value) for node in ast.parse(VM_RUNNER.read_text()).body
+                     if isinstance(node, ast.Assign)
+                     and any(isinstance(t, ast.Name) and t.id == "SUITES" for t in node.targets))
+    except StopIteration:
+        names = None
+    if list(names or []) != ALL_SUITES:
+        failures.append(f"test-vm.py's SUITES is {names}, not the selector's {ALL_SUITES}")
+    return failures
+
+
 def job_block(text, name):
     match = re.search(rf"^  {re.escape(name)}:\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)", text,
                       re.MULTILINE | re.DOTALL)
@@ -579,6 +680,8 @@ def main():
             failures.extend(check(native))
 
     failures.extend(check_native_wiring())
+    failures.extend(check_candidate_fetch_wiring())
+    failures.extend(check_suite_selection())
     failures.extend(check_sway_readiness())
     failures.extend(check_flag_help_warns())
     failures.extend(check_native_workflow())

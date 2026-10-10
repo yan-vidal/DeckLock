@@ -8,6 +8,11 @@ on:
   workflow_call:
 permissions:
   contents: read
+# Superseded PR heads stop using runners. Main, tags and merge-group runs keep
+# their independent evidence and are never cancelled by this policy.
+concurrency:
+  group: checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
     name: DeckLock isolated gates
@@ -17,23 +22,39 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      # xfwm4, xset and the Xtst/Xi/Xss client libraries belong to the X11 lock
-      # gate: a window manager that moves focus, a screen blank, and the helper
-      # that plays the part of another client in the session.
-      - name: Native test dependencies
+      - name: Dependency image context and refresh epoch
+        id: image-context
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libx11-xcb-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav gstreamer1.0-gl libpam0g-dev libwayland-dev wayland-protocols libxkbcommon-dev meson ninja-build xvfb xauth dbus-x11 xfwm4 x11-xserver-utils libxss-dev libxtst6 libxi6
-      - name: Pinned Rust toolchain
-        run: |
-          rustup toolchain install 1.93.0 --profile minimal --component rustfmt --component clippy
-          rustup override set 1.93.0
-      - name: Locked dependencies and pinned mock compositor
-        run: |
-          cargo fetch --locked
-          scripts/bootstrap-native --tests
+          mkdir -p target/ci-image-context
+          cp .github/ci/native-tests.Dockerfile target/ci-image-context/Dockerfile
+          cp .github/ci/native-tests-entrypoint scripts/bootstrap-native target/ci-image-context/
+          echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Prepared native test dependencies
+        id: native-image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: target/ci-image-context
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: decklock-native-tests:ci
+          build-args: CACHE_EPOCH=${{ steps.image-context.outputs.week }}
+          cache-from: type=gha,scope=decklock-native-amd64
+          cache-to: type=gha,scope=decklock-native-amd64,mode=max
+      - name: Cargo downloads
+        uses: ./.github/actions/cache-cargo
+        with:
+          target: isolated-ubuntu
+          identity: ${{ steps.native-image.outputs.imageid }}
       - name: Required gate
-        run: scripts/check --all
+        env:
+          NATIVE_IMAGE: ${{ steps.native-image.outputs.imageid }}
+        run: |
+          docker run --rm --init \
+            --env DECKLOCK_CI_UID="$(id -u)" --env DECKLOCK_CI_GID="$(id -g)" \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            "$NATIVE_IMAGE" scripts/check --all
       - name: Verification evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -44,7 +65,6 @@ jobs:
           retention-days: 14
   package:
     name: Package
-    needs: check
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group'
     uses: ./.github/workflows/build-package.yml
     with:
@@ -58,7 +78,6 @@ jobs:
   # artifact stays a candidate and is never published.
   package-fedora:
     name: Package (Fedora)
-    needs: check
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group'
     uses: ./.github/workflows/build-package.yml
     with:
@@ -71,7 +90,6 @@ jobs:
   # Debian target yet.
   package-ubuntu:
     name: Package (Ubuntu)
-    needs: check
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group'
     uses: ./.github/workflows/build-package.yml
     with:
@@ -84,7 +102,6 @@ jobs:
   # through the VM gate below; neither is published yet.
   package-fedora-aarch64:
     name: Package (Fedora aarch64)
-    needs: check
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group'
     uses: ./.github/workflows/build-package.yml
     with:
@@ -96,7 +113,6 @@ jobs:
 
   package-ubuntu-aarch64:
     name: Package (Ubuntu aarch64)
-    needs: check
     if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group'
     uses: ./.github/workflows/build-package.yml
     with:
@@ -121,6 +137,11 @@ jobs:
           sudo apt-get install -y qemu-system-x86 qemu-utils genisoimage openssh-client acl
           test -c /dev/kvm
           sudo setfacl -m u:$(id -un):rw /dev/kvm
+      - name: Pinned VM image download
+        uses: ./.github/actions/cache-vm
+        with:
+          target: arch
+          arch: x86_64
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: arch-package
@@ -153,6 +174,11 @@ jobs:
           sudo apt-get install -y qemu-system-x86 qemu-utils genisoimage openssh-client acl
           test -c /dev/kvm
           sudo setfacl -m u:$(id -un):rw /dev/kvm
+      - name: Pinned VM image download
+        uses: ./.github/actions/cache-vm
+        with:
+          target: fedora
+          arch: x86_64
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: fedora-package
@@ -185,6 +211,11 @@ jobs:
           sudo apt-get install -y qemu-system-x86 qemu-utils genisoimage openssh-client acl
           test -c /dev/kvm
           sudo setfacl -m u:$(id -un):rw /dev/kvm
+      - name: Pinned VM image download
+        uses: ./.github/actions/cache-vm
+        with:
+          target: ubuntu
+          arch: x86_64
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ubuntu-package
@@ -204,17 +235,33 @@ jobs:
 
   # The same guest suite on the aarch64 candidate. Hosted arm64 runners expose
   # no /dev/kvm, so the guest is emulated (TCG) and its waits are scaled; the
-  # x86_64 jobs above keep requiring KVM.
+  # x86_64 jobs above keep requiring KVM. Preparing and booting an emulated guest
+  # takes about as long as building its candidate, so this job starts with
+  # package-ubuntu-aarch64 instead of after it: test-vm.py boots the guest while
+  # scripts/ci-await-candidate waits for that job to succeed in this attempt,
+  # then downloads and verifies its artifact. Nothing is installed before that.
+  # One emulated guest would run the suites in turn for about eight minutes, so
+  # three guests share them (scripts/vm/suites.sh). Each installs the candidate
+  # itself, each suite runs in exactly one of them, and all three are required.
   vm-ubuntu-aarch64:
-    name: Real Wayland and PAM (Ubuntu aarch64)
-    needs: package-ubuntu-aarch64
+    name: Real Wayland and PAM (Ubuntu aarch64, ${{ matrix.suites }})
     runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        suites: [session, package+compositors, greeter]
+    # Listing this run's jobs and downloading its artifact.
+    permissions:
+      contents: read
+      actions: read
     # Above the sum of test-vm.py's own bounds on the native path (host provisioning
-    # 76 min, boot 32, copying 10, guest phase 80, evidence 8 = 206), so a stuck guest
-    # still ends in its log rather than a cancelled job. A passing run takes about
-    # 35 min (run 37117073212), down from about 94 before the harness packages were
-    # installed on the host. The timeout only caps a hang.
-    timeout-minutes: 210
+    # 76 min, the candidate 60 or boot 32, copying 10, guest phase 80, evidence 8 =
+    # 234), so a stuck guest still ends in its log rather than a cancelled job. A
+    # passing run takes about 18 min (run 38012670359) with QEMU's
+    # implementation-defined pointer authentication, down from about 35 with QARMA5
+    # and about 94 before the harness packages were installed on the host. The
+    # timeout only caps a hang.
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -223,19 +270,23 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-arm qemu-efi-aarch64 qemu-utils genisoimage openssh-client cloud-guest-utils
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - name: Pinned VM image download
+        uses: ./.github/actions/cache-vm
         with:
-          name: ubuntu-package-aarch64
-          path: dist
-      - name: Verify candidate and run disposable VM
+          target: ubuntu
+          arch: aarch64
+      - name: Await and verify the candidate while the guest boots, then run the disposable VM
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          (cd dist && sha256sum --check SHA256SUMS)
-          python3 scripts/test-vm.py --target ubuntu --arch aarch64 --allow-emulation --provision-native --package dist/*.deb
+          python3 scripts/test-vm.py --target ubuntu --arch aarch64 --allow-emulation --provision-native \
+            --package 'dist/*.deb' --suites "${{ matrix.suites }}" \
+            --package-fetch 'scripts/ci-await-candidate --job "Package (Ubuntu aarch64) / Ubuntu aarch64 package contract" --artifact ubuntu-package-aarch64 --directory dist --timeout 3000'
       - name: VM evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: vm-evidence-ubuntu-aarch64
+          name: vm-evidence-ubuntu-aarch64-${{ matrix.suites }}
           path: target/vm-logs/
           if-no-files-found: warn
           retention-days: 14
