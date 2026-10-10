@@ -641,6 +641,28 @@ def main():
                 failures.append(f"{target} VM names {name}, which compositor.py cannot start")
             if name not in fields.get('HARNESS_PACKAGES', '').split():
                 failures.append(f"{target} VM exercises {name} without installing it")
+        # Root setup against an installed login compositor: declared by every manifest, so
+        # a guest without one says so instead of silently skipping the check.
+        if 'SETUP_COMPOSITORS' not in fields:
+            failures.append(f"{target} manifest does not say which login compositors root setup runs against")
+        for name in fields.get('SETUP_COMPOSITORS', '').split():
+            if name not in fields.get('HARNESS_PACKAGES', '').split():
+                failures.append(f"{target} VM runs root setup against {name} without installing it")
+        if target == 'arch' and 'hyprland' not in fields.get('SETUP_COMPOSITORS', '').split():
+            failures.append("no VM runs the Hyprland login setup as root against the installed Hyprland")
+    if 'DECKLOCK_VM_SETUP_COMPOSITORS="$SETUP_COMPOSITORS" python3 "$fixture/greeter.py"' not in setup:
+        failures.append("setup.sh does not tell greeter.py which login compositors the manifest installed")
+    greeter_source = GREETER.read_text()
+    for needle, problem in (
+            ("os.environ.get('DECKLOCK_VM_SETUP_COMPOSITORS', '').split()",
+             "greeter.py does not run root setup against the manifest's login compositors"),
+            ("assert shutil.which('Hyprland')",
+             "greeter.py would skip the Hyprland setup when the manifest names it but it is absent"),
+            ("if key != 'XDG_RUNTIME_DIR'",
+             "greeter.py runs the Hyprland setup with a runtime directory sudo would have removed"),
+            ("'--compositor', 'hyprland'", "greeter.py no longer applies the Hyprland login setup")):
+        if needle not in greeter_source:
+            failures.append(problem)
 
     # Each image is pinned by SHA256, so the URL it is fetched from must not move
     # underneath that pin. Canonical's `release/` directory follows the newest serial:
