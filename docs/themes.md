@@ -15,6 +15,7 @@ spacing = 16                # 0..128
 padding = 32                # 0..256
 clock_visible = true
 avatar_visible = true
+battery_percentage = true   # false mostra só o ícone da bateria
 keyboard_scale = 1.0        # 0.5..2.0
 ```
 
@@ -41,7 +42,7 @@ dessa API; a organização dos blocos é definida pelo TOML.
 | `#power`, `#preview-banner` | Energia e indicação de preview |
 | `#battery`, `#battery image`, `#battery label` | Nível da bateria acima dos botões de energia, quando o aparelho tem bateria; o tamanho do ícone vem de `-gtk-icon-size` |
 | `#battery.low`, `#battery.charging` | Bateria em 20% ou menos sem carregar, e bateria carregando |
-| `#help-button` | Botão de ajuda (?) do login e do preview |
+| `#help-button`, `#help-panel`, `#help-close` | Botão de ajuda (?) do bloqueio, login e preview, o guia curto que ele abre na própria tela e o × que o fecha |
 
 ```css
 @define-color accent #d8a657;

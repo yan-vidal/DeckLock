@@ -80,6 +80,7 @@ settings-scale = Escala do teclado
 settings-clock = Mostrar relógio e data
 settings-avatar = Mostrar avatar
 settings-power = Exibir opções de energia
+settings-battery-percentage = Mostrar porcentagem da bateria
 settings-system-keyboard = Seguir layout do teclado do sistema
 settings-idle = Inatividade (segundos)
 settings-controller = Usar sc-controller no bloqueio
@@ -148,8 +149,8 @@ help-language = pt-BR
 help-title = Ajuda do DeckLock
 help-general = Geral
 help-advanced = Avançada
-help-login = Como entrar
 help-tooltip = Ajuda (F1)
+help-close = Fechar ajuda
 settings-window-decorations = Mostrar barras de título e botões de fechar
 
 auth-locked = Conta bloqueada por falhas de autenticação.

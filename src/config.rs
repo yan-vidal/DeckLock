@@ -302,6 +302,8 @@ pub struct Layout {
     pub idle_clock_visible: bool,
     pub avatar_visible: bool,
     pub power_visible: bool,
+    /// Show the battery percentage beside its icon; false keeps the icon alone.
+    pub battery_percentage: bool,
     pub keyboard_scale: f64,
 }
 
@@ -316,6 +318,7 @@ impl Default for Layout {
             idle_clock_visible: true,
             avatar_visible: true,
             power_visible: true,
+            battery_percentage: true,
             keyboard_scale: 1.0,
         }
     }

@@ -431,7 +431,9 @@ uses installed GStreamer codecs.
 
 ## Help and roadmap
 
-F1 or the help icon opens an offline guide that follows the settings language.
+In settings, F1 or the ? button opens an offline guide that follows the settings language.
+The lock screen, login and preview show a short guide inside the screen instead
+([unlocking](docs/guide/en-US/lock.md), [signing in](docs/guide/en-US/login.md)).
 Read [General](docs/guide/en-US/general.md) and [Advanced](docs/guide/en-US/advanced.md).
 Ordinary windows have close controls; the title-bar preference is also available through `decklock config set window_decorations false`.
 

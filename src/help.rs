@@ -2,49 +2,29 @@
 use crate::i18n::I18n;
 use gtk::{gdk, prelude::*};
 use std::rc::Rc;
-/// The full guide, or the single short page shown on the login screen.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Guide {
-    Full,
-    Login,
-}
-impl Guide {
-    fn of(notebook: &gtk::Notebook) -> Self {
-        if notebook.widget_name() == "help-login" {
-            Self::Login
-        } else {
-            Self::Full
-        }
+fn documents(strings: &I18n) -> [&'static str; 2] {
+    if strings.text("help-language") == "pt-BR" {
+        [
+            include_str!("../docs/guide/pt-BR/general.md"),
+            include_str!("../docs/guide/pt-BR/advanced.md"),
+        ]
+    } else {
+        [
+            include_str!("../docs/guide/en-US/general.md"),
+            include_str!("../docs/guide/en-US/advanced.md"),
+        ]
     }
 }
-fn documents(strings: &I18n, guide: Guide) -> Vec<(&'static str, &'static str)> {
-    let portuguese = strings.text("help-language") == "pt-BR";
-    match (guide, portuguese) {
-        (Guide::Login, true) => vec![(include_str!("../docs/guide/pt-BR/login.md"), "help-login")],
-        (Guide::Login, false) => vec![(include_str!("../docs/guide/en-US/login.md"), "help-login")],
-        (Guide::Full, true) => vec![
-            (
-                include_str!("../docs/guide/pt-BR/general.md"),
-                "help-general",
-            ),
-            (
-                include_str!("../docs/guide/pt-BR/advanced.md"),
-                "help-advanced",
-            ),
-        ],
-        (Guide::Full, false) => vec![
-            (
-                include_str!("../docs/guide/en-US/general.md"),
-                "help-general",
-            ),
-            (
-                include_str!("../docs/guide/en-US/advanced.md"),
-                "help-advanced",
-            ),
-        ],
+/// The short guide of a lock or login screen (the preview shows the lock's).
+fn screen_document(strings: &I18n, login: bool) -> &'static str {
+    match (login, strings.text("help-language") == "pt-BR") {
+        (true, true) => include_str!("../docs/guide/pt-BR/login.md"),
+        (true, false) => include_str!("../docs/guide/en-US/login.md"),
+        (false, true) => include_str!("../docs/guide/pt-BR/lock.md"),
+        (false, false) => include_str!("../docs/guide/en-US/lock.md"),
     }
 }
-fn page(source: &str) -> gtk::ScrolledWindow {
+fn page(source: &str, selectable: bool) -> gtk::ScrolledWindow {
     let body = gtk::Box::new(gtk::Orientation::Vertical, 12);
     for setter in [
         gtk::prelude::WidgetExt::set_margin_top,
@@ -71,7 +51,11 @@ fn page(source: &str) -> gtk::ScrolledWindow {
                 // Plain labels deliberately do not interpret HTML/Pango or execute links.
                 let label = gtk::Label::new(Some(text.trim_end()));
                 label.set_xalign(0.);
-                label.set_selectable(true);
+                label.set_selectable(selectable);
+                if !selectable {
+                    // A screen's short guide keeps lines of a readable length.
+                    label.set_max_width_chars(72);
+                }
                 label.set_wrap(true);
                 label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
                 label.add_css_class(class);
@@ -109,11 +93,12 @@ fn populate(window: &gtk::Window, strings: &I18n) {
     while notebook.n_pages() > 0 {
         notebook.remove_page(Some(0));
     }
-    let documents = documents(strings, Guide::of(&notebook));
-    notebook.set_show_tabs(documents.len() > 1);
-    for (source, key) in documents {
+    for (source, key) in documents(strings)
+        .into_iter()
+        .zip(["help-general", "help-advanced"])
+    {
         notebook.append_page(
-            &page(source),
+            &page(source, true),
             Some(&gtk::Label::new(Some(&strings.text(key)))),
         );
     }
@@ -129,7 +114,7 @@ pub fn refresh_all(strings: &I18n) {
         }
     }
 }
-fn open(parent: &gtk::Window, strings: &I18n, guide: Guide) {
+fn open(parent: &gtk::Window, strings: &I18n) {
     if let Some(window) = gtk::Window::list_toplevels()
         .into_iter()
         .filter_map(|w| w.downcast::<gtk::Window>().ok())
@@ -149,11 +134,7 @@ fn open(parent: &gtk::Window, strings: &I18n, guide: Guide) {
     window.add_css_class("settings");
     crate::window_chrome::install(&window);
     let notebook = gtk::Notebook::new();
-    notebook.set_widget_name(if guide == Guide::Login {
-        "help-login"
-    } else {
-        "help-tabs"
-    });
+    notebook.set_widget_name("help-tabs");
     window.set_child(Some(&notebook));
     populate(&window, strings);
     let key = gtk::EventControllerKey::new();
@@ -178,24 +159,74 @@ fn open(parent: &gtk::Window, strings: &I18n, guide: Guide) {
     });
     window.present();
 }
+/// The short guide of a lock, login or preview screen and what opens it. A
+/// session lock displays no other window, so the guide is part of the screen's
+/// own surface; the full guide stays in settings.
+pub struct ScreenHelp {
+    pub button: gtk::Button,
+    /// Hidden until F1 or the button shows it; Esc or its close button hide it.
+    pub panel: gtk::Box,
+    /// Caller owns the controller's lifetime, including preview rebuild cleanup.
+    pub key: gtk::EventControllerKey,
+}
+pub fn screen(strings: &I18n, login: bool) -> ScreenHelp {
+    let panel = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    panel.set_widget_name("help-panel");
+    panel.set_halign(gtk::Align::Center);
+    panel.set_valign(gtk::Align::Center);
+    panel.set_visible(false);
+    let close = gtk::Button::with_label("×");
+    close.set_widget_name("help-close");
+    close.set_tooltip_text(Some(&strings.text("help-close")));
+    close.set_halign(gtk::Align::End);
+    let weak = panel.downgrade();
+    close.connect_clicked(move |_| {
+        if let Some(panel) = weak.upgrade() {
+            panel.set_visible(false);
+        }
+    });
+    panel.append(&close);
+    let content = page(screen_document(strings, login), false);
+    content.set_vexpand(false);
+    content.set_propagate_natural_width(true);
+    content.set_propagate_natural_height(true);
+    content.set_max_content_width(720);
+    content.set_max_content_height(560);
+    panel.append(&content);
+    let button = gtk::Button::with_label("?");
+    button.set_widget_name("help-button");
+    button.set_tooltip_text(Some(&strings.text("help-tooltip")));
+    let weak = panel.downgrade();
+    button.connect_clicked(move |_| {
+        if let Some(panel) = weak.upgrade() {
+            panel.set_visible(!panel.is_visible());
+        }
+    });
+    let key = gtk::EventControllerKey::new();
+    key.set_name(Some("decklock-help-shortcut"));
+    key.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let weak = panel.downgrade();
+    key.connect_key_pressed(move |_, key, _, _| {
+        let Some(panel) = weak.upgrade() else {
+            return glib::Propagation::Proceed;
+        };
+        if key == gdk::Key::F1 {
+            panel.set_visible(!panel.is_visible());
+            return glib::Propagation::Stop;
+        }
+        // Esc closes the help before it hides the keyboard or closes a preview.
+        if key == gdk::Key::Escape && panel.is_visible() {
+            panel.set_visible(false);
+            return glib::Propagation::Stop;
+        }
+        glib::Propagation::Proceed
+    });
+    ScreenHelp { button, panel, key }
+}
 /// Caller owns the controller's lifetime, including preview rebuild cleanup.
 pub fn controls(
     window: &impl IsA<gtk::Window>,
     strings: Rc<I18n>,
-) -> (gtk::Button, gtk::EventControllerKey) {
-    controls_for(window, strings, Guide::Full)
-}
-/// The same controls, opening the short guide about signing in.
-pub fn login_controls(
-    window: &impl IsA<gtk::Window>,
-    strings: Rc<I18n>,
-) -> (gtk::Button, gtk::EventControllerKey) {
-    controls_for(window, strings, Guide::Login)
-}
-fn controls_for(
-    window: &impl IsA<gtk::Window>,
-    strings: Rc<I18n>,
-    guide: Guide,
 ) -> (gtk::Button, gtk::EventControllerKey) {
     // A plain question mark, independent of which icons the theme provides.
     let button = gtk::Button::with_label("?");
@@ -205,7 +236,7 @@ fn controls_for(
     let action_strings = strings.clone();
     button.connect_clicked(move |_| {
         if let Some(parent) = parent.upgrade() {
-            open(&parent, &action_strings, guide);
+            open(&parent, &action_strings);
         }
     });
     let key = gtk::EventControllerKey::new();
@@ -215,7 +246,7 @@ fn controls_for(
     key.connect_key_pressed(move |_, key, _, _| {
         if key == gdk::Key::F1 {
             if let Some(parent) = parent.upgrade() {
-                open(&parent, &strings, guide);
+                open(&parent, &strings);
             }
             return glib::Propagation::Stop;
         }

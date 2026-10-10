@@ -979,36 +979,35 @@ fn build_in(
     outer.set_hexpand(true);
     outer.set_vexpand(true);
     overlay.add_overlay(&outer);
-    if settings.preview || settings.greeter {
-        let strings =
-            Rc::new(I18n::new(settings.config.locale.as_deref(), None).expect("Validated locale"));
-        // The login shows no title: its help button takes the top-left corner
-        // and opens a short guide about signing in.
-        let (help, key) = if settings.greeter {
-            crate::help::login_controls(&window, strings)
-        } else {
-            let banner = gtk::Label::new(Some(&settings.strings.text("preview-banner")));
-            banner.set_widget_name("preview-banner");
-            banner.set_max_width_chars(24);
-            banner.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            banner.set_halign(gtk::Align::Start);
-            banner.set_valign(gtk::Align::Start);
-            banner.set_can_target(false);
-            overlay.add_overlay(&banner);
-            crate::help::controls(&window, strings)
-        };
-        help.set_halign(gtk::Align::Start);
-        help.set_valign(gtk::Align::Start);
-        if settings.greeter {
-            help.set_margin_top(12);
-            help.set_margin_start(12);
-        } else {
-            help.set_margin_top(36);
-        }
-        overlay.add_overlay(&help);
-        window.add_controller(key.clone());
-        bindings.controllers.borrow_mut().push(key.upcast());
+    let previewing_lock = settings.preview && !settings.greeter;
+    if previewing_lock {
+        let banner = gtk::Label::new(Some(&settings.strings.text("preview-banner")));
+        banner.set_widget_name("preview-banner");
+        banner.set_max_width_chars(24);
+        banner.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        banner.set_halign(gtk::Align::Start);
+        banner.set_valign(gtk::Align::Start);
+        banner.set_can_target(false);
+        overlay.add_overlay(&banner);
     }
+    // Lock, login and preview carry a short guide in their own surface, opened by
+    // the ? in the top-left corner (below the preview banner) or F1. Its panel
+    // goes above the keyboard, further down.
+    let help = crate::help::screen(&settings.strings, settings.greeter);
+    help.button.set_halign(gtk::Align::Start);
+    help.button.set_valign(gtk::Align::Start);
+    if previewing_lock {
+        help.button.set_margin_top(36);
+    } else {
+        help.button.set_margin_top(12);
+        help.button.set_margin_start(12);
+    }
+    overlay.add_overlay(&help.button);
+    window.add_controller(help.key.clone());
+    bindings
+        .controllers
+        .borrow_mut()
+        .push(help.key.clone().upcast());
     let status = gtk::Label::new(None);
     status.set_widget_name("status");
     status.set_wrap(true);
@@ -1136,11 +1135,14 @@ fn build_in(
             if let Some(level) = level {
                 icon.set_icon_name(Some(&crate::battery::icon_name(level)));
                 label.set_text(&format!("{}%", level.percent));
-                battery.set_tooltip_text(Some(&settings.strings.text(if level.charging {
+                label.set_visible(settings.theme.layout.battery_percentage);
+                // The tooltip keeps the level when the layout shows the icon alone.
+                let name = settings.strings.text(if level.charging {
                     "battery-charging"
                 } else {
                     "battery"
-                })));
+                });
+                battery.set_tooltip_text(Some(&format!("{name}: {}%", level.percent)));
                 for (class, active) in [
                     ("charging", level.charging),
                     ("low", !level.charging && level.percent <= 20),
@@ -1746,6 +1748,22 @@ fn build_in(
     keyboard.set_valign(gtk::Align::End);
     keyboard.set_margin_bottom(16);
     overlay.add_overlay(&keyboard);
+    overlay.add_overlay(&help.panel);
+    {
+        // The open help clears the keyboard (and its controller capture) out of
+        // the way; closing it returns typing to the password.
+        let keyboard = keyboard.downgrade();
+        let entry = entry.downgrade();
+        help.panel.connect_visible_notify(move |panel| {
+            if panel.is_visible() {
+                if let Some(keyboard) = keyboard.upgrade() {
+                    keyboard.set_visible(false);
+                }
+            } else if let Some(entry) = entry.upgrade() {
+                entry.grab_focus();
+            }
+        });
+    }
     // Compact mode is triggered by visibility, so mouse, signal and controller
     // toggles all keep exactly the same space available for the password.
     let compact: Rc<dyn Fn(&gtk::Box)> = Rc::new({
@@ -1898,6 +1916,8 @@ fn build_in(
     let weak_clock_box = clock_box.downgrade();
     let weak_power = power.downgrade();
     let weak_battery = battery.downgrade();
+    let weak_help = help.button.downgrade();
+    let weak_help_panel = help.panel.downgrade();
     let mut changed_at = Instant::now();
     let settings_idle = settings.clone();
     if settings.start_idle {
@@ -1928,6 +1948,12 @@ fn build_in(
             }
             if let Some(battery) = weak_battery.upgrade() {
                 battery.set_visible(!is_idle && battery_present.get());
+            }
+            if let Some(help) = weak_help.upgrade() {
+                help.set_visible(!is_idle);
+            }
+            if is_idle && let Some(panel) = weak_help_panel.upgrade() {
+                panel.set_visible(false);
             }
             if let Some(clock) = weak_clock_box.upgrade() {
                 clock.set_visible(if is_idle {

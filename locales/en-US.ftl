@@ -80,6 +80,7 @@ settings-scale = Keyboard scale
 settings-clock = Show clock and date
 settings-avatar = Show avatar
 settings-power = Show power options
+settings-battery-percentage = Show battery percentage
 settings-system-keyboard = Follow system keyboard layout
 settings-idle = Idle time (seconds)
 settings-controller = Use sc-controller when locking
@@ -148,8 +149,8 @@ help-language = en-US
 help-title = DeckLock Help
 help-general = General
 help-advanced = Advanced
-help-login = Signing in
 help-tooltip = Help (F1)
+help-close = Close help
 settings-window-decorations = Show window title bars and close buttons
 
 auth-locked = Account locked by failed attempts.

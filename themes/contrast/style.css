@@ -18,6 +18,8 @@ button:focus-visible, entry:focus { outline: 3px solid #ffff00; outline-offset: 
 #battery { color: #ffffff; font-size: 18px; font-weight: bold; }
 #battery image { -gtk-icon-size: 24px; }
 #battery.low { color: #ff5555; }
+#help-panel { background-color: #000000; color: #ffffff; border: 2px solid #ffffff; padding: 12px; }
+#help-panel .title-1, #help-panel .title-2 { font-weight: bold; }
 #status.warning { color: #ffffff; }
 #status.locked { color: #ff5555; font-weight: bold; }
 #keyboard { padding: 12px; }

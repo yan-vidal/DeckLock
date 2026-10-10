@@ -732,3 +732,17 @@ the theme (16 px in the default theme, 24 px in contrast), and #battery gets .lo
 not charging) and .charging classes. The class assertions failed first; the icon-size assertion
 was confirmed to fail by putting the fixed size back (16 against a theme rule of 32). Without a
 battery the preview shows nothing, as the lock screen would.
+
+Same branch, third change: the user asked that the lock screen work like the login, with the
+full guide only in settings, and for an option to show the battery percentage or the icon
+alone. A session lock displays no other window, which is why the lock had no help (help_check
+asserted that exclusion). The help of the lock, login and preview is now a panel inside the
+screen's own surface (help::screen), not a window: a ? button in the top-left corner (below the
+preview banner), F1 to toggle, Esc and its x to close, hidden in rest mode; opening it hides the
+keyboard and closing it refocuses the password. Short guides: docs/guide/*/lock.md (new) and
+login.md. The settings window and its editors keep the full guide window. This changes the
+documented lock contract: the lock now has a help button and F1 controller, still no window
+controls, and help_check asserts that opening it creates no other window and authenticates
+nothing. layout.battery_percentage (default true) with a settings check box beside the power
+options; off hides the percentage and keeps it in the tooltip. Each new assertion failed first:
+no help button on the lock, no settings check box, the percentage still shown.

@@ -485,6 +485,11 @@ pub fn build(
     power.set_active(layout.power_visible);
     power.set_widget_name("settings-power");
     appearance.append(&power);
+    let battery_percentage =
+        gtk::CheckButton::with_label(&strings.text("settings-battery-percentage"));
+    battery_percentage.set_active(layout.battery_percentage);
+    battery_percentage.set_widget_name("settings-battery-percentage");
+    appearance.append(&battery_percentage);
     let decorations = gtk::CheckButton::with_label(&strings.text("settings-window-decorations"));
     decorations.set_widget_name("settings-window-decorations");
     decorations.set_active(original.window_decorations);
@@ -592,7 +597,12 @@ pub fn build(
                 alignment.widget.clone(),
                 arrangement.widget.clone(),
             ),
-            (clock.clone(), avatar.clone(), power.clone()),
+            (
+                clock.clone(),
+                avatar.clone(),
+                power.clone(),
+                battery_percentage.clone(),
+            ),
         );
         restore_layout.connect_clicked(move |_| {
             widgets.0.set_value(defaults.spacing as f64);
@@ -609,6 +619,7 @@ pub fn build(
             checks.0.set_active(defaults.clock_visible);
             checks.1.set_active(defaults.avatar_visible);
             checks.2.set_active(defaults.power_visible);
+            checks.3.set_active(defaults.battery_percentage);
         });
     }
     let (
@@ -618,6 +629,7 @@ pub fn build(
         weak_clock,
         weak_avatar,
         weak_power,
+        weak_battery_percentage,
         weak_alignment,
         weak_arrangement,
     ) = (
@@ -627,6 +639,7 @@ pub fn build(
         clock.downgrade(),
         avatar.downgrade(),
         power.downgrade(),
+        battery_percentage.downgrade(),
         alignment.widget.downgrade(),
         arrangement.widget.downgrade(),
     );
@@ -665,6 +678,9 @@ pub fn build(
         }
         if let Some(w) = weak_power.upgrade() {
             w.set_active(theme.layout.power_visible);
+        }
+        if let Some(w) = weak_battery_percentage.upgrade() {
+            w.set_active(theme.layout.battery_percentage);
         }
         if let Some(w) = weak_alignment.upgrade() {
             w.set_selected(match theme.layout.alignment {
@@ -755,6 +771,7 @@ pub fn build(
             idle_clock_visible: read_idle_clock.get(),
             avatar_visible: avatar.is_active(),
             power_visible: power.is_active(),
+            battery_percentage: battery_percentage.is_active(),
             keyboard_scale: scale.value(),
         });
         validate_theme(&config)?;

@@ -282,6 +282,65 @@ fn check_battery(app: &gtk::Application) {
             std::fs::write(path.join(field), format!("{value}\n")).unwrap();
         }
     }
+    // The layout can show the icon alone; the tooltip still gives the level.
+    let icon_only = ui::build(
+        app,
+        Rc::new(ui::Settings {
+            config: Config {
+                system_keyboard: false,
+                window_decorations: false,
+                background_pool: Some(vec![]),
+                idle_pool: Some(vec![]),
+                ..Config::default()
+            },
+            theme: Theme {
+                layout: decklock::config::Layout {
+                    battery_percentage: false,
+                    ..decklock::config::Layout::default()
+                },
+                ..Theme::load(None).unwrap()
+            },
+            strings: I18n::new(Some("pt-BR"), None).unwrap(),
+            preview: true,
+            show_keyboard: false,
+            start_idle: false,
+            username: "Fixed fixture".into(),
+            greeter: false,
+            power_supply: Some(supplies.path().to_path_buf()),
+        }),
+        Rc::new(|_| panic!("Battery check must never authenticate")),
+    );
+    icon_only.window.present();
+    pump_for(300);
+    let battery = descendants(icon_only.window.upcast_ref())
+        .into_iter()
+        .find(|w| w.widget_name() == "battery")
+        .expect("Battery level");
+    assert!(battery.is_visible(), "Icon-only battery stays visible");
+    let parts = descendants(&battery);
+    assert!(
+        parts
+            .iter()
+            .filter_map(|w| w.downcast_ref::<gtk::Image>())
+            .any(|icon| icon.is_visible()),
+        "Icon-only battery keeps its icon"
+    );
+    assert!(
+        !parts
+            .iter()
+            .filter_map(|w| w.downcast_ref::<gtk::Label>())
+            .any(|label| label.is_visible()),
+        "Icon-only battery hides the percentage"
+    );
+    assert!(
+        battery
+            .tooltip_text()
+            .is_some_and(|tip| tip.contains("67%")),
+        "The tooltip keeps the level when the percentage is hidden"
+    );
+    icon_only.window.destroy();
+    pump_for(30);
+
     let display = gtk::gdk::Display::default().unwrap();
     for (root, classes, theme_rule, icon_size) in [
         (supplies.path(), [false, false], None, 16),

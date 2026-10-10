@@ -28,4 +28,4 @@ Suspend, hibernate, restart and shut down are in the top-right corner. On device
 
 ## This help
 
-F1 or the ? button opens this help. Close it with the button at the top of its window or with Esc.
+F1 or the ? button opens this help; Esc or the × closes it.

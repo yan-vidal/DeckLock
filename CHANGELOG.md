@@ -14,14 +14,19 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
   screen. Themes style it through CSS: `#battery`, its `image` and `label`, the icon
   size with `-gtk-icon-size`, and the `.low` (20 % or less, not charging) and
   `.charging` states.
-- The login's help opens one short page about signing in, in plain words, instead of
-  the full guide with its technical chapter.
+- Layout option "Show battery percentage" (`layout.battery_percentage`, on by
+  default); off shows the battery icon alone, with the level in its tooltip.
+- The lock screen, login and preview have a question-mark help button in the top-left
+  corner. It opens one short page in plain words, about unlocking or signing in,
+  inside the screen itself: a session lock shows no other window. F1 opens it too,
+  and Esc or its × close it. The full guide stays in settings.
 
 ### Changed
 
 - The login no longer shows a "DeckLock — Login" title; its help button takes the
   top-left corner. Help buttons in every window are a plain question mark, which no
-  longer depends on the icon theme.
+  longer depends on the icon theme. The preview's help button opens the short lock
+  guide instead of the full guide.
 
 ### Fixed
 

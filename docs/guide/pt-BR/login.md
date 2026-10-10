@@ -28,4 +28,4 @@ No canto superior direito ficam suspender, hibernar, reiniciar e desligar. Em ap
 
 ## Esta ajuda
 
-F1 ou o botão ? abrem esta ajuda. Feche pelo botão no topo da janela ou com Esc.
+F1 ou o botão ? abrem esta ajuda; Esc ou o × a fecham.

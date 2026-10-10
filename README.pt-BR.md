@@ -442,7 +442,9 @@ a reprodução depende dos codecs GStreamer instalados.
 
 ## Ajuda e roadmap
 
-F1 ou o ícone de ajuda abre um guia offline que acompanha o idioma das configurações.
+Nas configurações, F1 ou o botão ? abre um guia offline que acompanha o idioma das configurações.
+A tela de bloqueio, o login e o preview mostram um guia curto na própria tela
+([desbloquear](docs/guide/pt-BR/lock.md), [entrar](docs/guide/pt-BR/login.md)).
 Leia [Geral](docs/guide/pt-BR/general.md) e [Avançada](docs/guide/pt-BR/advanced.md).
 As janelas comuns têm botão de fechar; a opção de barras de título também pode ser alterada com `decklock config set window_decorations false`.
 
