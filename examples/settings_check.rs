@@ -66,6 +66,72 @@ fn main() {
     while glib::MainContext::default().iteration(false) {}
     let get =
         |name| find(window.upcast_ref(), name).unwrap_or_else(|| panic!("Missing widget {name}"));
+    let save = || {
+        get("settings-save")
+            .downcast::<gtk::Button>()
+            .unwrap()
+            .emit_clicked();
+        while glib::MainContext::default().iteration(false) {}
+    };
+    // Three tabs: Lock, Login and Rest. The login mirrors the lock until told
+    // otherwise, and an untouched login writes no section.
+    // Scoped: references held past the window's close would keep its controls alive.
+    {
+        let tabs = get("settings-media-tabs").downcast::<gtk::Stack>().unwrap();
+        let pages = tabs.pages();
+        let names: Vec<String> = (0..pages.n_items())
+            .filter_map(|i| pages.item(i).and_downcast::<gtk::StackPage>())
+            .filter_map(|page| page.name())
+            .map(|name| name.to_string())
+            .collect();
+        assert_eq!(names, ["background", "login", "rest"]);
+        let same = get("settings-login-same")
+            .downcast::<gtk::CheckButton>()
+            .unwrap();
+        assert!(same.is_active(), "The login mirrors the lock by default");
+        assert!(!get("settings-login-own").is_visible());
+        save();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !text.contains("login"),
+            "Untouched login writes nothing: {text}"
+        );
+        same.set_active(false);
+        assert!(get("settings-login-own").is_visible());
+        get("settings-login-avatar")
+            .downcast::<gtk::CheckButton>()
+            .unwrap()
+            .set_active(false);
+        get("settings-login-slideshow")
+            .downcast::<gtk::SpinButton>()
+            .unwrap()
+            .set_value(9.0);
+        save();
+        let config = Config::load(Some(&path)).unwrap();
+        assert!(!config.login.same_as_lock);
+        assert_eq!(config.login.slideshow_seconds, Some(9));
+        assert!(!config.login.layout.as_ref().unwrap().avatar_visible);
+        assert!(
+            config.layout.as_ref().unwrap().avatar_visible,
+            "The lock keeps its own layout"
+        );
+        assert_eq!(config.pam_service, "preserve-me");
+        // Restore affects the login's layout only.
+        get("settings-login-restore-layout")
+            .downcast::<gtk::Button>()
+            .unwrap()
+            .emit_clicked();
+        assert!(
+            get("settings-login-avatar")
+                .downcast::<gtk::CheckButton>()
+                .unwrap()
+                .is_active()
+        );
+        same.set_active(true);
+        assert!(!get("settings-login-own").is_visible());
+        save();
+        assert!(Config::load(Some(&path)).unwrap().login.same_as_lock);
+    }
     get("settings-layout-options")
         .downcast::<gtk::Expander>()
         .unwrap()

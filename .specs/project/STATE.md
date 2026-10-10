@@ -788,3 +788,12 @@ setup export checks the login pool before migrating anything, migrates it and ca
 section. The unit, parser and CLI/setup tests failed first. A local cargo test run under load 16
 (an emulator and a node build) failed the timing-bound auth test
 inherited_stdout_does_not_extend_the_helper_deadline; it passed three times alone.
+Phase 2: the settings tabs are Lock screen, Login and Rest. A LayoutForm builds each screen's
+layout controls (the lock keeps the settings-* widget names, the login uses settings-login-*),
+each with its own restore button; "Layout and preferences" keeps the shared options. The Login
+tab has "Same as the lock screen" and, when off, its own pool, interval and layout. The live
+preview gains a login mode (Config::use_login, greeter view) and a ui::build_preview that never
+requests fullscreen; ui::build keeps the kiosk behavior for the real and standalone greeter. The
+tab and login assertions failed first. While adding them, the settings cleanup check failed
+because the new test code held the tab stack until the end; scoping those references fixed it,
+which shows the window itself releases its controls.

@@ -13,6 +13,12 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
   the lock screen shows, as before, and the file keeps no `[login]` section. Rest
   stays one for both screens. Login setup migrates the login's media to the shared
   library like the others and fails before migrating anything if one is unreadable.
+- Settings have three tabs: Lock screen, Login and Rest. Lock screen holds its
+  pool, interval and layout; Login holds "Same as the lock screen" (on by default)
+  and, when off, its own pool, interval and layout; Rest is unchanged and applies to
+  both screens. Each layout has its own "Restore defaults". The preview shows the
+  screen of the open tab, the login included, in an ordinary window. "Layout and
+  preferences" keeps the options shared by all screens.
 
 - The lock, login and preview screens show the battery level on devices with a
   system battery, in the top-right corner on its own row above the power buttons.
