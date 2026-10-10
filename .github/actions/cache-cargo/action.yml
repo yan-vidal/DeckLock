@@ -1,0 +1,31 @@
+name: Cargo download cache
+description: Cache downloaded registry and git dependencies without build outputs
+inputs:
+  target:
+    description: Native gate or distribution packaging target
+    required: true
+  identity:
+    description: Exact dependency image or hash of the container and installed toolchain
+    required: true
+outputs:
+  cargo-home:
+    description: Shared Cargo home used by the cache and the build
+    value: ${{ steps.home.outputs.cargo-home }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare Cargo home
+      id: home
+      shell: bash
+      run: |
+        cargo_home="$GITHUB_WORKSPACE/.ci-cargo"
+        mkdir -p "$cargo_home"
+        printf 'cargo-home=%s\n' "$cargo_home" >> "$GITHUB_OUTPUT"
+        printf 'CARGO_HOME=%s\n' "$cargo_home" >> "$GITHUB_ENV"
+    - name: Restore downloaded crates
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ github.workspace }}/.ci-cargo/registry
+          ${{ github.workspace }}/.ci-cargo/git
+        key: cargo-downloads-v1-${{ inputs.target }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.identity }}-${{ hashFiles('Cargo.lock') }}

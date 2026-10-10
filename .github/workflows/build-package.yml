@@ -67,11 +67,25 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Identify Cargo build environment
+        id: cargo-identity
+        env:
+          BUILD_IMAGE: ${{ inputs.image }}
+        run: |
+          rust_version=$(rustc -vV)
+          cargo_version=$(cargo -V)
+          identity=$(printf '%s\n' "$BUILD_IMAGE" "$rust_version" "$cargo_version" | sha256sum | cut -d ' ' -f 1)
+          printf 'value=%s\n' "$identity" >> "$GITHUB_OUTPUT"
+      - name: Cache Cargo downloads
+        uses: ./.github/actions/cache-cargo
+        with:
+          target: ${{ inputs.target }}
+          identity: ${{ steps.cargo-identity.outputs.value }}
       - name: Unprivileged package build
         run: |
           useradd --create-home builder
           chown -R builder "$GITHUB_WORKSPACE"
-          runuser -u builder -- scripts/ci-build-package "${{ inputs.target }}"
+          runuser -u builder -- env CARGO_HOME="$CARGO_HOME" scripts/ci-build-package "${{ inputs.target }}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ inputs.target }}-package${{ inputs.artifact_suffix }}

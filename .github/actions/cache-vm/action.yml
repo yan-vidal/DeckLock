@@ -1,0 +1,32 @@
+name: Pristine VM image cache
+description: Cache only the selected image whose SHA256 is pinned by the VM runner
+inputs:
+  target:
+    description: Distribution selected for scripts/test-vm.py
+    required: true
+  arch:
+    description: Pinned guest architecture (x86_64 or aarch64)
+    required: true
+outputs:
+  path:
+    description: Exact pristine image path
+    value: ${{ steps.metadata.outputs.path }}
+  key:
+    description: Cache key containing the pinned image SHA256
+    value: ${{ steps.metadata.outputs.key }}
+runs:
+  using: composite
+  steps:
+    - name: Select pinned VM image
+      id: metadata
+      shell: bash
+      env:
+        VM_TARGET: ${{ inputs.target }}
+        VM_ARCH: ${{ inputs.arch }}
+      run: |
+        python3 scripts/vm-cache-key --target "$VM_TARGET" --arch "$VM_ARCH" >> "$GITHUB_OUTPUT"
+    - name: Restore pristine VM image
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.metadata.outputs.path }}
+        key: ${{ steps.metadata.outputs.key }}

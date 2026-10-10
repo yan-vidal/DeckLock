@@ -1,0 +1,20 @@
+#!/bin/sh
+# Only the checkout/download cache is mounted; displays and devices are private.
+set -eu
+uid=${DECKLOCK_CI_UID:?Pass the checkout owner UID}
+gid=${DECKLOCK_CI_GID:?Pass the checkout owner GID}
+case "$uid" in 0|*[!0-9]*) echo 'Tests require a nonroot numeric UID' >&2; exit 2 ;; esac
+if ! getent group "$gid" >/dev/null; then
+    groupadd --gid "$gid" decklock-ci
+fi
+if getent passwd "$uid" >/dev/null; then
+    user=$(getent passwd "$uid" | cut -d: -f1)
+else
+    user=decklock-ci
+    useradd --uid "$uid" --gid "$gid" --no-create-home "$user"
+fi
+mkdir -p /tmp/decklock-ci-home /workspace/.ci-cargo
+chown "$uid:$gid" /tmp/decklock-ci-home /workspace/.ci-cargo
+# The pinned native library and mock compositor are read-only dependencies.
+ln -s /opt/decklock/.deps /workspace/.deps
+exec runuser -u "$user" -- env HOME=/tmp/decklock-ci-home CARGO_HOME=/workspace/.ci-cargo sh -eu -c 'cargo fetch --locked; exec "$@"' sh "$@"
