@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- The settings apply the login screen through pkexec on an explicit click.
+     Only /usr/bin/decklock with "setup" as its first argument matches, and it
+     always asks for an administrator; DeckLock never sees the password. -->
+<policyconfig>
+  <vendor>DeckLock</vendor>
+  <vendor_url>https://github.com/yan-vidal/DeckLock</vendor_url>
+  <action id="io.github.yan_vidal.DeckLock.setup">
+    <description>Apply DeckLock settings to the login screen</description>
+    <description xml:lang="pt_BR">Aplicar as configurações do DeckLock à tela de login</description>
+    <message>Authentication is required to apply DeckLock settings to the login screen</message>
+    <message xml:lang="pt_BR">É preciso autenticar para aplicar as configurações do DeckLock à tela de login</message>
+    <icon_name>io.github.yan_vidal.DeckLock</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/decklock</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">setup</annotate>
+  </action>
+</policyconfig>

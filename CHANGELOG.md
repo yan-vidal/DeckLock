@@ -6,6 +6,29 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 ### Added
 
+- The login can have its own background pool, slideshow interval and layout,
+  through a `[login]` section with `same_as_lock = false`
+  (`decklock config set login.same_as_lock false`, `login.layout.clock_visible`,
+  `login.background_pool`). With `same_as_lock`, the default, the login shows what
+  the lock screen shows, as before, and the file keeps no `[login]` section. Rest
+  stays one for both screens. Login setup migrates the login's media to the shared
+  library like the others and fails before migrating anything if one is unreadable.
+- Settings have three tabs: Lock screen, Login and Rest. Lock screen holds its
+  pool, interval and layout; Login holds "Same as the lock screen" (on by default)
+  and, when off, its own pool, interval and layout; Rest is unchanged and applies to
+  both screens. Each layout has its own "Restore defaults". The preview shows the
+  screen of the open tab, the login included, in an ordinary window. "Layout and
+  preferences" keeps the options shared by all screens.
+- "Apply to login" in the Login tab saves the settings and applies them to the login
+  screen through polkit: the session's authentication agent asks for the
+  administrator password, which DeckLock never sees. It runs the new
+  `decklock setup login-appearance`, which refreshes only the login's appearance and
+  media and refuses a login that does not use DeckLock; the greetd command,
+  compositor, keyboard and controller stay as they are. Packages install a polkit
+  action limited to `/usr/bin/decklock setup`. Without a polkit agent (common on
+  Hyprland, Sway, labwc or Wayfire) or without `pkexec`, the button shows the terminal
+  command instead. Setup run through `pkexec` finds the desktop user like `sudo` does.
+
 - The lock, login and preview screens show the battery level on devices with a
   system battery, in the top-right corner on its own row above the power buttons.
   That row spans the width, so the help button in the top-left corner lines up with
@@ -35,6 +58,8 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
 
 ### Fixed
 
+- `decklock setup status` recognizes a login generated for Hyprland, which starts
+  DeckLock from its Lua file; it reported it as not configured.
 - The A button confirms like Enter while the on-screen keyboard holds the controller,
   at login and on the lock screen. The keyboard captures A along with the other
   buttons and ignored it, so with the keyboard open the password could only be sent

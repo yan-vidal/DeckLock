@@ -185,6 +185,49 @@ fn main() {
     pump(800);
     assert!(find(preview.upcast_ref(), "credentials").is_visible());
     assert_eq!(std::fs::read(&path).unwrap(), saved);
+    // The Login tab previews the login, in the same window and never fullscreen.
+    let is_login = |window: &gtk::Window| {
+        find(window.upcast_ref(), "submit")
+            .tooltip_text()
+            .as_deref()
+            == Some("Log in")
+    };
+    assert!(!is_login(&preview));
+    tabs.set_visible_child_name("login");
+    pump(800);
+    assert_eq!(preview, top("settings-live-preview"));
+    assert!(is_login(&preview), "The Login tab previews the login");
+    assert!(
+        !preview.is_fullscreen(),
+        "The settings preview never goes fullscreen"
+    );
+    let same = get("settings-login-same")
+        .downcast::<gtk::CheckButton>()
+        .unwrap();
+    same.set_active(false);
+    get("settings-login-clock")
+        .downcast::<gtk::CheckButton>()
+        .unwrap()
+        .set_active(false);
+    pump(800);
+    assert!(
+        !find(preview.upcast_ref(), "clock-block").is_visible(),
+        "The login's own layout reaches its preview"
+    );
+    tabs.set_visible_child_name("background");
+    pump(800);
+    assert!(!is_login(&preview));
+    assert!(
+        find(preview.upcast_ref(), "clock-block").is_visible(),
+        "The lock keeps its clock"
+    );
+    same.set_active(true);
+    pump(800);
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        saved,
+        "Nothing is written before Save"
+    );
     // Hiding power options must reach the live preview like the other switches.
     let power_switch = get("settings-power")
         .downcast::<gtk::CheckButton>()

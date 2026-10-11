@@ -30,6 +30,36 @@ pub struct Config {
     pub window_decorations: bool,
     pub switch_user_command: Option<String>,
     pub layout: Option<Layout>,
+    /// Absent from a saved file while the login mirrors the lock screen.
+    #[serde(skip_serializing_if = "LoginAppearance::is_default")]
+    pub login: LoginAppearance,
+}
+
+/// What the login shows when it does not mirror the lock screen.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LoginAppearance {
+    pub same_as_lock: bool,
+    pub background_pool: Option<Vec<PathBuf>>,
+    pub slideshow_seconds: Option<u32>,
+    pub layout: Option<Layout>,
+}
+
+impl LoginAppearance {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+impl Default for LoginAppearance {
+    fn default() -> Self {
+        Self {
+            same_as_lock: true,
+            background_pool: None,
+            slideshow_seconds: None,
+            layout: None,
+        }
+    }
 }
 
 impl Default for Config {
@@ -57,6 +87,7 @@ impl Default for Config {
             window_decorations: true,
             switch_user_command: None,
             layout: None,
+            login: LoginAppearance::default(),
         }
     }
 }
@@ -80,6 +111,25 @@ impl Config {
         self.idle_background = appearance.idle_background;
         self.system_keyboard = appearance.system_keyboard;
         self.layout = appearance.layout;
+        self.login = appearance.login;
+    }
+
+    /// What the login shows: the lock's pool, interval and layout, unless the
+    /// login section has its own. Only the greeter calls this.
+    pub fn use_login(&mut self) {
+        if self.login.same_as_lock {
+            return;
+        }
+        if let Some(pool) = self.login.background_pool.clone() {
+            self.background_pool = Some(pool);
+            self.background = None;
+        }
+        if let Some(seconds) = self.login.slideshow_seconds {
+            self.slideshow_seconds = seconds;
+        }
+        if let Some(layout) = self.login.layout.clone() {
+            self.layout = Some(layout);
+        }
     }
 
     // Unreleased overlay drafts migrate to media items without deleting existing media.
@@ -146,9 +196,13 @@ impl Config {
         {
             *path = resolve(base, path);
         }
-        for paths in [&mut self.background_pool, &mut self.idle_pool]
-            .into_iter()
-            .flatten()
+        for paths in [
+            &mut self.background_pool,
+            &mut self.idle_pool,
+            &mut self.login.background_pool,
+        ]
+        .into_iter()
+        .flatten()
         {
             for path in paths {
                 if !path.to_string_lossy().starts_with("procedural:") {
@@ -188,10 +242,14 @@ impl Config {
             return Err("media_library must be a filesystem directory path".into());
         }
         self.procedurals.validate()?;
-        for path in [&self.background_pool, &self.idle_pool]
-            .into_iter()
-            .flatten()
-            .flatten()
+        for path in [
+            &self.background_pool,
+            &self.idle_pool,
+            &self.login.background_pool,
+        ]
+        .into_iter()
+        .flatten()
+        .flatten()
         {
             if path.to_string_lossy().starts_with("procedural:")
                 && crate::procedural::id(path).is_none()
@@ -224,6 +282,16 @@ impl Config {
             return Err("switch_user_command cannot be empty".into());
         }
         if let Some(layout) = &self.layout {
+            layout.validate()?;
+        }
+        if self
+            .login
+            .slideshow_seconds
+            .is_some_and(|seconds| !(1..=86400).contains(&seconds))
+        {
+            return Err("login.slideshow_seconds must be between 1 and 86400".into());
+        }
+        if let Some(layout) = &self.login.layout {
             layout.validate()?;
         }
         Ok(())
@@ -291,7 +359,7 @@ pub enum Arrangement {
     Horizontal,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Layout {
     pub alignment: Alignment,
@@ -456,6 +524,97 @@ fn read_text(path: &Path) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn login_mirrors_the_lock_unless_its_section_says_otherwise() {
+        let mut config: super::Config =
+            toml::from_str("background_pool = ['procedural:starfield']\nslideshow_seconds = 12\n")
+                .unwrap();
+        assert!(
+            config.login.same_as_lock,
+            "Login mirrors the lock by default"
+        );
+        let lock = config.clone();
+        config.use_login();
+        assert_eq!(config.background_pool, lock.background_pool);
+        assert_eq!(config.slideshow_seconds, 12);
+        assert!(config.layout.is_none());
+
+        let mut config: super::Config = toml::from_str(
+            "background_pool = ['procedural:starfield']\nslideshow_seconds = 12\n\
+             [layout]\nclock_visible = true\n\
+             [login]\nsame_as_lock = false\nbackground_pool = ['procedural:matrix']\n\
+             slideshow_seconds = 5\n[login.layout]\nclock_visible = false\n",
+        )
+        .unwrap();
+        config.validate().unwrap();
+        config.use_login();
+        assert_eq!(
+            config.background_pool,
+            Some(vec![std::path::PathBuf::from("procedural:matrix")])
+        );
+        assert_eq!(config.slideshow_seconds, 5);
+        assert!(!config.layout.as_ref().unwrap().clock_visible);
+
+        // Values the login leaves unset are the lock's.
+        let mut config: super::Config = toml::from_str(
+            "background_pool = ['procedural:starfield']\nslideshow_seconds = 12\n\
+             [login]\nsame_as_lock = false\n",
+        )
+        .unwrap();
+        config.use_login();
+        assert_eq!(
+            config.background_pool,
+            Some(vec![std::path::PathBuf::from("procedural:starfield")])
+        );
+        assert_eq!(config.slideshow_seconds, 12);
+    }
+
+    #[test]
+    fn an_unchanged_login_section_is_not_written() {
+        let text = toml::to_string_pretty(&super::Config::default()).unwrap();
+        assert!(!text.contains("login"), "{text}");
+        let mut config = super::Config::default();
+        config.login.same_as_lock = false;
+        let text = toml::to_string_pretty(&config).unwrap();
+        let reloaded: super::Config = toml::from_str(&text).unwrap();
+        assert!(!reloaded.login.same_as_lock, "{text}");
+    }
+
+    #[test]
+    fn invalid_login_values_are_refused() {
+        for text in [
+            "[login]\nslideshow_seconds = 0\n",
+            "[login]\nbackground_pool = ['procedural:nope']\n",
+            "[login.layout]\nspacing = 999\n",
+        ] {
+            let config: super::Config = toml::from_str(text).unwrap();
+            assert!(config.validate().is_err(), "{text}");
+        }
+        assert!(toml::from_str::<super::Config>("[login]\ntypo = 1\n").is_err());
+    }
+
+    #[test]
+    fn login_media_paths_resolve_like_the_others_and_travel_with_the_appearance() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.toml");
+        std::fs::write(
+            &file,
+            "[login]\nsame_as_lock = false\nbackground_pool = ['photo.jpg', 'procedural:matrix']\n",
+        )
+        .unwrap();
+        let config = super::Config::load(Some(&file)).unwrap();
+        assert_eq!(
+            config.login.background_pool,
+            Some(vec![
+                dir.path().join("photo.jpg"),
+                std::path::PathBuf::from("procedural:matrix")
+            ])
+        );
+        let mut greeter = super::Config::default();
+        greeter.apply_appearance(config.clone());
+        assert_eq!(greeter.login, config.login);
+    }
+
     #[test]
     fn procedural_ids_and_unreleased_overlay_drafts_migrate_without_path_expansion() {
         let dir = tempfile::tempdir().unwrap();

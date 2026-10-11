@@ -11,10 +11,15 @@ pub struct LivePreview {
     view: Option<ui::View>,
     signature: String,
     idle: bool,
+    login: bool,
 }
 impl LivePreview {
     pub fn set_idle(&mut self, idle: bool) {
         self.idle = idle;
+    }
+    /// Show the login, with its own appearance unless it mirrors the lock screen.
+    pub fn set_login(&mut self, login: bool) {
+        self.login = login;
     }
     pub fn is_open(&self) -> bool {
         self.view.as_ref().is_some_and(|v| v.window.is_visible())
@@ -34,6 +39,9 @@ impl LivePreview {
             return Ok(());
         }
         config.controller_socket = None;
+        if self.login {
+            config.use_login();
+        }
         let mut theme = Theme::from_config(&config)?;
         if let Some(layout) = &config.layout {
             theme.layout = layout.clone();
@@ -44,11 +52,12 @@ impl LivePreview {
         structural.theme_preset.clear();
         structural.theme = None;
         let signature = format!(
-            "{}{:?}{:?}{}",
+            "{}{:?}{:?}{}{}",
             toml::to_string(&structural).map_err(|e| e.to_string())?,
             theme.layout,
             theme.background,
-            self.idle
+            self.idle,
+            self.login
         );
         if self.signature == signature && self.is_open() {
             if present {
@@ -64,14 +73,14 @@ impl LivePreview {
             show_keyboard: false,
             start_idle: self.idle,
             username: crate::auth::current_username()?,
-            greeter: false,
+            greeter: self.login,
             power_supply: Some("/sys/class/power_supply".into()),
         });
         let view = if self.is_open() {
             ui::rebuild_preview(self.view.take().unwrap(), app, settings)
         } else {
             self.close();
-            ui::build(app, settings, Rc::new(|_| {}))
+            ui::build_preview(app, settings)
         };
         view.set_preview_idle(self.idle);
         view.window.set_widget_name("settings-live-preview");

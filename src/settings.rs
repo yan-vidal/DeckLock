@@ -127,6 +127,165 @@ fn combo(values: &[(&str, String)], selected: &str, name: &str) -> Choice {
     widget.connect_map(|widget| mark(widget.upcast_ref()));
     Choice { widget, ids }
 }
+/// One screen's layout controls: the lock and the login each have their own.
+/// `prefix` names the widgets (`settings-clock`, `settings-login-clock`).
+struct LayoutForm {
+    widget: gtk::Box,
+    alignment: Choice,
+    arrangement: Choice,
+    spacing: gtk::SpinButton,
+    padding: gtk::SpinButton,
+    scale: gtk::SpinButton,
+    clock: gtk::CheckButton,
+    avatar: gtk::CheckButton,
+    power: gtk::CheckButton,
+    battery_percentage: gtk::CheckButton,
+}
+impl LayoutForm {
+    fn new(strings: &I18n, layout: &Layout, prefix: &str) -> Rc<Self> {
+        let widget = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        let alignment = combo(
+            &[
+                ("start", strings.text("settings-left")),
+                ("center", strings.text("settings-center")),
+                ("end", strings.text("settings-right")),
+            ],
+            "center",
+            &format!("{prefix}-alignment"),
+        );
+        row(
+            &widget,
+            &strings.text("settings-alignment"),
+            &alignment.widget,
+        );
+        let arrangement = combo(
+            &[
+                ("vertical", strings.text("settings-vertical")),
+                ("horizontal", strings.text("settings-horizontal")),
+            ],
+            "vertical",
+            &format!("{prefix}-arrangement"),
+        );
+        row(
+            &widget,
+            &strings.text("settings-arrangement"),
+            &arrangement.widget,
+        );
+        let spacing = spin(0.0, 0.0, 128.0, 1.0, &format!("{prefix}-spacing"));
+        row(&widget, &strings.text("settings-spacing"), &spacing);
+        let padding = spin(0.0, 0.0, 256.0, 1.0, &format!("{prefix}-padding"));
+        row(&widget, &strings.text("settings-padding"), &padding);
+        let scale = spin(1.0, 0.5, 2.0, 0.05, &format!("{prefix}-scale"));
+        scale.set_digits(2);
+        row(&widget, &strings.text("settings-scale"), &scale);
+        let check = |key: &str, name: &str| {
+            let check = gtk::CheckButton::with_label(&strings.text(key));
+            check.set_widget_name(&format!("{prefix}-{name}"));
+            widget.append(&check);
+            check
+        };
+        let clock = check("settings-clock", "clock");
+        let avatar = check("settings-avatar", "avatar");
+        let power = check("settings-power", "power");
+        let battery_percentage = check("settings-battery-percentage", "battery-percentage");
+        let restore = gtk::Button::with_label(&strings.text("restore-defaults"));
+        restore.set_widget_name(&format!("{prefix}-restore-layout"));
+        restore.set_tooltip_text(Some(&strings.text("restore-layout-help")));
+        restore.set_halign(gtk::Align::Start);
+        widget.append(&restore);
+        let form = Rc::new(Self {
+            widget,
+            alignment,
+            arrangement,
+            spacing,
+            padding,
+            scale,
+            clock,
+            avatar,
+            power,
+            battery_percentage,
+        });
+        form.set(layout);
+        // Only this layout returns to its defaults; nothing is written until Save.
+        let weak = Rc::downgrade(&form);
+        restore.connect_clicked(move |_| {
+            if let Some(form) = weak.upgrade() {
+                form.set(&Layout::default());
+            }
+        });
+        form
+    }
+    fn set(&self, layout: &Layout) {
+        self.alignment.widget.set_selected(match layout.alignment {
+            Alignment::Start => 0,
+            Alignment::Center => 1,
+            Alignment::End => 2,
+        });
+        self.arrangement
+            .widget
+            .set_selected(u32::from(layout.arrangement == Arrangement::Horizontal));
+        self.spacing.set_value(layout.spacing as f64);
+        self.padding.set_value(layout.padding as f64);
+        self.scale.set_value(layout.keyboard_scale);
+        self.clock.set_active(layout.clock_visible);
+        self.avatar.set_active(layout.avatar_visible);
+        self.power.set_active(layout.power_visible);
+        self.battery_percentage
+            .set_active(layout.battery_percentage);
+    }
+    fn read(&self, idle_clock_visible: bool) -> Layout {
+        Layout {
+            alignment: match self.alignment.active_id().as_deref() {
+                Some("start") => Alignment::Start,
+                Some("end") => Alignment::End,
+                _ => Alignment::Center,
+            },
+            arrangement: if self.arrangement.active_id().as_deref() == Some("horizontal") {
+                Arrangement::Horizontal
+            } else {
+                Arrangement::Vertical
+            },
+            spacing: self.spacing.value_as_int(),
+            padding: self.padding.value_as_int(),
+            clock_visible: self.clock.is_active(),
+            idle_clock_visible,
+            avatar_visible: self.avatar.is_active(),
+            power_visible: self.power.is_active(),
+            battery_percentage: self.battery_percentage.is_active(),
+            keyboard_scale: self.scale.value(),
+        }
+    }
+}
+/// What "Apply to login" reports once pkexec returns. The terminal command is the
+/// fallback when polkit cannot ask for the password here.
+fn login_result(strings: &I18n, result: std::io::Result<std::process::Output>) -> String {
+    let terminal = "sudo decklock setup login-appearance";
+    match result {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            format!(
+                "{} {terminal}",
+                strings.text("settings-apply-login-no-pkexec")
+            )
+        }
+        Err(error) => error.to_string(),
+        Ok(output) if output.status.success() => strings.text("settings-apply-login-done"),
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            match output.status.code() {
+                // pkexec: the dialog was dismissed or authorization refused.
+                Some(126) => strings.text("settings-apply-login-cancelled"),
+                Some(127) if stderr.contains("authentication agent") => {
+                    format!(
+                        "{} {terminal}",
+                        strings.text("settings-apply-login-no-agent")
+                    )
+                }
+                _ if stderr.trim().is_empty() => format!("pkexec: {}", output.status),
+                _ => stderr.trim().to_owned(),
+            }
+        }
+    }
+}
 fn validate_theme(config: &Config) -> Result<(), String> {
     config.validate()?;
     let theme = Theme::from_config(config)?;
@@ -188,7 +347,7 @@ pub fn build(
     app: &gtk::Application,
     path: PathBuf,
     locale: Option<&str>,
-    _executable: PathBuf,
+    executable: PathBuf,
 ) -> Result<gtk::ApplicationWindow, String> {
     crate::branding::install();
     let path = absolute(&path)?;
@@ -390,11 +549,17 @@ pub fn build(
     form.append(&media_switcher);
     form.append(&media_tabs);
     let background_page = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    let login_page = gtk::Box::new(gtk::Orientation::Vertical, 12);
     let idle_page = gtk::Box::new(gtk::Orientation::Vertical, 10);
     media_tabs.add_titled(
         &background_page,
         Some("background"),
-        &strings.text("settings-background"),
+        &strings.text("settings-tab-lock"),
+    );
+    media_tabs.add_titled(
+        &login_page,
+        Some("login"),
+        &strings.text("settings-tab-login"),
     );
     media_tabs.add_titled(&idle_page, Some("rest"), &strings.text("settings-rest"));
     let catalog = crate::media_editor::Catalog::new(crate::library::catalog(&original, &theme));
@@ -431,65 +596,69 @@ pub fn build(
     expander.add_css_class("layout-options");
     expander.set_child(Some(&appearance));
     form.append(&expander);
-    let alignment = combo(
-        &[
-            ("start", strings.text("settings-left")),
-            ("center", strings.text("settings-center")),
-            ("end", strings.text("settings-right")),
-        ],
-        match layout.alignment {
-            Alignment::Start => "start",
-            Alignment::Center => "center",
-            Alignment::End => "end",
-        },
-        "settings-alignment",
+    let lock_layout = LayoutForm::new(&strings, layout, "settings");
+    background_page.append(&lock_layout.widget);
+    // The login: the lock's values, or its own pool, interval and layout.
+    let login_same = gtk::CheckButton::with_label(&strings.text("settings-login-same"));
+    login_same.set_widget_name("settings-login-same");
+    login_same.set_active(original.login.same_as_lock);
+    login_page.append(&login_same);
+    let login_own = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    login_own.set_widget_name("settings-login-own");
+    login_page.append(&login_own);
+    let login_media = crate::media_editor::build(
+        &window,
+        catalog.clone(),
+        original
+            .login
+            .background_pool
+            .clone()
+            .or_else(|| original.background_pool.clone())
+            .unwrap_or_else(|| crate::library::pool(&original, &theme, false)),
+        strings.clone(),
+        "settings-login-background",
+        original.media_library.clone(),
+    );
+    login_own.append(&login_media.widget);
+    let login_slideshow = spin(
+        original
+            .login
+            .slideshow_seconds
+            .unwrap_or(original.slideshow_seconds) as f64,
+        1.0,
+        86400.0,
+        1.0,
+        "settings-login-slideshow",
     );
     row(
-        &appearance,
-        &strings.text("settings-alignment"),
-        &alignment.widget,
+        &login_own,
+        &strings.text("media-interval"),
+        &login_slideshow,
     );
-    let arrangement = combo(
-        &[
-            ("vertical", strings.text("settings-vertical")),
-            ("horizontal", strings.text("settings-horizontal")),
-        ],
-        if layout.arrangement == Arrangement::Vertical {
-            "vertical"
-        } else {
-            "horizontal"
-        },
-        "settings-arrangement",
+    let login_layout = LayoutForm::new(
+        &strings,
+        original.login.layout.as_ref().unwrap_or(layout),
+        "settings-login",
     );
-    row(
-        &appearance,
-        &strings.text("settings-arrangement"),
-        &arrangement.widget,
-    );
-    let spacing = spin(layout.spacing as f64, 0.0, 128.0, 1.0, "settings-spacing");
-    row(&appearance, &strings.text("settings-spacing"), &spacing);
-    let padding = spin(layout.padding as f64, 0.0, 256.0, 1.0, "settings-padding");
-    row(&appearance, &strings.text("settings-padding"), &padding);
-    let scale = spin(layout.keyboard_scale, 0.5, 2.0, 0.05, "settings-scale");
-    scale.set_digits(2);
-    row(&appearance, &strings.text("settings-scale"), &scale);
-    let clock = gtk::CheckButton::with_label(&strings.text("settings-clock"));
-    clock.set_active(layout.clock_visible);
-    clock.set_widget_name("settings-clock");
-    appearance.append(&clock);
-    let avatar = gtk::CheckButton::with_label(&strings.text("settings-avatar"));
-    avatar.set_active(layout.avatar_visible);
-    avatar.set_widget_name("settings-avatar");
-    appearance.append(&avatar);
-    let power = gtk::CheckButton::with_label(&strings.text("settings-power"));
-    power.set_active(layout.power_visible);
-    power.set_widget_name("settings-power");
-    appearance.append(&power);
-    let battery_percentage =
-        gtk::CheckButton::with_label(&strings.text("settings-battery-percentage"));
-    battery_percentage.set_active(layout.battery_percentage);
-    battery_percentage.set_widget_name("settings-battery-percentage");
-    appearance.append(&battery_percentage);
+    login_own.append(&login_layout.widget);
+    login_own.set_visible(!login_same.is_active());
+    // Root applies the login: pkexec asks for the administrator's password in the
+    // session's polkit agent, on this explicit click. DeckLock never sees it.
+    let apply_login = gtk::Button::with_label(&strings.text("settings-apply-login"));
+    apply_login.set_widget_name("settings-apply-login");
+    apply_login.set_halign(gtk::Align::Start);
+    login_page.append(&apply_login);
+    let apply_hint = gtk::Label::new(Some(&strings.text("settings-apply-login-help")));
+    apply_hint.set_wrap(true);
+    apply_hint.set_xalign(0.0);
+    apply_hint.add_css_class("dim-label");
+    login_page.append(&apply_hint);
+    let weak_own = login_own.downgrade();
+    login_same.connect_toggled(move |same| {
+        if let Some(own) = weak_own.upgrade() {
+            own.set_visible(!same.is_active());
+        }
+    });
     let decorations = gtk::CheckButton::with_label(&strings.text("settings-window-decorations"));
     decorations.set_widget_name("settings-window-decorations");
     decorations.set_active(original.window_decorations);
@@ -581,71 +750,10 @@ pub fn build(
     let edit_theme = gtk::Button::with_label(&strings.text("theme-editor-title"));
     edit_theme.set_widget_name("settings-edit-theme");
     appearance.append(&edit_theme);
-    let restore_layout = gtk::Button::with_label(&strings.text("restore-defaults"));
-    restore_layout.set_widget_name("settings-restore-layout");
-    restore_layout.set_tooltip_text(Some(&strings.text("restore-layout-help")));
-    appearance.append(&restore_layout);
-    {
-        // Only the layout group returns to its defaults; media, pools and the rest
-        // of the form are untouched, and nothing is written until Save.
-        let defaults = crate::config::Layout::default();
-        let (widgets, checks) = (
-            (
-                spacing.clone(),
-                padding.clone(),
-                scale.clone(),
-                alignment.widget.clone(),
-                arrangement.widget.clone(),
-            ),
-            (
-                clock.clone(),
-                avatar.clone(),
-                power.clone(),
-                battery_percentage.clone(),
-            ),
-        );
-        restore_layout.connect_clicked(move |_| {
-            widgets.0.set_value(defaults.spacing as f64);
-            widgets.1.set_value(defaults.padding as f64);
-            widgets.2.set_value(defaults.keyboard_scale);
-            widgets.3.set_selected(match defaults.alignment {
-                Alignment::Start => 0,
-                Alignment::Center => 1,
-                Alignment::End => 2,
-            });
-            widgets
-                .4
-                .set_selected(u32::from(defaults.arrangement == Arrangement::Horizontal));
-            checks.0.set_active(defaults.clock_visible);
-            checks.1.set_active(defaults.avatar_visible);
-            checks.2.set_active(defaults.power_visible);
-            checks.3.set_active(defaults.battery_percentage);
-        });
-    }
-    let (
-        weak_spacing,
-        weak_padding,
-        weak_scale,
-        weak_clock,
-        weak_avatar,
-        weak_power,
-        weak_battery_percentage,
-        weak_alignment,
-        weak_arrangement,
-    ) = (
-        spacing.downgrade(),
-        padding.downgrade(),
-        scale.downgrade(),
-        clock.downgrade(),
-        avatar.downgrade(),
-        power.downgrade(),
-        battery_percentage.downgrade(),
-        alignment.widget.downgrade(),
-        arrangement.widget.downgrade(),
-    );
     let idle_clock_visible = Rc::new(std::cell::Cell::new(layout.idle_clock_visible));
     let document_idle_clock = idle_clock_visible.clone();
     let weak_theme_window = window.downgrade();
+    let document_layout = lock_layout.clone();
     let apply_document: Rc<dyn Fn(Theme)> = Rc::new(move |theme| {
         document_idle_clock.set(theme.layout.idle_clock_visible);
         if let Some(window) = weak_theme_window.upgrade() {
@@ -661,41 +769,7 @@ pub fn build(
                 gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
             );
         }
-        if let Some(w) = weak_spacing.upgrade() {
-            w.set_value(theme.layout.spacing as f64);
-        }
-        if let Some(w) = weak_padding.upgrade() {
-            w.set_value(theme.layout.padding as f64);
-        }
-        if let Some(w) = weak_scale.upgrade() {
-            w.set_value(theme.layout.keyboard_scale);
-        }
-        if let Some(w) = weak_clock.upgrade() {
-            w.set_active(theme.layout.clock_visible);
-        }
-        if let Some(w) = weak_avatar.upgrade() {
-            w.set_active(theme.layout.avatar_visible);
-        }
-        if let Some(w) = weak_power.upgrade() {
-            w.set_active(theme.layout.power_visible);
-        }
-        if let Some(w) = weak_battery_percentage.upgrade() {
-            w.set_active(theme.layout.battery_percentage);
-        }
-        if let Some(w) = weak_alignment.upgrade() {
-            w.set_selected(match theme.layout.alignment {
-                Alignment::Start => 0,
-                Alignment::Center => 1,
-                Alignment::End => 2,
-            });
-        }
-        if let Some(w) = weak_arrangement.upgrade() {
-            w.set_selected(if theme.layout.arrangement == Arrangement::Vertical {
-                0
-            } else {
-                1
-            });
-        }
+        document_layout.set(&theme.layout);
     });
     let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     buttons.set_halign(gtk::Align::End);
@@ -754,26 +828,13 @@ pub fn build(
         } else {
             None
         };
-        config.layout = Some(Layout {
-            alignment: match alignment.active_id().as_deref() {
-                Some("start") => Alignment::Start,
-                Some("end") => Alignment::End,
-                _ => Alignment::Center,
-            },
-            arrangement: if arrangement.active_id().as_deref() == Some("horizontal") {
-                Arrangement::Horizontal
-            } else {
-                Arrangement::Vertical
-            },
-            spacing: spacing.value_as_int(),
-            padding: padding.value_as_int(),
-            clock_visible: clock.is_active(),
-            idle_clock_visible: read_idle_clock.get(),
-            avatar_visible: avatar.is_active(),
-            power_visible: power.is_active(),
-            battery_percentage: battery_percentage.is_active(),
-            keyboard_scale: scale.value(),
-        });
+        config.layout = Some(lock_layout.read(read_idle_clock.get()));
+        config.login.same_as_lock = login_same.is_active();
+        if !config.login.same_as_lock {
+            config.login.background_pool = Some(login_media.paths.borrow().clone());
+            config.login.slideshow_seconds = Some(login_slideshow.value_as_int() as u32);
+            config.login.layout = Some(login_layout.read(read_idle_clock.get()));
+        }
         validate_theme(&config)?;
         Ok(config)
     });
@@ -832,6 +893,60 @@ pub fn build(
             status.set_text(&error);
         }
     });
+    {
+        let (read, drafts, path) = (read.clone(), drafts.clone(), path.clone());
+        let (status, strings) = (status.downgrade(), strings.clone());
+        apply_login.connect_clicked(move |button| {
+            let show = |text: &str| {
+                if let Some(status) = status.upgrade() {
+                    status.set_text(text);
+                }
+            };
+            // The login exports the saved settings, so they are saved first.
+            if let Err(error) = read().and_then(|mut config| {
+                drafts.persist(&mut config, &path)?;
+                config.save(&path)
+            }) {
+                show(&error);
+                return;
+            }
+            button.set_sensitive(false);
+            show(&strings.text("settings-apply-login-waiting"));
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let executable = executable.clone();
+            std::thread::spawn(move || {
+                let _ = sender.send(
+                    // Only the session's graphical agent may ask, never a text
+                    // prompt in the terminal that started the settings.
+                    std::process::Command::new("pkexec")
+                        .arg("--disable-internal-agent")
+                        .arg(&executable)
+                        .args(["setup", "login-appearance"])
+                        .stdin(std::process::Stdio::null())
+                        .output(),
+                );
+            });
+            let (button, status, strings) = (button.downgrade(), status.clone(), strings.clone());
+            glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+                let result = match receiver.try_recv() {
+                    Ok(result) => result,
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        return glib::ControlFlow::Continue;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        Err(std::io::Error::other("pkexec did not report a result"))
+                    }
+                };
+                if let Some(status) = status.upgrade() {
+                    status.set_text(&login_result(&strings, result));
+                }
+                if let Some(button) = button.upgrade() {
+                    button.set_sensitive(true);
+                }
+                glib::ControlFlow::Break
+            });
+        });
+    }
     let read_save = read.clone();
     let save_status = status.downgrade();
     let save_strings = strings.clone();
@@ -857,9 +972,13 @@ pub fn build(
     let preview_app = app.clone();
     let preview_tabs = media_tabs.clone();
     preview.connect_clicked(move |_| {
+        let tab = preview_tabs.visible_child_name();
         preview_live
             .borrow_mut()
-            .set_idle(preview_tabs.visible_child_name().as_deref() == Some("rest"));
+            .set_idle(tab.as_deref() == Some("rest"));
+        preview_live
+            .borrow_mut()
+            .set_login(tab.as_deref() == Some("login"));
         let result = preview_read()
             .and_then(|config| preview_live.borrow_mut().update(&preview_app, config, true));
         if let Some(status) = preview_status.upgrade() {
@@ -880,8 +999,9 @@ pub fn build(
         if !open {
             return glib::ControlFlow::Continue;
         }
-        live.borrow_mut()
-            .set_idle(media_tabs.visible_child_name().as_deref() == Some("rest"));
+        let tab = media_tabs.visible_child_name();
+        live.borrow_mut().set_idle(tab.as_deref() == Some("rest"));
+        live.borrow_mut().set_login(tab.as_deref() == Some("login"));
         let result = read().and_then(|config| live.borrow_mut().update(&live_app, config, false));
         if let Err(error) = result
             && let Some(status) = weak_status.upgrade()

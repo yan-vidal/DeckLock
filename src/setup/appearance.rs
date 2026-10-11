@@ -27,6 +27,23 @@ fn selected(config: &Config, theme: &Theme, idle: bool) -> Result<Vec<PathBuf>, 
         Some(paths) => paths.iter().collect(),
         None => background.into_iter().collect(),
     };
+    readable(inputs)?;
+    Ok(crate::library::pool(config, theme, idle))
+}
+
+/// The login's own pool, when it does not mirror the lock screen.
+fn selected_login(config: &Config) -> Result<Option<Vec<PathBuf>>, String> {
+    if config.login.same_as_lock {
+        return Ok(None);
+    }
+    let Some(pool) = &config.login.background_pool else {
+        return Ok(None);
+    };
+    readable(pool.iter().collect())?;
+    Ok(Some(pool.clone()))
+}
+
+fn readable(inputs: Vec<&PathBuf>) -> Result<(), String> {
     for path in inputs {
         if crate::procedural::id(path).is_some() {
             continue;
@@ -44,7 +61,7 @@ fn selected(config: &Config, theme: &Theme, idle: bool) -> Result<Vec<PathBuf>, 
             ));
         }
     }
-    Ok(crate::library::pool(config, theme, idle))
+    Ok(())
 }
 
 pub(super) fn export(
@@ -79,8 +96,10 @@ pub(super) fn export(
     let shared = chosen.as_path();
     let mut normal = selected(&config, &theme, false)?;
     let mut idle = selected(&config, &theme, true)?;
+    let mut login = selected_login(&config)?;
     let mut all = normal.clone();
     all.extend(idle.clone());
+    all.extend(login.clone().unwrap_or_default());
     all.extend(crate::library::files(&crate::library::directory(&config)));
     if let Some(home) = crate::shortcut::config_dir() {
         for mode in ["bloqueio", "ocioso"] {
@@ -101,7 +120,11 @@ pub(super) fn export(
     for path in all {
         migrated.insert(path.clone(), super::shared_media::migrate(&path, shared)?);
     }
-    for path in normal.iter_mut().chain(&mut idle) {
+    for path in normal
+        .iter_mut()
+        .chain(&mut idle)
+        .chain(login.iter_mut().flatten())
+    {
         *path = migrated
             .get(path)
             .ok_or("Selected media was not migrated")?
@@ -121,6 +144,10 @@ pub(super) fn export(
         idle_slideshow_seconds: config.idle_slideshow_seconds,
         system_keyboard: config.system_keyboard,
         layout: config.layout.clone(),
+        login: crate::config::LoginAppearance {
+            background_pool: login.clone().or(config.login.background_pool.clone()),
+            ..config.login.clone()
+        },
         ..Config::default()
     };
     appearance.validate()?;
@@ -142,6 +169,9 @@ pub(super) fn export(
     user.media_library = Some(shared.to_path_buf());
     user.background_pool = Some(normal);
     user.idle_pool = Some(idle);
+    if let Some(login) = login {
+        user.login.background_pool = Some(login);
+    }
     let destination = source
         .or(default.as_deref())
         .ok_or("Cannot locate user configuration")?;
@@ -184,10 +214,7 @@ pub(super) fn prepare(
         ));
     }
     let caller = if unsafe { libc::geteuid() } == 0 {
-        std::env::var("SUDO_UID")
-            .ok()
-            .and_then(|s| s.parse::<u32>().ok())
-            .filter(|uid| *uid != 0)
+        super::invoking_uid(|name| std::env::var(name).ok())
             .map(super::caller_by_uid)
             .transpose()?
     } else {
@@ -200,7 +227,7 @@ pub(super) fn prepare(
         return Err("Sharing user appearance needs --state-dir with a custom --target".into());
     }
     if unsafe { libc::geteuid() } == 0 && caller.is_none() {
-        return Err("Share user appearance through sudo from the desktop account".into());
+        return Err("Share user appearance through sudo or pkexec from the desktop account".into());
     }
     let export_uid = caller
         .as_ref()

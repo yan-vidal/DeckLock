@@ -905,6 +905,220 @@ fn help_and_read_commands_never_open_a_display_or_write_configuration() {
     assert!(!cli.home.path().join("config").exists());
 }
 #[test]
+fn login_options_round_trip_in_the_real_binary() {
+    let cli = Cli::new();
+    for (key, value) in [
+        ("login.same_as_lock", "false"),
+        ("login.slideshow_seconds", "7"),
+        ("login.background_pool", "[\"login.jpg\"]"),
+        ("login.layout.clock_visible", "false"),
+        ("login.layout.battery_percentage", "false"),
+    ] {
+        cli.config(&["set", key, value], true);
+        cli.config(&["get", key], true);
+    }
+    let config = decklock::config::Config::load(Some(&cli.file)).unwrap();
+    assert!(!config.login.same_as_lock);
+    assert_eq!(config.login.slideshow_seconds, Some(7));
+    assert_eq!(
+        config.login.background_pool.unwrap()[0],
+        cli.file.parent().unwrap().join("login.jpg")
+    );
+    // A login layout starts from the lock's, as layout.* starts from the theme's.
+    let layout = config.login.layout.unwrap();
+    assert!(!layout.clock_visible && !layout.battery_percentage);
+    assert_eq!(
+        layout.padding,
+        decklock::config::Theme::from_config(&decklock::config::Config::default())
+            .unwrap()
+            .layout
+            .padding
+    );
+    // The lock's own layout is untouched.
+    assert!(config.layout.is_none());
+    cli.config(&["set", "login.typo", "1"], false);
+    cli.config(&["set", "login.slideshow_seconds", "0"], false);
+    cli.config(&["unset", "login"], true);
+    assert!(
+        decklock::config::Config::load(Some(&cli.file))
+            .unwrap()
+            .login
+            .same_as_lock
+    );
+}
+
+#[test]
+fn greeter_setup_carries_a_separate_login_appearance_and_its_media() {
+    let cli = Cli::new();
+    let home = cli.home.path();
+    let photo = home.join("login-photo.png");
+    std::fs::write(&photo, b"login fixture bytes").unwrap();
+    let config = home.join("personal.toml");
+    std::fs::write(
+        &config,
+        format!(
+            "background_pool = ['procedural:starfield']\n\
+             [login]\nsame_as_lock = false\nbackground_pool = ['{}', 'procedural:matrix']\n\
+             [login.layout]\nclock_visible = false\n",
+            photo.display()
+        ),
+    )
+    .unwrap();
+    let storage = home.join("login");
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            home.join("greetd.toml").to_str().unwrap(),
+            "--state-dir",
+            storage.to_str().unwrap(),
+            "--user-config",
+            config.to_str().unwrap(),
+        ],
+        true,
+    );
+    let copied = decklock::config::Config::load(Some(&storage.join("appearance.toml"))).unwrap();
+    assert_eq!(
+        copied.background_pool.unwrap(),
+        vec![PathBuf::from("procedural:starfield")],
+        "The lock pool is unchanged"
+    );
+    assert!(!copied.login.same_as_lock);
+    assert!(!copied.login.layout.unwrap().clock_visible);
+    let pool = copied.login.background_pool.unwrap();
+    assert_eq!(pool[1], PathBuf::from("procedural:matrix"));
+    assert_ne!(pool[0], photo, "Login media moves to the shared library");
+    assert_eq!(std::fs::read(&pool[0]).unwrap(), b"login fixture bytes");
+    assert_eq!(
+        std::fs::read(&photo).unwrap(),
+        b"login fixture bytes",
+        "The original path stays readable as an alias"
+    );
+
+    // Unreadable login media fail before anything is migrated or installed.
+    let fresh = Cli::new();
+    let home = fresh.home.path();
+    let lock_photo = home.join("lock-photo.png");
+    std::fs::write(&lock_photo, b"lock fixture bytes").unwrap();
+    let config = home.join("personal.toml");
+    std::fs::write(
+        &config,
+        format!(
+            "background_pool = ['{}']\n[login]\nsame_as_lock = false\nbackground_pool = ['{}']\n",
+            lock_photo.display(),
+            home.join("missing-login.png").display()
+        ),
+    )
+    .unwrap();
+    let storage = home.join("login");
+    let result = fresh.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            home.join("greetd.toml").to_str().unwrap(),
+            "--state-dir",
+            storage.to_str().unwrap(),
+            "--user-config",
+            config.to_str().unwrap(),
+        ],
+        false,
+    );
+    assert!(
+        String::from_utf8_lossy(&result.stderr).contains("missing-login.png"),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!storage.join("appearance.toml").exists());
+    assert!(
+        !std::fs::symlink_metadata(&lock_photo)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "Nothing is migrated before the login media are checked"
+    );
+}
+
+#[test]
+fn login_appearance_refreshes_only_an_existing_decklock_login() {
+    let cli = Cli::new();
+    let home = cli.home.path();
+    let config = home.join("personal.toml");
+    std::fs::write(&config, "background_pool = ['procedural:starfield']\n").unwrap();
+    let greetd = home.join("greetd.toml");
+    // Another greeter: refused, and nothing is written.
+    std::fs::write(
+        &greetd,
+        "[default_session]\ncommand = \"agreety --cmd /bin/sh\"\nuser = \"greeter\"\n",
+    )
+    .unwrap();
+    let before = std::fs::read(&greetd).unwrap();
+    let refresh = |success| {
+        cli.run(
+            &[
+                "setup",
+                "login-appearance",
+                "--target",
+                greetd.to_str().unwrap(),
+                "--user-config",
+                config.to_str().unwrap(),
+            ],
+            success,
+        )
+    };
+    let refused = refresh(false);
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("does not use DeckLock"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert_eq!(std::fs::read(&greetd).unwrap(), before);
+
+    // A DeckLock login: its appearance follows the settings, its command stays.
+    std::fs::remove_file(&greetd).unwrap();
+    let storage = home.join("login");
+    cli.run(
+        &[
+            "setup",
+            "greeter",
+            "--target",
+            greetd.to_str().unwrap(),
+            "--state-dir",
+            storage.to_str().unwrap(),
+            "--user-config",
+            config.to_str().unwrap(),
+            "--no-keyboard",
+        ],
+        true,
+    );
+    let command = std::fs::read(&greetd).unwrap();
+    std::fs::write(
+        &config,
+        "background_pool = ['procedural:starfield']\n\
+         [login]\nsame_as_lock = false\nbackground_pool = ['procedural:matrix']\n",
+    )
+    .unwrap();
+    let applied = refresh(true);
+    assert!(
+        String::from_utf8_lossy(&applied.stdout).contains("next time"),
+        "{}",
+        String::from_utf8_lossy(&applied.stdout)
+    );
+    let copied = decklock::config::Config::load(Some(&storage.join("appearance.toml"))).unwrap();
+    assert!(!copied.login.same_as_lock);
+    assert_eq!(
+        copied.login.background_pool.unwrap(),
+        vec![PathBuf::from("procedural:matrix")]
+    );
+    assert_eq!(
+        std::fs::read(&greetd).unwrap(),
+        command,
+        "The greetd command, with its --no-keyboard choice, is not rewritten"
+    );
+}
+
+#[test]
 fn documented_options_round_trip_in_the_real_binary() {
     let cli = Cli::new();
     for (key, value) in [

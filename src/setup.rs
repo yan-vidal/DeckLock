@@ -121,6 +121,20 @@ pub enum Action {
         #[arg(long)]
         storage: bool,
     },
+    /// Refresh the login's appearance and media from your settings (requires
+    /// root, through sudo or pkexec). The greetd command, compositor, keyboard and
+    /// controller stay as they are; a login that does not use DeckLock is refused.
+    LoginAppearance {
+        /// Alternative greetd configuration (custom installations and tests).
+        #[arg(long)]
+        target: Option<PathBuf>,
+        /// User configuration whose appearance and shared media are used for login.
+        #[arg(long)]
+        user_config: Option<PathBuf>,
+        /// Show what would be shared without modifying files.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Internal unprivileged exporter used by installation.
     #[command(hide = true)]
     ExportAppearance {
@@ -187,7 +201,12 @@ pub fn inspect_system(
             if let Some(cmd) = line.strip_prefix("command") {
                 let clean = cmd.trim().trim_start_matches('=').trim().trim_matches('"');
                 current_greetd_cmd = Some(clean.to_string());
-                if clean.contains("decklock --greeter") || clean.contains("decklock --greetter") {
+                // Setup always names its private greeter files in the command; the
+                // Hyprland login starts DeckLock from its Lua file instead.
+                if clean.contains("decklock --greeter")
+                    || clean.contains("decklock --greetter")
+                    || clean.contains("DECKLOCK_GREETER_APPEARANCE=")
+                {
                     greetd_uses_decklock = true;
                 }
             }
@@ -816,6 +835,59 @@ fn passwd_ids(passwd: &str, user: &str) -> Option<(u32, u32)> {
 }
 
 /// Use the packaged/admin-selected account instead of creating an incompatible one.
+/// The login's appearance, refreshed without regenerating its greetd command:
+/// only the storage directory that command names receives the new snapshot.
+fn refresh_login_appearance(
+    target: Option<&Path>,
+    user_config: Option<&Path>,
+    dry_run: bool,
+) -> Result<String, String> {
+    let path = target.unwrap_or(Path::new("/etc/greetd/config.toml"));
+    let command = fs::read_to_string(path)
+        .ok()
+        .and_then(|text| toml::from_str::<toml::Value>(&text).ok())
+        .and_then(|doc| {
+            doc.get("default_session")?
+                .get("command")?
+                .as_str()
+                .map(str::to_string)
+        })
+        .filter(|command| command.contains("DECKLOCK_GREETER_APPEARANCE="))
+        .ok_or(
+            "The login does not use DeckLock yet; configure it once with: sudo decklock setup greeter",
+        )?;
+    let words = shlex::split(&command).ok_or("Cannot parse the login command")?;
+    let dir = (words.first().map(String::as_str) == Some("env"))
+        .then(|| {
+            words
+                .iter()
+                .skip(1)
+                .take_while(|word| word.contains('='))
+                .find_map(|word| word.strip_prefix("XDG_CONFIG_HOME="))
+        })
+        .flatten()
+        .filter(|value| Path::new(value).is_absolute() && !value.contains(['$', '`']))
+        .map(PathBuf::from)
+        .ok_or("The login command names no literal absolute storage directory")?;
+    let user = configured_greeter_user(path)?;
+    let (plan, report) = appearance::prepare(
+        Some(&dir),
+        target.is_none(),
+        user_config,
+        false,
+        dry_run,
+        None,
+    )?;
+    if dry_run {
+        return Ok(report);
+    }
+    plan.ok_or("Run it as root through sudo or pkexec from your desktop account")?
+        .install(&dir, target.is_none(), &user)?;
+    Ok(format!(
+        "{report}\nThe login shows these settings the next time its screen opens. Its greetd command was not changed and greetd was not restarted."
+    ))
+}
+
 fn configured_greeter_user(path: &Path) -> Result<String, String> {
     if !path.exists() {
         return Ok(GREETER_USER.into());
@@ -1370,6 +1442,14 @@ fn caller_by_uid(uid: u32) -> Result<Caller, String> {
     })
 }
 
+/// The desktop account that asked for this root run, through sudo or pkexec.
+pub(crate) fn invoking_uid(var: impl Fn(&str) -> Option<String>) -> Option<u32> {
+    ["SUDO_UID", "PKEXEC_UID"]
+        .into_iter()
+        .find_map(|name| var(name)?.parse::<u32>().ok())
+        .filter(|uid| *uid != 0)
+}
+
 /// Root configures greetd, but hypridle belongs to the user who invoked sudo.
 /// Re-execute just the lock setup without root privileges so newly created
 /// directories, atomic replacements and backups all retain user ownership.
@@ -1381,15 +1461,11 @@ fn setup_invoking_user_lock(
     if unsafe { libc::geteuid() } != 0 {
         return setup_lock_with(target, dry_run, replace_custom);
     }
-    let Some(uid) = std::env::var("SUDO_UID")
-        .ok()
-        .and_then(|uid| uid.parse::<u32>().ok())
-        .filter(|uid| *uid != 0)
-    else {
+    let Some(uid) = invoking_uid(|name| std::env::var(name).ok()) else {
         if target.is_some() {
             return setup_lock_with(target, dry_run, replace_custom);
         }
-        return Err("Run setup all through sudo from your desktop account, or specify --lock-target; root's HOME is not a desktop configuration".into());
+        return Err("Run setup all through sudo or pkexec from your desktop account, or specify --lock-target; root's HOME is not a desktop configuration".into());
     };
     let caller = caller_by_uid(uid)?;
     let home = &caller.home;
@@ -1514,6 +1590,11 @@ pub fn execute(action: Option<Action>) -> Result<String, String> {
             output.as_deref(),
             transform,
         ),
+        Action::LoginAppearance {
+            target,
+            user_config,
+            dry_run,
+        } => refresh_login_appearance(target.as_deref(), user_config.as_deref(), dry_run),
         Action::Lock {
             target,
             dry_run,
@@ -1637,6 +1718,48 @@ mod tests {
         assert!(out.contains("Successfully configured hypridle"));
         let content = fs::read_to_string(&hypridle_path).unwrap();
         assert!(content.contains("lock_cmd = decklock --lock"));
+    }
+
+    #[test]
+    fn root_runs_find_the_desktop_account_through_sudo_or_pkexec() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| value.to_string())
+            }
+        };
+        assert_eq!(invoking_uid(env(&[("SUDO_UID", "1000")])), Some(1000));
+        assert_eq!(invoking_uid(env(&[("PKEXEC_UID", "1001")])), Some(1001));
+        // Neither root itself nor garbage names a desktop account.
+        assert_eq!(invoking_uid(env(&[("PKEXEC_UID", "0")])), None);
+        assert_eq!(invoking_uid(env(&[("SUDO_UID", "x")])), None);
+        assert_eq!(invoking_uid(env(&[])), None);
+    }
+
+    #[test]
+    fn status_recognizes_every_login_command_setup_generates() {
+        let dir = tempfile::tempdir().unwrap();
+        let greetd_path = dir.path().join("config.toml");
+        // The Hyprland login starts DeckLock from its Lua file, not the command.
+        fs::write(
+            &greetd_path,
+            "[default_session]\ncommand = \"env XDG_CONFIG_HOME='/var/lib/decklock-greeter' \
+             DECKLOCK_GREETER_STATE='/var/lib/decklock-greeter/greeter-state.toml' \
+             DECKLOCK_GREETER_APPEARANCE='/var/lib/decklock-greeter/appearance.toml' \
+             start-hyprland -- -c '/etc/greetd/hyprland-greeter.lua'\"\nuser = \"greeter\"\n",
+        )
+        .unwrap();
+        let report = inspect_system(Some(&greetd_path), None);
+        assert!(report.greetd_uses_decklock, "Generated Hyprland login");
+        assert!(format_status(&report).contains("DeckLock [Configured]"));
+        fs::write(
+            &greetd_path,
+            "[default_session]\ncommand = \"agreety --cmd /bin/sh\"\n",
+        )
+        .unwrap();
+        assert!(!inspect_system(Some(&greetd_path), None).greetd_uses_decklock);
     }
 
     #[test]

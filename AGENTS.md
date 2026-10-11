@@ -11,6 +11,11 @@ This project is a session locker: UI success is not evidence of unlock safety.
 - Preview/settings must not acquire a lock, invoke PAM/power actions or capture a
   controller automatically. Tests must use the isolated gate, never the user's
   Wayland socket, PAM credentials, power actions or real controller daemon.
+- The one exception: settings may apply the login (`decklock setup login-appearance`)
+  through polkit's `pkexec`, only on an explicit click. The session's polkit agent
+  asks for the administrator's password, which never passes through DeckLock;
+  nothing else in settings or preview runs as root. Tests use a fake `pkexec`,
+  never the real polkit, sudo or greetd.
 - Invalid config/theme edits must preserve valid saved data. Saving must retain
   unrelated options. Media removal from a pool must not delete source files.
 - Preserve CLI and GUI parity, existing theme/config compatibility, keyboard

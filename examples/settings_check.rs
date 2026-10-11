@@ -57,7 +57,7 @@ fn main() {
         .parent()
         .unwrap()
         .join("decklock");
-    let window = settings::build(&app, path.clone(), Some("en-US"), executable).unwrap();
+    let window = settings::build(&app, path.clone(), Some("en-US"), executable.clone()).unwrap();
     assert!(
         window.titlebar().is_some(),
         "Settings must provide its own close control"
@@ -66,6 +66,156 @@ fn main() {
     while glib::MainContext::default().iteration(false) {}
     let get =
         |name| find(window.upcast_ref(), name).unwrap_or_else(|| panic!("Missing widget {name}"));
+    let save = || {
+        get("settings-save")
+            .downcast::<gtk::Button>()
+            .unwrap()
+            .emit_clicked();
+        while glib::MainContext::default().iteration(false) {}
+    };
+    // Three tabs: Lock, Login and Rest. The login mirrors the lock until told
+    // otherwise, and an untouched login writes no section.
+    // Scoped: references held past the window's close would keep its controls alive.
+    {
+        let tabs = get("settings-media-tabs").downcast::<gtk::Stack>().unwrap();
+        let pages = tabs.pages();
+        let names: Vec<String> = (0..pages.n_items())
+            .filter_map(|i| pages.item(i).and_downcast::<gtk::StackPage>())
+            .filter_map(|page| page.name())
+            .map(|name| name.to_string())
+            .collect();
+        assert_eq!(names, ["background", "login", "rest"]);
+        let same = get("settings-login-same")
+            .downcast::<gtk::CheckButton>()
+            .unwrap();
+        assert!(same.is_active(), "The login mirrors the lock by default");
+        assert!(!get("settings-login-own").is_visible());
+        save();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !text.contains("login"),
+            "Untouched login writes nothing: {text}"
+        );
+        same.set_active(false);
+        assert!(get("settings-login-own").is_visible());
+        get("settings-login-avatar")
+            .downcast::<gtk::CheckButton>()
+            .unwrap()
+            .set_active(false);
+        get("settings-login-slideshow")
+            .downcast::<gtk::SpinButton>()
+            .unwrap()
+            .set_value(9.0);
+        save();
+        let config = Config::load(Some(&path)).unwrap();
+        assert!(!config.login.same_as_lock);
+        assert_eq!(config.login.slideshow_seconds, Some(9));
+        assert!(!config.login.layout.as_ref().unwrap().avatar_visible);
+        assert!(
+            config.layout.as_ref().unwrap().avatar_visible,
+            "The lock keeps its own layout"
+        );
+        assert_eq!(config.pam_service, "preserve-me");
+        // Restore affects the login's layout only.
+        get("settings-login-restore-layout")
+            .downcast::<gtk::Button>()
+            .unwrap()
+            .emit_clicked();
+        assert!(
+            get("settings-login-avatar")
+                .downcast::<gtk::CheckButton>()
+                .unwrap()
+                .is_active()
+        );
+        same.set_active(true);
+        assert!(!get("settings-login-own").is_visible());
+        save();
+        assert!(Config::load(Some(&path)).unwrap().login.same_as_lock);
+    }
+    // "Apply to login" saves, then runs the login refresh through pkexec. A fake
+    // pkexec in a private PATH records the command; never the real polkit or sudo.
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let fake = dir.path().join("fake-bin");
+        std::fs::create_dir(&fake).unwrap();
+        let marker = dir.path().join("pkexec-args");
+        std::fs::write(
+            fake.join("pkexec"),
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nprintf '%s' \"$FAKE_PKEXEC_ERR\" >&2\nexit \"$FAKE_PKEXEC_EXIT\"\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(fake.join("pkexec"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        let empty = dir.path().join("empty-bin");
+        std::fs::create_dir(&empty).unwrap();
+        let original_path = std::env::var_os("PATH");
+        let apply = get("settings-apply-login")
+            .downcast::<gtk::Button>()
+            .unwrap();
+        let status = get("settings-status").downcast::<gtk::Label>().unwrap();
+        let run = |bin: &std::path::Path, code: &str, err: &str| {
+            let _ = std::fs::remove_file(&marker);
+            // SAFETY: this GTK contract is single-process; the fake PATH and the
+            // fake's knobs are restored after these cases.
+            unsafe {
+                std::env::set_var("PATH", bin);
+                std::env::set_var("FAKE_PKEXEC_EXIT", code);
+                std::env::set_var("FAKE_PKEXEC_ERR", err);
+            }
+            status.set_text("");
+            apply.emit_clicked();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while (status.text().is_empty() || !apply.is_sensitive())
+                && std::time::Instant::now() < deadline
+            {
+                glib::MainContext::default().iteration(false);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            assert!(apply.is_sensitive(), "Apply to login must finish");
+            status.text().to_string()
+        };
+        let done = run(&fake, "0", "");
+        assert!(done.contains("next time"), "{done}");
+        assert_eq!(
+            std::fs::read_to_string(&marker).unwrap(),
+            // No text prompt in whatever terminal started the settings: only the
+            // session's graphical agent may ask for the password.
+            format!(
+                "--disable-internal-agent\n{}\nsetup\nlogin-appearance\n",
+                executable.display()
+            )
+        );
+        let cancelled = run(&fake, "126", "");
+        assert!(cancelled.contains("nothing was changed"), "{cancelled}");
+        let no_agent = run(
+            &fake,
+            "127",
+            "Error executing command as another user: No authentication agent found.",
+        );
+        assert!(
+            no_agent.contains("sudo decklock setup login-appearance"),
+            "{no_agent}"
+        );
+        let refused = run(&fake, "1", "The login does not use DeckLock yet");
+        assert!(refused.contains("does not use DeckLock"), "{refused}");
+        let missing = run(&empty, "0", "");
+        assert!(
+            missing.contains("sudo decklock setup login-appearance"),
+            "{missing}"
+        );
+        assert!(!marker.exists(), "No pkexec, nothing ran");
+        unsafe {
+            match original_path {
+                Some(path) => std::env::set_var("PATH", path),
+                None => std::env::remove_var("PATH"),
+            }
+            std::env::remove_var("FAKE_PKEXEC_EXIT");
+            std::env::remove_var("FAKE_PKEXEC_ERR");
+        }
+    }
     get("settings-layout-options")
         .downcast::<gtk::Expander>()
         .unwrap()

@@ -774,3 +774,46 @@ Same branch, sixth change: the user asked to remove the "Wayland · Preview" ban
 now looks like the lock screen, and the preview-banner string and CSS rules are gone. The
 assertion that the preview shows no banner failed first. Still identifying a preview: its window
 title and, on submit, the notice that authentication is disabled in preview.
+
+2026-10-10 lock, login and rest settings (branch feat/screen-settings, on top of PR #65; spec
+.specs/features/screen-settings/spec.md). The user wants the settings to do everything the CLI
+does, the login configured from the interface (asking for the administrator password through
+polkit when needed), and three settings tabs: Lock, Login (mirroring Lock with a check box, on by
+default) and Rest (one for both screens, as today). They approved a contract line for the polkit
+exception and asked to hold 0.3.6 until this work is done. Phase 1: Config gains
+LoginAppearance (same_as_lock, background_pool, slideshow_seconds, layout), skipped when
+default; Config::use_login resolves it and only the greeter applies it (main::apply_screen);
+apply_appearance carries it; the CLI edits login.* (a login layout starts from the lock's); the
+setup export checks the login pool before migrating anything, migrates it and carries the
+section. The unit, parser and CLI/setup tests failed first. A local cargo test run under load 16
+(an emulator and a node build) failed the timing-bound auth test
+inherited_stdout_does_not_extend_the_helper_deadline; it passed three times alone.
+Phase 2: the settings tabs are Lock screen, Login and Rest. A LayoutForm builds each screen's
+layout controls (the lock keeps the settings-* widget names, the login uses settings-login-*),
+each with its own restore button; "Layout and preferences" keeps the shared options. The Login
+tab has "Same as the lock screen" and, when off, its own pool, interval and layout. The live
+preview gains a login mode (Config::use_login, greeter view) and a ui::build_preview that never
+requests fullscreen; ui::build keeps the kiosk behavior for the real and standalone greeter. The
+tab and login assertions failed first. While adding them, the settings cleanup check failed
+because the new test code held the tab stack until the end; scoping those references fixed it,
+which shows the window itself releases its controls.
+Phase 3: "Apply to login" in the Login tab saves and runs `pkexec <decklock> setup
+login-appearance`. That new subcommand refreshes only the login's appearance snapshot in the
+storage directory its greetd command names, refusing a login without DECKLOCK_GREETER_APPEARANCE
+in its command; it never rewrites the greetd command, so compositor, keyboard and controller
+choices stay (a plain repeat of setup greeter regenerates a Cage command from its flags).
+setup::invoking_uid reads SUDO_UID or PKEXEC_UID, never root. Packages carry
+packaging/polkit/io.github.yan_vidal.DeckLock.policy (exec.path /usr/bin/decklock, exec.argv1
+setup, auth_admin_keep for the active session); Arch optdepends polkit, Fedora recommends polkit,
+Ubuntu recommends pkexec. AGENTS.md gains the exception line the user approved. setup status
+now recognizes the generated Hyprland login (it looked only for `decklock --greeter` in the
+command). Each test failed first: the status regression, the uid helper, the package contract,
+the login-appearance CLI and the settings button with a fake pkexec. Not exercised: the real
+polkit dialog and agent, and a root write to /etc/greetd through pkexec. This Deck runs polkitd
+but no polkit agent in its Hyprland session, so the button would show the terminal command
+until one (such as hyprpolkitagent) is installed and started.
+Checked against the real pkexec on this Deck, without elevating anything (`pkexec /usr/bin/true`,
+no agent running): without a terminal it fails with "Error creating textual authentication
+agent" (exit 127); started from a terminal it would prompt there, away from the window. The
+button now passes --disable-internal-agent, whose real answer is "No authentication agent
+found." with exit 127, the case the fake reproduces; the test failed first on the old argv.

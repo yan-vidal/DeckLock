@@ -91,6 +91,29 @@ pub fn execute(path: &Path, action: Action) -> Result<String, String> {
                 .map_err(|e| e.to_string())?,
         );
     }
+    let root = document.as_table_mut().unwrap();
+    // The login section is omitted from a file while it mirrors the lock screen.
+    if keys[0] == "login" && !root.contains_key("login") {
+        root.insert(
+            "login".into(),
+            toml::Value::try_from(&config.login).map_err(|e| e.to_string())?,
+        );
+    }
+    // A login layout starts from the lock's, as layout.* starts from the theme's.
+    if keys.len() > 2 && keys[0] == "login" && keys[1] == "layout" && config.login.layout.is_none()
+    {
+        let lock = match &config.layout {
+            Some(layout) => layout.clone(),
+            None => Theme::from_config(&config)?.layout,
+        };
+        root.get_mut("login")
+            .and_then(toml::Value::as_table_mut)
+            .ok_or("Parent key is not a table")?
+            .insert(
+                "layout".into(),
+                toml::Value::try_from(lock).map_err(|e| e.to_string())?,
+            );
+    }
     let table = table_at(&mut document, &keys[..keys.len() - 1])?;
     let leaf = keys[keys.len() - 1];
     if let Some(value) = value {

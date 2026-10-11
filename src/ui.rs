@@ -95,7 +95,7 @@ pub fn rebuild_preview(view: View, app: &gtk::Application, settings: Rc<Settings
     let shown = gtk::prelude::EntryExt::is_visible(&view.entry);
     view.bindings.clear();
     drop(view);
-    let view = build_in(app, settings, Rc::new(|_| {}), Some(window), None);
+    let view = build_in(app, settings, Rc::new(|_| {}), Some(window), None, false);
     view.entry.set_text(&text);
     view.entry.set_visibility(shown);
     view.keyboard.set_visible(keyboard);
@@ -870,7 +870,15 @@ pub fn build(
     settings: Rc<Settings>,
     on_submit: Rc<dyn Fn(Zeroizing<String>)>,
 ) -> View {
-    build_in(app, settings, on_submit, None, None)
+    let kiosk = settings.greeter;
+    build_in(app, settings, on_submit, None, None, kiosk)
+}
+
+/// The settings preview: an ordinary window, never fullscreen, also when it
+/// shows the login. It never authenticates.
+pub fn build_preview(app: &gtk::Application, settings: Rc<Settings>) -> View {
+    assert!(settings.preview, "Only previews are built here");
+    build_in(app, settings, Rc::new(|_| {}), None, None, false)
 }
 
 /// Greeter view over a given account list instead of the system's, so GTK
@@ -882,7 +890,7 @@ pub fn build_greeter_with_users(
     on_submit: Rc<dyn Fn(Zeroizing<String>)>,
 ) -> View {
     assert!(settings.greeter, "Only a greeter view lists accounts");
-    build_in(app, settings, on_submit, None, Some(users))
+    build_in(app, settings, on_submit, None, Some(users), true)
 }
 
 fn build_in(
@@ -891,21 +899,23 @@ fn build_in(
     on_submit: Rc<dyn Fn(Zeroizing<String>)>,
     existing: Option<gtk::ApplicationWindow>,
     users: Option<Vec<crate::greeter::UserEntry>>,
+    // A login kiosk: undecorated and fullscreen. False for the settings preview.
+    kiosk: bool,
 ) -> View {
     crate::branding::install();
     let window = existing.unwrap_or_else(|| {
         gtk::ApplicationWindow::builder()
-            .title(settings.strings.text(if settings.greeter {
-                "greeter-title"
-            } else if settings.preview {
-                "preview-title"
-            } else {
-                "lock-title"
-            }))
             .default_width(1000)
             .default_height(720)
             .build()
     });
+    window.set_title(Some(&settings.strings.text(if settings.greeter {
+        "greeter-title"
+    } else if settings.preview {
+        "preview-title"
+    } else {
+        "lock-title"
+    })));
     // Session-lock destroys/unrealizes surfaces itself. Registering those windows
     // with GtkApplication makes GTK 4.22's removal handler access a gone surface.
     // The lock mode holds the application explicitly; only preview uses its
@@ -914,7 +924,7 @@ fn build_in(
         window.set_application(Some(app));
     }
     window.add_css_class("decklock");
-    if settings.greeter {
+    if settings.greeter && kiosk {
         window.set_decorated(false);
         // Cage/wlroots versions shipped by Ubuntu reject a fullscreen request
         // before the initial xdg_surface commit. The first frame follows its
