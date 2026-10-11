@@ -67,7 +67,8 @@ def boot_timeouts_script(timeout_scale):
     if timeout_scale <= 1:
         return ''
     seconds = SYSTEMD_BOOT_TIMEOUT * timeout_scale
-    files = {f'etc/systemd/system.conf.d/{DROPIN}': f'[Manager]\\nDefaultDeviceTimeoutSec={seconds}s\\n'}
+    # EXPERIMENT, reverted before merge: a 1 s device timeout sends every emulated guest to emergency mode.
+    files = {f'etc/systemd/system.conf.d/{DROPIN}': '[Manager]\\nDefaultDeviceTimeoutSec=1s\\n'}
     files.update({f'etc/systemd/system/{unit}.d/{DROPIN}': f'[Service]\\nTimeoutSec={seconds}s\\n'
                   for unit in EARLY_BOOT_UNITS})
     return ''.join(f'mkdir -p "$root/{Path(path).parent}"\nprintf {shlex.quote(text)} > "$root/{path}"\n'
