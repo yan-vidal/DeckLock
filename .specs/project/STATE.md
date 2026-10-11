@@ -843,3 +843,16 @@ drop-ins through the real chroot script with stubbed tools, the pass-through and
 Not established: why the stretch after switch-root is slow in about a quarter of emulated boots
 (no kernel stall warning in the journals, host memory normal; QEMU 8.2.2, multi-threaded TCG),
 and the in-guest fallback, which keeps the stock timeouts.
+
+2026-10-10 release 0.3.6 (branch release/0.3.6): the user decided the 0.3.6 release carries the
+login polish (PR #65) and the lock, login and rest settings with "Apply to login" (PR #66), and
+waits until both are merged; they are. The user asked for the release pull request; it also
+carries #67, a CI-only change. Cargo, the lock file and both READMEs' install sections move to
+0.3.6; the changelog's Unreleased becomes 0.3.6 dated 2026-10-10, with a blank line and an
+overlong line inside the battery entry fixed and a limitations section added (a polkit agent is
+needed for "Apply to login"; the real polkit dialog, the A button with a physical controller,
+the battery on real hardware and the login help on a Steam Deck login are not established). The
+README lines saying Hyprland login setup needs 0.3.5 or newer stay true and are kept. Publishing
+still needs the user's approval of the tag after merge. The Steam Deck checks of 0.3.5 left
+unrecorded (pads at login, handoff to the desktop, reconnection on the lock screen, login
+without controller) and the new items of 0.3.6 are to be tested on the published 0.3.6 package.

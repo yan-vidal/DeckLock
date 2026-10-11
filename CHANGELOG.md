@@ -2,7 +2,7 @@
 
 User-facing changes are reviewed in pull requests. Dates are assigned when a release is approved. Packaging-only rebuilds use Arch pkgrel and a separate -rN tag; published assets are never replaced.
 
-## [Unreleased]
+## [0.3.6] - 2026-10-10
 
 ### Added
 
@@ -28,13 +28,12 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
   action limited to `/usr/bin/decklock setup`. Without a polkit agent (common on
   Hyprland, Sway, labwc or Wayfire) or without `pkexec`, the button shows the terminal
   command instead. Setup run through `pkexec` finds the desktop user like `sudo` does.
-
 - The lock, login and preview screens show the battery level on devices with a
   system battery, in the top-right corner on its own row above the power buttons.
   That row spans the width, so the help button in the top-left corner lines up with
-  the power buttons below it; without a battery the row takes no space. It is read from the Linux power-supply
-  class every 30 seconds; mains adapters and the batteries of peripherals such as a
-  controller are ignored, and nothing is shown without a battery. Rest mode hides it
+  the power buttons below it; without a battery the row takes no space. It is read
+  from the Linux power-supply class every 30 seconds; mains adapters and the
+  batteries of peripherals such as a controller are ignored. Rest mode hides it
   together with the power buttons, and the settings preview shows it like the lock
   screen. Themes style it through CSS: `#battery`, its `image` and `label`, the icon
   size with `-gtk-icon-size`, and the `.low` (20 % or less, not charging) and
@@ -64,6 +63,16 @@ User-facing changes are reviewed in pull requests. Dates are assigned when a rel
   at login and on the lock screen. The keyboard captures A along with the other
   buttons and ignored it, so with the keyboard open the password could only be sent
   with the keyboard's own Enter key, or by hiding the keyboard and clicking.
+
+### Compatibility and limitations
+
+- "Apply to login" needs polkit's `pkexec` and an authentication agent in the
+  session. GNOME, KDE Plasma, Xfce and Cinnamon bring one; on Hyprland install and
+  start one such as `hyprpolkitagent`. The real polkit dialog and a root write to
+  `/etc/greetd` through `pkexec` are not exercised by the suites, which use a fake
+  `pkexec` and run login setup as root through sudo.
+- The A button with a physical controller, the battery on real hardware and the
+  login help on a Steam Deck login remain outside what the suites establish.
 
 ## [0.3.5] - 2026-10-10
 

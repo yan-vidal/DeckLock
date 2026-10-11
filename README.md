@@ -12,8 +12,8 @@ Optional controller support includes devices such as the Steam Deck.
 
 ## Install
 
-Version **0.3.5** is published on
-[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.5) for Arch,
+Version **0.3.6** is published on
+[GitHub Releases](https://github.com/yan-vidal/DeckLock/releases/tag/v0.3.6) for Arch,
 Fedora 43 and Ubuntu 26.04 on x86_64, and for Ubuntu 26.04 on aarch64 (arm64). Each
 package installs the application, a **DeckLock Settings** launcher, the included
 media pack and the PAM service DeckLock uses. The package manager resolves the
@@ -26,38 +26,38 @@ installing on a stock GNOME or KDE Plasma desktop will not let DeckLock lock it.
 ### Arch Linux · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.5/decklock-0.3.5-1-x86_64.pkg.tar.zst
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.5/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.6/decklock-0.3.6-1-x86_64.pkg.tar.zst
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.6/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 sudo pacman -Syu
-sudo pacman -U ./decklock-0.3.5-1-x86_64.pkg.tar.zst
+sudo pacman -U ./decklock-0.3.6-1-x86_64.pkg.tar.zst
 ```
 
 ### Fedora 43 · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.5/decklock-0.3.5-1.fc43.x86_64.rpm
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.5/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.6/decklock-0.3.6-1.fc43.x86_64.rpm
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.6/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo dnf install ./decklock-0.3.5-1.fc43.x86_64.rpm
+sudo dnf install ./decklock-0.3.6-1.fc43.x86_64.rpm
 ```
 
 ### Ubuntu 26.04 · x86_64
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.5/decklock_0.3.5-1_amd64.deb
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.5/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.6/decklock_0.3.6-1_amd64.deb
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.6/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo apt install ./decklock_0.3.5-1_amd64.deb
+sudo apt install ./decklock_0.3.6-1_amd64.deb
 ```
 
 ### Ubuntu 26.04 · aarch64 (arm64)
 
 ```sh
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.5/decklock_0.3.5-1_arm64.deb
-curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.5/SHA256SUMS
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.6/decklock_0.3.6-1_arm64.deb
+curl -fLO https://github.com/yan-vidal/DeckLock/releases/download/v0.3.6/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
-sudo apt install ./decklock_0.3.5-1_arm64.deb
+sudo apt install ./decklock_0.3.6-1_arm64.deb
 ```
 
 Each package is built against its own distribution's libraries. Derivatives that
@@ -140,7 +140,7 @@ With no arguments, `decklock` prints help. Use `decklock --help` or
 `decklock config --help` for commands and examples. Preview never authenticates or runs
 power actions. Escape hides the keyboard, then closes the preview.
 
-**0.3.5 is experimental.** Preview/settings have been tested on Hyprland. Isolated
+**0.3.6 is experimental.** Preview/settings have been tested on Hyprland. Isolated
 protocol tests cover lock acquisition, monitor changes and termination without
 unlocking, and disposable virtual machines exercise each packaged locker against
 real Sway and real Linux-PAM on Arch, Fedora and Ubuntu, including denial, unlock
