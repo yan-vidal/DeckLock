@@ -856,3 +856,8 @@ README lines saying Hyprland login setup needs 0.3.5 or newer stay true and are 
 still needs the user's approval of the tag after merge. The Steam Deck checks of 0.3.5 left
 unrecorded (pads at login, handoff to the desktop, reconnection on the lock screen, login
 without controller) and the new items of 0.3.6 are to be tested on the published 0.3.6 package.
+
+2026-10-11 0.3.6 date: PR #68 merged as 05de289 after midnight local time, so the changelog's
+0.3.6 date moves from 2026-10-10 to 2026-10-11, the day of publication, as docs/releases.md
+asks; the user approved publishing 0.3.6 with that date. Nothing else changes; the tag goes on
+this commit once main's checks pass.

@@ -2,7 +2,7 @@
 
 User-facing changes are reviewed in pull requests. Dates are assigned when a release is approved. Packaging-only rebuilds use Arch pkgrel and a separate -rN tag; published assets are never replaced.
 
-## [0.3.6] - 2026-10-10
+## [0.3.6] - 2026-10-11
 
 ### Added
 
