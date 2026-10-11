@@ -1,0 +1,154 @@
+         Starting [0;1;39minitrd-switch-root.service[0m - Switch Root...
+P+q6E616D65\[6n[32766;32766H[6n[!p]104\[0m[?7h[1G[0J
+[0;1;39mWelcome to [0m[1mUbuntu 26.04.1 LTS[0m[0;1;39m![0m
+
+]3008;start=384726e0fd694c5789c70aab2b471231;user=root;hostname=ubuntu;machineid=96294c42b8524647bd1bd1252d8844e9;bootid=a35f40f09a394740bfa646c23e25a222;pid=1;pidfdid=1;comm=systemd;type=boot\[[0;32m  OK  [0m] Stopped [0;1;39minitrd-switch-root.service[0m - Switch Root.
+[[0;32m  OK  [0m] Created slice [0;1;39msystem-serial\x2dget…slice[0m - Slice /system/serial-getty.
+[[0;32m  OK  [0m] Created slice [0;1;39msystem-systemd\x2dfs…slice[0m - Slice /system/systemd-fsck.
+[[0;32m  OK  [0m] Created slice [0;1;39msystem-xfs_scrub.sli…[0mxfs_scrub background service slice.
+[[0;32m  OK  [0m] Created slice [0;1;39muser.slice[0m - User and Session Slice.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-ask-password-wall.…[0md Requests to Wall Directory Watch.
+[[0;32m  OK  [0m] Set up automount [0;1;39mproc-sys-fs-binfm…[0mormats File System Automount Point.
+         Expecting device [0;1;39mdev-disk-by\x2dla…device[0m - /dev/disk/by-label/BOOT...
+         Expecting device [0;1;39mdev-disk-by\x2dla…device[0m - /dev/disk/by-label/UEFI...
+         Expecting device [0;1;39mdev-ttyAMA0.device[0m - /dev/ttyAMA0...
+[[0;32m  OK  [0m] Reached target [0;1;39mimports.target[0m - Image Downloads.
+[[0;32m  OK  [0m] Stopped target [0;1;39minitrd-switch-root.target[0m - Switch Root.
+[[0;32m  OK  [0m] Stopped target [0;1;39minitrd-fs.target[0m - Initrd File Systems.
+[[0;32m  OK  [0m] Stopped target [0;1;39minitrd-root-fs.target[0m - Initrd Root File System.
+[[0;32m  OK  [0m] Reached target [0;1;39mintegritysetup.targ…[0m Local Integrity Protected Volumes.
+[[0;32m  OK  [0m] Reached target [0;1;39mslices.target[0m - Slice Units.
+[[0;32m  OK  [0m] Reached target [0;1;39msnapd.mounts-pre.target[0m - Mounting snaps.
+[[0;32m  OK  [0m] Reached target [0;1;39msnapd.mounts.target[0m - Mounted snaps.
+[[0;32m  OK  [0m] Reached target [0;1;39mswap.target[0m - Swaps.
+[[0;32m  OK  [0m] Reached target [0;1;39mtime-set.target[0m - System Time Set.
+[[0;32m  OK  [0m] Reached target [0;1;39mveritysetup.target[0m - Local Verity Protected Volumes.
+[[0;32m  OK  [0m] Listening on [0;1;39mdm-event.socket[0m - Device-mapper event daemon FIFOs.
+[[0;32m  OK  [0m] Listening on [0;1;39mlvm2-lvmpolld.socket[0m - LVM2 poll daemon socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msyslog.socket[0m - Syslog Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-ask-password.…[0m User Interactively for a Password.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-creds.socket[0m - Credential Encryption/Decryption.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-factory-reset.socket[0m - Factory Reset Management.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-mute-console.…[0mnsole Output Muting Service Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-networkd-varl…[0m Network Management Varlink Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-networkd.sock…[0m Network Management Netlink Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-resolved-moni…t[0m - Resolve Monitor Varlink Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-resolved-varl…t[0m - Resolve Service Varlink Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-udevd-control.socket[0m - udev Control Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-udevd-varlink.socket[0m - udev Varlink Socket.
+         Mounting [0;1;39mdev-hugepages.mount[0m - Huge Pages File System...
+         Mounting [0;1;39mdev-mqueue.mount[0m - POSIX Message Queue File System...
+         Mounting [0;1;39msys-kernel-debug.mount[0m - Kernel Debug File System...
+         Mounting [0;1;39msys-kernel-tracing.mount[0m - Kernel Trace File System...
+         Mounting [0;1;39mtmp.mount[0m - Temporary Directory /tmp...
+         Starting [0;1;39msystemd-journald.service[0m - Journal Service...
+         Starting [0;1;39mkeyboard-setup.service[0m - Set the console keyboard layout...
+         Starting [0;1;39mkmod-static-nodes.service[0m…eate List of Static Device Nodes...
+         Starting [0;1;39mlvm2-monitor.service[0m - Mo…ing dmeventd or progress polling...
+         Starting [0;1;39mmodprobe@efi_pstore.servi…[0m - Load Kernel Module efi_pstore...
+         Mounting [0;1;39msys-fs-fuse-connections.mount[0m - FUSE Control File System...
+         Starting [0;1;39msystemd-modules-load.service[0m - Load Kernel Modules...
+         Starting [0;1;39msystemd-remount-fs.servic…[0munt Root and Kernel File Systems...
+         Starting [0;1;39msystemd-udev-load-credent…[0mLoad udev Rules from Credentials...
+         Starting [0;1;39msystemd-udev-trigger.service[0m - Coldplug All udev Devices...
+[[0;32m  OK  [0m] Mounted [0;1;39mdev-hugepages.mount[0m - Huge Pages File System.
+[[0;32m  OK  [0m] Mounted [0;1;39mdev-mqueue.mount[0m - POSIX Message Queue File System.
+[[0;32m  OK  [0m] Mounted [0;1;39msys-kernel-debug.mount[0m - Kernel Debug File System.
+[[0;32m  OK  [0m] Mounted [0;1;39msys-kernel-tracing.mount[0m - Kernel Trace File System.
+[[0;32m  OK  [0m] Mounted [0;1;39msys-fs-fuse-connections.mount[0m - FUSE Control File System.
+[[0;32m  OK  [0m] Mounted [0;1;39mtmp.mount[0m - Temporary Directory /tmp.
+[[0;32m  OK  [0m] Finished [0;1;39mkmod-static-nodes.service[0m…Create List of Static Device Nodes.
+         Starting [0;1;39msystemd-tmpfiles-setup-de…[0m Device Nodes in /dev gracefully...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-udev-load-credent…[0m- Load udev Rules from Credentials.
+[[0;32m  OK  [0m] Finished [0;1;39mmodprobe@efi_pstore.service[0m - Load Kernel Module efi_pstore.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-modules-load.service[0m - Load Kernel Modules.
+         Starting [0;1;39msystemd-sysctl.service[0m - Apply Kernel Variables...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-remount-fs.servic…[0mmount Root and Kernel File Systems.
+         Starting [0;1;39mmultipathd.service[0m - Devi…pper Multipath Device Controller...
+         Starting [0;1;39mcloud-init-main.service[0m - Cloud-init: Single Process...
+         Starting [0;1;39msystemd-random-seed.service[0m - Load/Save OS Random Seed...
+[[0;32m  OK  [0m] Started [0;1;39msystemd-journald.service[0m - Journal Service.
+         Starting [0;1;39msystemd-journal-flush.ser…[0msh Journal to Persistent Storage...
+[[0;32m  OK  [0m] Finished [0;1;39mlvm2-monitor.service[0m - Mo…using dmeventd or progress polling.
+[[0;32m  OK  [0m] Started [0;1;39mmultipathd.service[0m - Devic…Mapper Multipath Device Controller.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-random-seed.service[0m - Load/Save OS Random Seed.
+[[0m[0;31m*     [0m] (1 of 9) Job dev-disk-by\x2dlabel-B…ice/start running (11s / 1min 30s)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 9) Job dev-disk-by\x2dlabel-B…ice/start running (15s / 1min 30s)
+M[K[[0;32m  OK  [0m] Finished [0;1;39msystemd-tmpfiles-setup-de…[0mic Device Nodes in /dev gracefully.
+[K         Starting [0;1;39msystemd-sysusers.service[0m - Create System Users...
+[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (1 of 9) Job dev-disk-by\x2dlabel-B…ice/start running (42s / 1min 30s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 9) Job systemd-sysctl.service/start running (48s / 1min 32s)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (2 of 9) Job systemd-sysctl.service/start running (50s / 1min 32s)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (2 of 9) Job systemd-sysctl.service/start running (54s / 1min 32s)
+M[K[    [0;31m*[0;1;31m*[0m] (3 of 9) Job keyboard-setup.service/start running (1min 1s / no limit)
+M[K[     [0;31m*[0m] (3 of 9) Job keyboard-setup.service/start running (1min 3s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] (3 of 9) Job keyboard-setup.service/start running (1min 5s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (4 of 9) Job systemd-journal-flush.…start running (1min 6s / 1min 33s)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (4 of 9) Job systemd-journal-flush.…start running (1min 7s / 1min 33s)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (4 of 9) Job systemd-journal-flush.…tart running (1min 10s / 1min 33s)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (5 of 9) Job systemd-udev-trigger.s…tart running (1min 29s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (5 of 9) Job systemd-udev-trigger.s…tart running (1min 36s / no limit)
+M[K[[0;1;31m TIME [0m] Timed out waiting for device [0;1;39mdev-ttyAMA0.device[0m - /dev/ttyAMA0.
+[K[[0;1;38:5:185mDEPEND[0m] Dependency failed for [0;1;39mserial-getty….service[0m - Serial Getty on ttyAMA0.
+[[0;1;31mFAILED[0m] Failed to start [0;1;39msystemd-sysctl.service[0m - Apply Kernel Variables.
+See 'systemctl status systemd-sysctl.service' for details.
+[[0;1;31m TIME [0m] Timed out waiting for device [0;1;39mdev-d…T.device[0m - /dev/disk/by-label/BOOT.
+[[0;1;38:5:185mDEPEND[0m] Dependency failed for [0;1;39mboot.mount[0m - /boot.
+[[0;1;38:5:185mDEPEND[0m] Dependency failed for [0;1;39mboot-efi.mount[0m - /boot/efi.
+[[0;1;38:5:185mDEPEND[0m] Dependency failed for [0;1;39mlocal-fs.target[0m - Local File Systems.
+[[0;1;38:5:185mDEPEND[0m] Dependency failed for [0;1;39msystemd-fsck…[0mm Check on /dev/disk/by-label/BOOT.
+[[0;1;31mFAILED[0m] Failed to start [0;1;39msystemd-journal-fl…[0mlush Journal to Persistent Storage.
+See 'systemctl status systemd-journal-flush.service' for details.
+[[0;1;31m TIME [0m] Timed out waiting for device [0;1;39mdev-d…I.device[0m - /dev/disk/by-label/UEFI.
+[[0;1;38:5:185mDEPEND[0m] Dependency failed for [0;1;39msystemd-fsck…[0mm Check on /dev/disk/by-label/UEFI.
+[[0;32m  OK  [0m] Stopped [0;1;39msystemd-ask-password-wall.…[0md Requests to Wall Directory Watch.
+[[0;32m  OK  [0m] Reached target [0;1;39mtimers.target[0m - Timer Units.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-sysext.socket[0m… System Extension Image Management.
+[[0;32m  OK  [0m] Reached target [0;1;39mcloud-init.target[0m - Cloud-init target.
+         Starting [0;1;39mconsole-setup.service[0m - Set console font and keymap...
+         Starting [0;1;39mfinalrd.service[0m - Create …time dir for shutdown pivot root...
+[[0;32m  OK  [0m] Reached target [0;1;39mgetty.target[0m - Login Prompts.
+[[0;32m  OK  [0m] Closed [0;1;39msyslog.socket[0m - Syslog Socket.
+[[0;32m  OK  [0m] Reached target [0;1;39mgetty-pre.target[0m - Preparation for Logins.
+         Starting [0;1;39msetvtrgb.service[0m - Set console scheme...
+         Starting [0;1;39mufw.service[0m - Uncomplicated firewall...
+[[0;32m  OK  [0m] Reached target [0;1;39mpaths.target[0m - Path Units.
+[[0;32m  OK  [0m] Reached target [0;1;39mcryptsetup.target[0m - Local Encrypted Volumes.
+[[0;32m  OK  [0m] Listening on [0;1;39mdbus.socket[0m - D-Bus System Message Bus Socket.
+[[0;32m  OK  [0m] Reached target [0;1;39msockets.target[0m - Socket Units.
+         Starting [0;1;39mapparmor.service[0m - Load AppArmor profiles...
+         Starting [0;1;39mdbus.service[0m - D-Bus System Message Bus...
+[[0;32m  OK  [0m] Started [0;1;39memergency.service[0m - Emergency Shell.
+[[0;32m  OK  [0m] Reached target [0;1;39memergency.target[0m - Emergency Mode.
+         Starting [0;1;39mplymouth-read-write.servi…[0mymouth To Write Out Runtime Data...
+         Starting [0;1;39msystemd-binfmt.service[0m - Set Up Additional Binary Formats...
+[[0;32m  OK  [0m] Finished [0;1;39mkeyboard-setup.service[0m - Set the console keyboard layout.
+[[0;32m  OK  [0m] Finished [0;1;39mufw.service[0m - Uncomplicated firewall.
+[[0;32m  OK  [0m] Finished [0;1;39mfinalrd.service[0m - Create …untime dir for shutdown pivot root.
+[[0;32m  OK  [0m] Finished [0;1;39mplymouth-read-write.servi…[0mPlymouth To Write Out Runtime Data.
+         Mounting [0;1;39mproc-sys-fs-binfmt_misc.m…[0mcutable File Formats File System...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-sysusers.service[0m - Create System Users.
+         Starting [0;1;39mnetplan-configure.service[0m - Netplan Backend Configuration...
+         Starting [0;1;39msystemd-resolved.service[0m - Network Name Resolution...
+         Starting [0;1;39msystemd-tmpfiles-setup-de…[0meate Static Device Nodes in /dev...
+         Starting [0;1;39msystemd-tmpfiles-setup.se…[0mate System Files and Directories...
+[[0;32m  OK  [0m] Finished [0;1;39mconsole-setup.service[0m - Set console font and keymap.
+[[0;32m  OK  [0m] Finished [0;1;39msetvtrgb.service[0m - Set console scheme.
+[[0;32m  OK  [0m] Mounted [0;1;39mproc-sys-fs-binfmt_misc.mo…[0mxecutable File Formats File System.
+[[0;32m  OK  [0m] Created slice [0;1;39msystem-getty.slice[0m - Slice /system/getty.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-binfmt.service[0m - Set Up Additional Binary Formats.
+[[0;32m  OK  [0m] Started [0;1;39mdbus.service[0m - D-Bus System Message Bus.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-tmpfiles-setup-de…[0mCreate Static Device Nodes in /dev.
+[[0;32m  OK  [0m] Reached target [0;1;39mlocal-fs-pre.target[0m…Preparation for Local File Systems.
+         Starting [0;1;39msystemd-udevd.service[0m - R…ager for Device Events and Files...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-tmpfiles-setup.se…[0mreate System Files and Directories.
+         Starting [0;1;39mldconfig.service[0m - Rebuild Dynamic Linker Cache...
+         Starting [0;1;39msystemd-journal-catalog-u…ervice[0m - Rebuild Journal Catalog...
+         Starting [0;1;39msystemd-machine-id-commit…[0mave Transient machine-id to Disk...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-machine-id-commit…[0m Save Transient machine-id to Disk.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-journal-catalog-u….service[0m - Rebuild Journal Catalog.
+You are in emergency mode. After logging in, type "journalctl -xb" to view
+system logs, "systemctl reboot" to reboot, or "exit"
+to continue bootup.
+Press Enter for system maintenance
+(or press Control-D to continue):

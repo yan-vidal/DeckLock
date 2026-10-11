@@ -132,6 +132,27 @@ dependencies is about 4. Not done: dpkg `force-unsafe-io` and `cache=unsafe`, wh
 have to win back minutes out of those 4, and masking background services, because the target
 was met and masking `snapd.seeded` risks a stalled first boot.
 
+An emulated guest's own boot timeouts scale with the same factor. systemd gives a device
+90 s to appear (`DefaultDeviceTimeoutSec`) and its early units 90 s to start (the
+`TimeoutSec` of `systemd-sysctl`, `systemd-journal-flush` and `systemd-sysusers`), and
+`systemd-udevd` starts only after `systemd-sysusers`, so no disk can appear before those
+have run. Of 50 emulated boots that passed on 2026-10-10, 11 needed 40 to 112 s from
+switch-root to queue the device job of `/boot`, instead of the usual 15 s. Twice more than
+90 s of such a stretch fell after that point: `/boot` and `/boot/efi` timed out,
+`local-fs.target` failed and the guest ended in emergency mode, where sshd never starts
+(runs 38083250241 and 38096972130, attempt 1). Why that stretch is slow in some boots is
+not known: the journals show no kernel stall warning and host memory was normal. With
+`--provision-native`, the host step therefore writes `90-decklock-emulation.conf` drop-ins
+into an emulated guest's disk that multiply those timeouts by the slowdown (720 s), and
+nothing into a KVM guest's. `result.json` records `guest_boot_timeout_scale`, and the
+guest's evidence gains `boot-timeouts.txt`, the values the booted system reports, and
+`failed-units.txt`. A guest installed by the in-guest fallback keeps the stock timeouts.
+
+Whatever the cause, the boot wait reads the guest's console after each failed SSH probe.
+Once it shows `emergency.target`, the run fails at once and names the units the console
+says failed, timed out or lost a dependency. Before, it waited out the 32-minute boot
+deadline and reported only "VM boot/SSH deadline exceeded".
+
 An official Arch cloud image is pinned by version and SHA256. The disk is a
 fresh copy-on-write overlay and cloud-init installs a one-run SSH key. QEMU uses
 user-mode networking with SSH bound only to a random localhost port. The guest

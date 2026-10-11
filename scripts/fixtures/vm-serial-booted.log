@@ -1,0 +1,279 @@
+         Starting [0;1;39minitrd-switch-root.service[0m - Switch Root...
+P+q6E616D65\[6n[32766;32766H[6n[!p]104\[0m[?7h[1G[0J
+[0;1;39mWelcome to [0m[1mUbuntu 26.04.1 LTS[0m[0;1;39m![0m
+
+]3008;start=bed39b0df8ce4e579c4eff3359bc064c;user=root;hostname=ubuntu;machineid=f81d4289c0ee4d9f880c4003f81d938e;bootid=174adfb3c6b443a88628762b1944f0e0;pid=1;pidfdid=1;comm=systemd;type=boot\[[0;32m  OK  [0m] Stopped [0;1;39minitrd-switch-root.service[0m - Switch Root.
+[[0;32m  OK  [0m] Created slice [0;1;39msystem-serial\x2dget…slice[0m - Slice /system/serial-getty.
+[[0;32m  OK  [0m] Created slice [0;1;39msystem-systemd\x2dfs…slice[0m - Slice /system/systemd-fsck.
+[[0;32m  OK  [0m] Created slice [0;1;39msystem-xfs_scrub.sli…[0mxfs_scrub background service slice.
+[[0;32m  OK  [0m] Created slice [0;1;39muser.slice[0m - User and Session Slice.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-ask-password-wall.…[0md Requests to Wall Directory Watch.
+[[0;32m  OK  [0m] Set up automount [0;1;39mproc-sys-fs-binfm…[0mormats File System Automount Point.
+         Expecting device [0;1;39mdev-disk-by\x2dla…device[0m - /dev/disk/by-label/BOOT...
+         Expecting device [0;1;39mdev-disk-by\x2dla…device[0m - /dev/disk/by-label/UEFI...
+         Expecting device [0;1;39mdev-ttyAMA0.device[0m - /dev/ttyAMA0...
+[[0;32m  OK  [0m] Reached target [0;1;39mimports.target[0m - Image Downloads.
+[[0;32m  OK  [0m] Stopped target [0;1;39minitrd-switch-root.target[0m - Switch Root.
+[[0;32m  OK  [0m] Stopped target [0;1;39minitrd-fs.target[0m - Initrd File Systems.
+[[0;32m  OK  [0m] Stopped target [0;1;39minitrd-root-fs.target[0m - Initrd Root File System.
+[[0;32m  OK  [0m] Reached target [0;1;39mintegritysetup.targ…[0m Local Integrity Protected Volumes.
+[[0;32m  OK  [0m] Reached target [0;1;39mslices.target[0m - Slice Units.
+[[0;32m  OK  [0m] Reached target [0;1;39msnapd.mounts-pre.target[0m - Mounting snaps.
+[[0;32m  OK  [0m] Reached target [0;1;39msnapd.mounts.target[0m - Mounted snaps.
+[[0;32m  OK  [0m] Reached target [0;1;39mswap.target[0m - Swaps.
+[[0;32m  OK  [0m] Reached target [0;1;39mtime-set.target[0m - System Time Set.
+[[0;32m  OK  [0m] Reached target [0;1;39mveritysetup.target[0m - Local Verity Protected Volumes.
+[[0;32m  OK  [0m] Listening on [0;1;39mdm-event.socket[0m - Device-mapper event daemon FIFOs.
+[[0;32m  OK  [0m] Listening on [0;1;39mlvm2-lvmpolld.socket[0m - LVM2 poll daemon socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msyslog.socket[0m - Syslog Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-ask-password.…[0m User Interactively for a Password.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-creds.socket[0m - Credential Encryption/Decryption.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-factory-reset.socket[0m - Factory Reset Management.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-mute-console.…[0mnsole Output Muting Service Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-networkd-varl…[0m Network Management Varlink Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-networkd.sock…[0m Network Management Netlink Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-resolved-moni…t[0m - Resolve Monitor Varlink Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-resolved-varl…t[0m - Resolve Service Varlink Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-udevd-control.socket[0m - udev Control Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-udevd-varlink.socket[0m - udev Varlink Socket.
+         Mounting [0;1;39mdev-hugepages.mount[0m - Huge Pages File System...
+         Mounting [0;1;39mdev-mqueue.mount[0m - POSIX Message Queue File System...
+         Mounting [0;1;39msys-kernel-debug.mount[0m - Kernel Debug File System...
+         Mounting [0;1;39msys-kernel-tracing.mount[0m - Kernel Trace File System...
+         Mounting [0;1;39mtmp.mount[0m - Temporary Directory /tmp...
+         Starting [0;1;39msystemd-journald.service[0m - Journal Service...
+         Starting [0;1;39mkeyboard-setup.service[0m - Set the console keyboard layout...
+         Starting [0;1;39mkmod-static-nodes.service[0m…eate List of Static Device Nodes...
+         Starting [0;1;39mlvm2-monitor.service[0m - Mo…ing dmeventd or progress polling...
+         Starting [0;1;39mmodprobe@efi_pstore.servi…[0m - Load Kernel Module efi_pstore...
+         Mounting [0;1;39msys-fs-fuse-connections.mount[0m - FUSE Control File System...
+         Starting [0;1;39msystemd-modules-load.service[0m - Load Kernel Modules...
+         Starting [0;1;39msystemd-remount-fs.servic…[0munt Root and Kernel File Systems...
+         Starting [0;1;39msystemd-udev-load-credent…[0mLoad udev Rules from Credentials...
+         Starting [0;1;39msystemd-udev-trigger.service[0m - Coldplug All udev Devices...
+[[0;32m  OK  [0m] Mounted [0;1;39mdev-hugepages.mount[0m - Huge Pages File System.
+[[0;32m  OK  [0m] Mounted [0;1;39mdev-mqueue.mount[0m - POSIX Message Queue File System.
+[[0;32m  OK  [0m] Mounted [0;1;39msys-kernel-debug.mount[0m - Kernel Debug File System.
+[[0;32m  OK  [0m] Mounted [0;1;39msys-kernel-tracing.mount[0m - Kernel Trace File System.
+[[0;32m  OK  [0m] Mounted [0;1;39mtmp.mount[0m - Temporary Directory /tmp.
+[[0;32m  OK  [0m] Mounted [0;1;39msys-fs-fuse-connections.mount[0m - FUSE Control File System.
+[[0;32m  OK  [0m] Finished [0;1;39mkmod-static-nodes.service[0m…Create List of Static Device Nodes.
+         Starting [0;1;39msystemd-tmpfiles-setup-de…[0m Device Nodes in /dev gracefully...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-modules-load.service[0m - Load Kernel Modules.
+         Starting [0;1;39msystemd-sysctl.service[0m - Apply Kernel Variables...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-udev-load-credent…[0m- Load udev Rules from Credentials.
+[[0;32m  OK  [0m] Finished [0;1;39mmodprobe@efi_pstore.service[0m - Load Kernel Module efi_pstore.
+[[0;32m  OK  [0m] Finished [0;1;39mlvm2-monitor.service[0m - Mo…using dmeventd or progress polling.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-journald.service[0m - Journal Service.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-remount-fs.servic…[0mmount Root and Kernel File Systems.
+         Starting [0;1;39mmultipathd.service[0m - Devi…pper Multipath Device Controller...
+         Starting [0;1;39mcloud-init-main.service[0m - Cloud-init: Single Process...
+         Starting [0;1;39msystemd-journal-flush.ser…[0msh Journal to Persistent Storage...
+         Starting [0;1;39msystemd-random-seed.service[0m - Load/Save OS Random Seed...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-tmpfiles-setup-de…[0mic Device Nodes in /dev gracefully.
+         Starting [0;1;39msystemd-sysusers.service[0m - Create System Users...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-sysctl.service[0m - Apply Kernel Variables.
+[[0;32m  OK  [0m] Started [0;1;39mmultipathd.service[0m - Devic…Mapper Multipath Device Controller.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-random-seed.service[0m - Load/Save OS Random Seed.
+[[0;32m  OK  [0m] Finished [0;1;39mkeyboard-setup.service[0m - Set the console keyboard layout.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-journal-flush.ser…[0mlush Journal to Persistent Storage.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-sysusers.service[0m - Create System Users.
+         Starting [0;1;39msystemd-resolved.service[0m - Network Name Resolution...
+         Starting [0;1;39msystemd-tmpfiles-setup-de…[0meate Static Device Nodes in /dev...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-tmpfiles-setup-de…[0mCreate Static Device Nodes in /dev.
+[[0;32m  OK  [0m] Reached target [0;1;39mlocal-fs-pre.target[0m…Preparation for Local File Systems.
+         Starting [0;1;39msystemd-udevd.service[0m - R…ager for Device Events and Files...
+[[0;32m  OK  [0m] Started [0;1;39msystemd-resolved.service[0m - Network Name Resolution.
+[[0;32m  OK  [0m] Reached target [0;1;39mnss-lookup.target[0m - Host and Network Name Lookups.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-udevd.service[0m - Ru…anager for Device Events and Files.
+[[0m[0;31m*     [0m] (1 of 5) Job systemd-udev-trigger.s…ice/start running (10s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] (1 of 5) Job systemd-udev-trigger.s…ice/start running (11s / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] (1 of 5) Job systemd-udev-trigger.s…ice/start running (11s / no limit)
+M[K[[0;32m  OK  [0m] Finished [0;1;39msystemd-udev-trigger.service[0m - Coldplug All udev Devices.
+[K[[0;32m  OK  [0m] Started [0;1;39msystemd-ask-password-conso…[0mequests to Console Directory Watch.
+[[0;32m  OK  [0m] Reached target [0;1;39mcryptsetup.target[0m - Local Encrypted Volumes.
+[[0;32m  OK  [0m] Started [0;1;39mcloud-init-main.service[0m - Cloud-init: Single Process.
+         Starting [0;1;39msystemd-fsck@dev-disk-by\…[0mCheck on /dev/disk/by-label/BOOT...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-fsck@dev-disk-by\…[0mm Check on /dev/disk/by-label/BOOT.
+         Mounting [0;1;39mboot.mount[0m - /boot...
+         Starting [0;1;39msystemd-fsck@dev-disk-by\…[0mCheck on /dev/disk/by-label/UEFI...
+[[0;32m  OK  [0m] Mounted [0;1;39mboot.mount[0m - /boot.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-fsck@dev-disk-by\…[0mm Check on /dev/disk/by-label/UEFI.
+         Mounting [0;1;39mboot-efi.mount[0m - /boot/efi...
+[[0;32m  OK  [0m] Mounted [0;1;39mboot-efi.mount[0m - /boot/efi.
+[[0;32m  OK  [0m] Reached target [0;1;39mlocal-fs.target[0m - Local File Systems.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-sysext.socket[0m… System Extension Image Management.
+         Starting [0;1;39mapparmor.service[0m - Load AppArmor profiles...
+         Starting [0;1;39mconsole-setup.service[0m - Set console font and keymap...
+         Starting [0;1;39mfinalrd.service[0m - Create …time dir for shutdown pivot root...
+         Starting [0;1;39mnetplan-configure.service[0m - Netplan Backend Configuration...
+         Starting [0;1;39mplymouth-read-write.servi…[0mymouth To Write Out Runtime Data...
+         Starting [0;1;39msystemd-binfmt.service[0m - Set Up Additional Binary Formats...
+         Starting [0;1;39msystemd-tmpfiles-setup.se…[0mate System Files and Directories...
+         Starting [0;1;39mufw.service[0m - Uncomplicated firewall...
+[[0;32m  OK  [0m] Finished [0;1;39mfinalrd.service[0m - Create …untime dir for shutdown pivot root.
+[[0;32m  OK  [0m] Finished [0;1;39mufw.service[0m - Uncomplicated firewall.
+[[0;32m  OK  [0m] Finished [0;1;39mplymouth-read-write.servi…[0mPlymouth To Write Out Runtime Data.
+         Mounting [0;1;39mproc-sys-fs-binfmt_misc.m…[0mcutable File Formats File System...
+[[0;32m  OK  [0m] Finished [0;1;39mconsole-setup.service[0m - Set console font and keymap.
+[[0;32m  OK  [0m] Mounted [0;1;39mproc-sys-fs-binfmt_misc.mo…[0mxecutable File Formats File System.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-binfmt.service[0m - Set Up Additional Binary Formats.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-tmpfiles-setup.se…[0mreate System Files and Directories.
+         Starting [0;1;39mldconfig.service[0m - Rebuild Dynamic Linker Cache...
+         Starting [0;1;39msystemd-journal-catalog-u…ervice[0m - Rebuild Journal Catalog...
+         Starting [0;1;39msystemd-machine-id-commit…[0mave Transient machine-id to Disk...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-machine-id-commit…[0m Save Transient machine-id to Disk.
+[[0;32m  OK  [0m] Finished [0;1;39mnetplan-configure.service[0m - Netplan Backend Configuration.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-journal-catalog-u….service[0m - Rebuild Journal Catalog.
+[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] (2 of 2) Job apparmor.service/start running (26s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] (2 of 2) Job apparmor.service/start running (27s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] (2 of 2) Job apparmor.service/start running (27s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] (1 of 2) Job ldconfig.service/start running (28s / no limit)
+M[K[[0;32m  OK  [0m] Finished [0;1;39mldconfig.service[0m - Rebuild Dynamic Linker Cache.
+[K         Starting [0;1;39msystemd-update-done.service[0m - Update is Completed...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-update-done.service[0m - Update is Completed.
+[     [0;31m*[0m] Job apparmor.service/start running (30s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] Job apparmor.service/start running (31s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] Job apparmor.service/start running (31s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] Job apparmor.service/start running (32s / no limit)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] Job apparmor.service/start running (32s / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] Job apparmor.service/start running (33s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] Job apparmor.service/start running (33s / no limit)
+M[K[[0m[0;31m*     [0m] Job apparmor.service/start running (34s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] Job apparmor.service/start running (34s / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] Job apparmor.service/start running (35s / no limit)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] Job apparmor.service/start running (35s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] Job apparmor.service/start running (36s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] Job apparmor.service/start running (36s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] Job apparmor.service/start running (37s / no limit)
+M[K[     [0;31m*[0m] Job apparmor.service/start running (37s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] Job apparmor.service/start running (38s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] Job apparmor.service/start running (38s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] Job apparmor.service/start running (39s / no limit)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] Job apparmor.service/start running (39s / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] Job apparmor.service/start running (40s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] Job apparmor.service/start running (40s / no limit)
+M[K[[0m[0;31m*     [0m] Job apparmor.service/start running (41s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] Job apparmor.service/start running (41s / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] Job apparmor.service/start running (42s / no limit)
+M[K[[0;32m  OK  [0m] Listening on [0;1;39msystemd-rfkill.socket[0m…ll Switch Status /dev/rfkill Watch.
+[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] Job apparmor.service/start running (44s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] Job apparmor.service/start running (45s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] Job apparmor.service/start running (45s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] Job apparmor.service/start running (46s / no limit)
+M[K[     [0;31m*[0m] Job apparmor.service/start running (46s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] Job apparmor.service/start running (47s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] Job apparmor.service/start running (47s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] Job apparmor.service/start running (48s / no limit)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] Job apparmor.service/start running (48s / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] Job apparmor.service/start running (49s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] Job apparmor.service/start running (49s / no limit)
+M[K[[0m[0;31m*     [0m] Job apparmor.service/start running (50s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] Job apparmor.service/start running (50s / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] Job apparmor.service/start running (51s / no limit)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] Job apparmor.service/start running (51s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] Job apparmor.service/start running (52s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] Job apparmor.service/start running (52s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] Job apparmor.service/start running (53s / no limit)
+M[K[     [0;31m*[0m] Job apparmor.service/start running (53s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] Job apparmor.service/start running (54s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] Job apparmor.service/start running (54s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] Job apparmor.service/start running (55s / no limit)
+M[K[[0;32m  OK  [0m] Finished [0;1;39mapparmor.service[0m - Load AppArmor profiles.
+[K         Starting [0;1;39msnapd.apparmor.service[0m - …iles managed internally by snapd...
+         Starting [0;1;39mcloud-init-local.service[0m …-init: Local Stage (pre-network)...
+[[0;32m  OK  [0m] Finished [0;1;39msnapd.apparmor.service[0m - …ofiles managed internally by snapd.
+[  183.671905] cloud-init[946]: Cloud-init v. 26.1-0ubuntu3~26.04.1 running 'init-local' at Sat, 10 Oct 2026 22:49:33 +0000. Up 183.25 seconds.
+[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] Job cloud-init-local.service/start running (58s / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] Job cloud-init-local.service/start running (58s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] Job cloud-init-local.service/start running (59s / no limit)
+M[K[[0m[0;31m*     [0m] Job cloud-init-local.service/start running (59s / no limit)
+M[K[[0;1;31m*[0m[0;31m*    [0m] Job cloud-init-local.service/start running (1min / no limit)
+M[K[[0;31m*[0;1;31m*[0m[0;31m*   [0m] Job cloud-init-local.service/start running (1min / no limit)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] Job cloud-init-local.service/start running (1min 1s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] Job cloud-init-local.service/start running (1min 1s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] Job cloud-init-local.service/start running (1min 2s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] Job cloud-init-local.service/start running (1min 2s / no limit)
+M[K[[0;32m  OK  [0m] Finished [0;1;39mcloud-init-local.service[0m …ud-init: Local Stage (pre-network).
+[K[[0;32m  OK  [0m] Reached target [0;1;39mnetwork-pre.target[0m - Preparation for Network.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-networkd-reso…[0mork Management Resolve Hook Socket.
+         Starting [0;1;39mcloud-init-network.service[0m - Cloud-init: Network Stage...
+         Starting [0;1;39msystemd-networkd.service[0m - Network Management...
+[  199.032539] cloud-init[946]: Cloud-init v. 26.1-0ubuntu3~26.04.1 running 'init' at Sat, 10 Oct 2026 22:49:48 +0000. Up 198.79 seconds.
+[  199.375438] cloud-init[946]: ci-info: ++++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++
+[  199.380783] cloud-init[946]: ci-info: +--------+------+----------------------------+---------------+--------+-------------------+
+[  199.385719] cloud-init[946]: ci-info: | Device |  Up  |          Address           |      Mask     | Scope  |     Hw-Address    |
+[  199.389822] cloud-init[946]: ci-info: +--------+------+----------------------------+---------------+--------+-------------------+
+[  199.393963] cloud-init[946]: ci-info: | enp0s1 | True |         10.0.2.15          | 255.255.255.0 | global | 52:54:00:12:34:56 |
+[  199.398006] cloud-init[946]: ci-info: | enp0s1 | True | fec0::5054:ff:fe12:3456/64 |       .       |  site  | 52:54:00:12:34:56 |
+[  199.401765] cloud-init[946]: ci-info: | enp0s1 | True | fe80::5054:ff:fe12:3456/64 |       .       |  link  | 52:54:00:12:34:56 |
+[  199.405018] cloud-init[946]: ci-info: |   lo   | True |         127.0.0.1          |   255.0.0.0   |  host  |         .         |
+[  199.408542] cloud-init[946]: ci-info: |   lo   | True |          ::1/128           |       .       |  host  |         .         |
+[  199.411322] cloud-init[946]: ci-info: +--------+------+----------------------------+---------------+--------+-------------------+
+[  199.414665] cloud-init[946]: ci-info: ++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++
+[  199.417661] cloud-init[946]: ci-info: +-------+-------------+----------+-----------------+-----------+-------+
+[  199.420416] cloud-init[946]: ci-info: | Route | Destination | Gateway  |     Genmask     | Interface | Flags |
+[  199.424366] cloud-init[946]: ci-info: +-------+-------------+----------+-----------------+-----------+-------+
+[  199.426978] cloud-init[946]: ci-info: |   0   |   0.0.0.0   | 10.0.2.2 |     0.0.0.0     |   enp0s1  |   UG  |
+[  199.430394] cloud-init[946]: ci-info: |   1   |   10.0.2.0  | 0.0.0.0  |  255.255.255.0  |   enp0s1  |   U   |
+[  199.434810] cloud-init[946]: ci-info: |   2   |   10.0.2.2  | 0.0.0.0  | 255.255.255.255 |   enp0s1  |   UH  |
+[  199.437966] cloud-init[946]: ci-info: |   3   |   10.0.2.3  | 0.0.0.0  | 255.255.255.255 |   enp0s1  |   UH  |
+[  199.441219] cloud-init[946]: ci-info: +-------+-------------+----------+-----------------+-----------+-------+
+[  199.443616] cloud-init[946]: ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+[  199.446971] cloud-init[946]: ci-info: +-------+-------------+---------+-----------+-------+
+[  199.450982] cloud-init[946]: ci-info: | Route | Destination | Gateway | Interface | Flags |
+[  199.454279] cloud-init[946]: ci-info: +-------+-------------+---------+-----------+-------+
+[  199.457665] cloud-init[946]: ci-info: |   0   |  fe80::/64  |    ::   |   enp0s1  |   U   |
+[  199.461391] cloud-init[946]: ci-info: |   1   |  fec0::/64  |    ::   |   enp0s1  |   Ue  |
+[  199.465348] cloud-init[946]: ci-info: |   2   |     ::/0    | fe80::2 |   enp0s1  |  UGe  |
+[  199.468622] cloud-init[946]: ci-info: |   4   |    local    |    ::   |   enp0s1  |   U   |
+[  199.471875] cloud-init[946]: ci-info: |   5   |    local    |    ::   |   enp0s1  |   U   |
+[  199.474565] cloud-init[946]: ci-info: |   6   |  multicast  |    ::   |   enp0s1  |   U   |
+[  199.477555] cloud-init[946]: ci-info: +-------+-------------+---------+-----------+-------+
+[[0;32m  OK  [0m] Started [0;1;39msystemd-networkd.service[0m - Network Management.
+[[0;32m  OK  [0m] Reached target [0;1;39mnetwork.target[0m - Network.
+         Starting [0;1;39msystemd-networkd-persiste…[0mtent Storage in systemd-networkd...
+         Starting [0;1;39msystemd-networkd-wait-onl…[0m - Wait for Network to be Online...
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-networkd-persiste…[0mistent Storage in systemd-networkd.
+[[0;32m  OK  [0m] Finished [0;1;39msystemd-networkd-wait-onl…ce[0m - Wait for Network to be Online.
+[     [0;31m*[0m] Job cloud-init-network.service/start running (1min 16s / no limit)
+M[K[    [0;31m*[0;1;31m*[0m] Job cloud-init-network.service/start running (1min 16s / no limit)
+M[K[   [0;31m*[0;1;31m*[0m[0;31m*[0m] Job cloud-init-network.service/start running (1min 17s / no limit)
+M[K[  [0;31m*[0;1;31m*[0m[0;31m* [0m] Job cloud-init-network.service/start running (1min 17s / no limit)
+M[K[ [0;31m*[0;1;31m*[0m[0;31m*  [0m] Job cloud-init-network.service/start running (1min 18s / no limit)
+M[K[[0;32m  OK  [0m] Finished [0;1;39mcloud-init-network.service[0m - Cloud-init: Network Stage.
+[K[[0;32m  OK  [0m] Reached target [0;1;39mcloud-config.target[0m - Cloud-config availability.
+[[0;32m  OK  [0m] Reached target [0;1;39mnetwork-online.target[0m - Network is Online.
+[[0;32m  OK  [0m] Reached target [0;1;39msysinit.target[0m - System Initialization.
+[[0;32m  OK  [0m] Started [0;1;39mapt-daily.timer[0m - Daily apt download activities.
+[[0;32m  OK  [0m] Started [0;1;39mapt-daily-upgrade.timer[0m - …y apt upgrade and clean activities.
+[[0;32m  OK  [0m] Started [0;1;39mdpkg-db-backup.timer[0m - Daily dpkg database backup timer.
+[[0;32m  OK  [0m] Started [0;1;39me2scrub_all.timer[0m - Period…Metadata Check for All Filesystems.
+[[0;32m  OK  [0m] Started [0;1;39mfstrim.timer[0m - Discard unused filesystem blocks once a week.
+[[0;32m  OK  [0m] Started [0;1;39mfwupd-refresh.timer[0m - Refresh fwupd metadata regularly.
+[[0;32m  OK  [0m] Started [0;1;39mlogrotate.timer[0m - Daily rotation of log files.
+[[0;32m  OK  [0m] Started [0;1;39mman-db.timer[0m - Daily man-db regeneration.
+[[0;32m  OK  [0m] Started [0;1;39mmotd-news.timer[0m - Message of the Day.
+[[0;32m  OK  [0m] Started [0;1;39msysstat-collect.timer[0m - Ru…y accounting tool every 10 minutes.
+[[0;32m  OK  [0m] Started [0;1;39msysstat-rotate.timer[0m - Rot…tem activity data file at midnight.
+[[0;32m  OK  [0m] Started [0;1;39msysstat-summary.timer[0m - Ge… of yesterday's process accounting.
+[[0;32m  OK  [0m] Started [0;1;39msystemd-tmpfiles-clean.tim…[0my Cleanup of Temporary Directories.
+[[0;32m  OK  [0m] Started [0;1;39mupdate-notifier-download.t…[0mhat failed at package install time.
+[[0;32m  OK  [0m] Started [0;1;39mupdate-notifier-motd.timer[0m… a new version of Ubuntu available.
+[[0;32m  OK  [0m] Started [0;1;39mxfs_scrub_all.timer[0m - Peri…Metadata Check for All Filesystems.
+[[0;32m  OK  [0m] Reached target [0;1;39mboot-complete.target[0m - Boot Completion Check.
+[[0;32m  OK  [0m] Reached target [0;1;39mpaths.target[0m - Path Units.
+[[0;32m  OK  [0m] Reached target [0;1;39mtimers.target[0m - Timer Units.
+[[0;32m  OK  [0m] Listening on [0;1;39mcloud-init-hotplugd.s…t[0m - cloud-init hotplug hook socket.
+[[0;32m  OK  [0m] Listening on [0;1;39mdbus.socket[0m - D-Bus System Message Bus Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39miscsid.socket[0m - Open-iSCSI iscsid Socket.
+         Starting [0;1;39mlxd-installer.socket[0m - He…er to install lxd snap on demand...
+[[0;32m  OK  [0m] Listening on [0;1;39mpolkit-agent-helper.s…[0mAuthorization Manager Agent Helper.
+         Starting [0;1;39msnapd.socket[0m - Socket activation for snappy daemon...
+[[0;32m  OK  [0m] Listening on [0;1;39mssh.socket[0m - OpenBSD Secure Shell server socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msshd-unix-local.socke…[0mtemd-ssh-generator, AF_UNIX Local).
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-hostnamed.socket[0m - Hostname Service Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39msystemd-logind-varlin…[0mer Login Management Varlink Socket.
+[[0;32m  OK  [0m] Listening on [0;1;39muuidd.socket[0m - UUID daemon activation socket.
+[[0;32m  OK  [0m] Reached target [0;1;39mremote-fs-pre.targe…[0mreparation for Remote File Systems.
+[[0;32m  OK  [0m] Reached target [0;1;39mremote-fs.target[0m - Remote File Systems.
