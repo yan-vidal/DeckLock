@@ -94,6 +94,21 @@ def phase_marks(log):
             if (fields := line.split()) and len(fields) == 3 and fields[0] == 'DECKLOCK_VM_PHASE']
 
 
+def emergency_mode(console):
+    """Why the guest's boot ended in systemd's emergency mode, or None if it has not.
+
+    sshd never starts there, so waiting for SSH can only run into the deadline. The reason
+    is the console's own account: every unit that failed, timed out or lost a dependency,
+    in the order systemd printed them.
+    """
+    lines = [re.sub(r'\x1b\[[0-9;:?]*[A-Za-z]', '', line) for line in console.replace('\r', '\n').split('\n')]
+    if not any('Reached target emergency.target' in line for line in lines):
+        return None
+    failed = [re.sub(r'[\x00-\x1f\x7f]', '', match.group(1)).strip().rstrip('.')
+              for line in lines if (match := re.search(r'\[(?:FAILED|DEPEND| TIME )\] (.+)', line))]
+    return '; '.join(dict.fromkeys(failed)) or 'the console names no failed unit'
+
+
 def cpu_model(arch, kvm):
     if kvm:
         return 'host'
@@ -264,10 +279,13 @@ def main():
         preparation_started = time.monotonic()
         if args.provision_native:
             manifest = ROOT / 'scripts/vm/distros' / f'{args.target}.env'
+            # An emulated guest's own boot timeouts scale like every wait on this side.
             raw, reason = vm_native.try_native(
                 base, manifest, work, logs, args.arch,
-                disable=vm_native.read_manifest(manifest).get('DISABLE_UNITS', '').split())
+                disable=vm_native.read_manifest(manifest).get('DISABLE_UNITS', '').split(),
+                timeout_scale=slowdown)
             if raw is not None:
+                report['guest_boot_timeout_scale'] = slowdown
                 disk = f'file={raw},if=virtio,format=raw'
                 guest_env = work / f'{args.target}.env'
                 guest_env.write_text(vm_native.guest_manifest(manifest))
@@ -342,6 +360,11 @@ def main():
                     ready = subprocess.run([*ssh, 'test -f /etc/decklock-test-vm'], capture_output=True, timeout=8 * slowdown)
                     if ready.returncode == 0:
                         break
+                    # Named now, with what the console says failed, rather than as a missed deadline.
+                    serial = logs / 'serial.log'
+                    stuck = emergency_mode(serial.read_text(errors='replace')) if serial.exists() else None
+                    if stuck:
+                        raise RuntimeError(f'Guest booted into systemd emergency mode, where sshd never starts: {stuck}; see serial.log')
                     if time.monotonic() > deadline:
                         raise TimeoutError('VM boot/SSH deadline exceeded')
                     time.sleep(2)

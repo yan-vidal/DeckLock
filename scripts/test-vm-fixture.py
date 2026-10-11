@@ -8,6 +8,7 @@ made it abort, and the evidence that would have explained it, with cloud-init
 replaced by a stub that exits the way the real one does.
 """
 import ast
+import importlib.util
 import inspect
 import os
 from pathlib import Path
@@ -27,6 +28,8 @@ GREETER = ROOT / "scripts/vm/greeter.py"
 WORKFLOW = ROOT / ".github/workflows/checks.yml"
 COMPOSITOR = ROOT / "scripts/vm/compositor.py"
 EXERCISE = ROOT / "scripts/vm/exercise.py"
+SERIAL_EMERGENCY = ROOT / "scripts/fixtures/vm-serial-emergency.log"
+SERIAL_BOOTED = ROOT / "scripts/fixtures/vm-serial-booted.log"
 
 
 def run_with_stub(exit_code, output="status: done"):
@@ -577,6 +580,133 @@ def check_candidate_stays_in_guest(native):
     return failures
 
 
+def load_runner():
+    """test-vm.py as a module: importing it defines its helpers and starts nothing."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    try:
+        spec = importlib.util.spec_from_file_location("decklock_test_vm", VM_RUNNER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception as error:  # whatever stops the import is the finding
+        return None, [f"scripts/test-vm.py cannot be imported: {type(error).__name__}: {error}"]
+    return module, []
+
+
+def check_emergency_mode():
+    """A guest in systemd's emergency mode never starts sshd, so waiting for SSH cannot end well.
+
+    Two emulated aarch64 guests booted into it (runs 38083250241 and 38096972130, attempt 1):
+    /boot's device missed systemd's 90 s timeout, local-fs.target failed, and the runner
+    waited out its 32-minute boot deadline to report only "VM boot/SSH deadline exceeded".
+    The fixtures are consoles of real guests from switch-root on: the second of those two,
+    and one that booted (run 38092558099).
+    """
+    runner, failures = load_runner()
+    if runner is None:
+        return failures
+    if not hasattr(runner, "emergency_mode"):
+        return ["test-vm.py cannot tell a guest in emergency mode from one that is still booting"]
+    stuck = SERIAL_EMERGENCY.read_text(errors="replace")
+    reason = runner.emergency_mode(stuck)
+    if not reason:
+        failures.append("a guest that reached emergency.target is not recognized")
+    else:
+        for needle in ("/dev/disk/by-label/BOOT", "local-fs.target", "systemd-sysctl.service"):
+            if needle not in reason:
+                failures.append(f"the emergency reason does not name {needle}: {reason!r}")
+        if "\x1b" in reason or "\r" in reason or "\n" in reason:
+            failures.append(f"the emergency reason carries terminal control characters: {reason!r}")
+    # Failed units alone are not emergency mode: until the target is reached the guest may yet boot.
+    failing = stuck[:stuck.index("emergency.service")]
+    if "[FAILED]" not in failing.replace("\x1b[0;1;31m", "").replace("\x1b[0m", ""):
+        failures.append("the emergency fixture no longer shows a failed unit before emergency mode")
+    if runner.emergency_mode(failing):
+        failures.append("a guest with a failed unit, not yet in emergency mode, was given up on")
+    if runner.emergency_mode(SERIAL_BOOTED.read_text(errors="replace")):
+        failures.append("a guest that booted was taken for one in emergency mode")
+    if runner.emergency_mode(""):
+        failures.append("an empty console was taken for emergency mode")
+    # test-vm.py cannot run here without a guest, so the place of the check is pinned: after
+    # each failed SSH probe, before the deadline, so the wait ends when the console says why.
+    source = VM_RUNNER.read_text()
+    order = ("ready = subprocess.run([*ssh, 'test -f /etc/decklock-test-vm']",
+             "emergency_mode(serial.read_text(errors='replace')",
+             "raise TimeoutError('VM boot/SSH deadline exceeded')")
+    positions = [source.find(needle) for needle in order]
+    missing = [needle for needle, at in zip(order, positions) if at < 0]
+    if missing:
+        failures.extend(f"test-vm.py lacks `{needle}`" for needle in missing)
+    elif positions != sorted(positions):
+        failures.append("the boot wait does not check the console for emergency mode before its deadline")
+    return failures
+
+
+def check_emulated_boot_timeouts(native):
+    """An emulated guest's own boot timeouts scale like the runner's waits.
+
+    systemd gives a device 90 s to appear and its early units 90 s to start, and
+    systemd-udevd starts only after systemd-sysusers, so /boot cannot appear before those
+    have run. Of 50 emulated boots that passed on 2026-10-10, 11 needed 40 to 112 s from
+    switch-root to queue /boot's device job instead of the usual 15 s; twice more than 90 s
+    of such a stretch fell after that point and the guest ended in emergency mode. The
+    runner already scales every wait of its own by the emulation's slowdown; a KVM guest
+    keeps the distribution's timeouts.
+    """
+    failures = []
+    units = ("systemd-sysctl.service", "systemd-journal-flush.service", "systemd-sysusers.service")
+    for scale, expected in ((8, "720s"), (1, None)):
+        with tempfile.TemporaryDirectory(prefix="decklock-native-") as directory:
+            bin_dir, _ = stubs(directory)
+            root = Path(directory) / "root"
+            try:
+                script = native.chroot_script("/dev/loop7p1", root, "/x/ubuntu.env",
+                                              Path(directory) / "policy-rc.d", timeout_scale=scale)
+            except TypeError:
+                return ["chroot_script cannot scale the guest's boot timeouts yet"]
+            env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
+            result = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, timeout=20)
+            if result.returncode:
+                failures.append(f"chroot script exit {result.returncode} (scale {scale}): {result.stderr}")
+            if expected is None:
+                if (root / "etc/systemd").exists():
+                    failures.append("a guest that is not emulated had its systemd configuration changed")
+                continue
+            manager = root / "etc/systemd/system.conf.d/90-decklock-emulation.conf"
+            text = manager.read_text() if manager.is_file() else None
+            if text != f"[Manager]\nDefaultDeviceTimeoutSec={expected}\n":
+                failures.append(f"an emulated guest waits the stock 90 s for its devices: {text!r}")
+            for unit in units:
+                dropin = root / f"etc/systemd/system/{unit}.d/90-decklock-emulation.conf"
+                text = dropin.read_text() if dropin.is_file() else None
+                if text != f"[Service]\nTimeoutSec={expected}\n":
+                    failures.append(f"{unit} keeps its stock 90 s in an emulated guest: {text!r}")
+    for scale, wanted in ((8, True), (None, False)):
+        with tempfile.TemporaryDirectory(prefix="decklock-native-") as directory:
+            work = Path(directory)
+            (work / "base.img").write_bytes(b"")
+            runner = FakeRun()
+            options = {} if scale is None else {"timeout_scale": scale}
+            try:
+                native.provision(work / "base.img", work / "ubuntu.env", work, work / "provision.log",
+                                 run=runner, geteuid=lambda: 1000, settle=lambda _: None,
+                                 leftover=lambda mount: [], **options)
+            except TypeError:
+                return failures + ["provision cannot pass the emulation's slowdown to the guest's disk"]
+            script = next((plain(c)[-1] for c in runner.commands if "unshare" in c), "")
+            if ("DefaultDeviceTimeoutSec=720s" in script) != wanted:
+                failures.append(f"provision(timeout_scale={scale}) wrote the wrong boot timeouts into the guest")
+    if "timeout_scale=slowdown" not in VM_RUNNER.read_text():
+        failures.append("test-vm.py does not give native provisioning the emulation's slowdown")
+    # What the booted guest runs with is evidence, not an inference from provision.log.
+    setup = SETUP.read_text()
+    for needle, why in (("DefaultDeviceTimeoutUSec", "the device timeout the guest booted with"),
+                        ("systemctl --failed", "the units that failed during boot"),
+                        *((unit, f"the start timeout {unit} booted with") for unit in units)):
+        if needle not in setup:
+            failures.append(f"the guest's evidence does not record {why}")
+    return failures
+
+
 def main():
     failures = []
 
@@ -700,7 +830,8 @@ def main():
         for check in (check_provisioning_script, check_native_preconditions, check_chroot_script,
                       check_native_orchestration, check_native_fallback, check_mounts_under,
                       check_offline_guest_state,
-                      check_containment, check_candidate_stays_in_guest):
+                      check_containment, check_candidate_stays_in_guest,
+                      check_emulated_boot_timeouts):
             failures.extend(check(native))
 
     failures.extend(check_native_wiring())
@@ -709,6 +840,7 @@ def main():
     failures.extend(check_sway_readiness())
     failures.extend(check_flag_help_warns())
     failures.extend(check_native_workflow())
+    failures.extend(check_emergency_mode())
 
     if failures:
         for failure in failures:

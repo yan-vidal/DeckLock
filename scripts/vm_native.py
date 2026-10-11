@@ -30,6 +30,12 @@ ROOT_LABEL = 'cloudimg-rootfs'
 REQUIRED_TOOLS = ('qemu-img', 'losetup', 'lsblk', 'unshare', 'chroot', 'timeout',
                   'growpart', 'e2fsck', 'resize2fs')
 ENV_IN_GUEST = '/tmp/decklock-target.env'
+# systemd's stock patience at boot: DefaultDeviceTimeoutSec, and the TimeoutSec its early
+# units ship with. systemd-udevd starts after systemd-sysusers, so no device can appear
+# before these have run.
+SYSTEMD_BOOT_TIMEOUT = 90
+EARLY_BOOT_UNITS = ('systemd-sysctl.service', 'systemd-journal-flush.service', 'systemd-sysusers.service')
+DROPIN = '90-decklock-emulation.conf'
 
 
 class NativeUnavailable(Exception):
@@ -50,7 +56,25 @@ def provisioning_script(env_path=ENV_IN_GUEST):
         '$SYNC_AND_INSTALL $HARNESS_PACKAGES\n')
 
 
-def chroot_script(partition, mount, manifest, policy, disable=()):
+def boot_timeouts_script(timeout_scale):
+    """Shell that scales the guest's boot timeouts by the emulation's slowdown; nothing under KVM.
+
+    An emulated boot spends, in about one of four, 40 to 112 s between switch-root and the
+    start of its early units instead of 15 s. Twice more than 90 s of that fell after /boot's
+    device job was queued, and the guest ended in emergency mode (runs 38083250241 and
+    38096972130, attempt 1). The runner scales its own waits by the same factor.
+    """
+    if timeout_scale <= 1:
+        return ''
+    seconds = SYSTEMD_BOOT_TIMEOUT * timeout_scale
+    files = {f'etc/systemd/system.conf.d/{DROPIN}': f'[Manager]\\nDefaultDeviceTimeoutSec={seconds}s\\n'}
+    files.update({f'etc/systemd/system/{unit}.d/{DROPIN}': f'[Service]\\nTimeoutSec={seconds}s\\n'
+                  for unit in EARLY_BOOT_UNITS})
+    return ''.join(f'mkdir -p "$root/{Path(path).parent}"\nprintf {shlex.quote(text)} > "$root/{path}"\n'
+                   for path, text in files.items())
+
+
+def chroot_script(partition, mount, manifest, policy, disable=(), timeout_scale=1):
     """Runs under `unshare --mount --propagation private`: mount, prepare, install, restore.
 
     The EXIT trap is installed before anything is prepared and undoes only what was done,
@@ -79,7 +103,7 @@ def chroot_script(partition, mount, manifest, policy, disable=()):
         'moved=1\n'
         'cp /etc/resolv.conf "$root/etc/resolv.conf"\n'
         f'chroot "$root" /bin/bash -c {q(provisioning_script())}\n'
-        + disabled)
+        + disabled + boot_timeouts_script(timeout_scale))
 
 
 def guest_manifest(path):
@@ -170,7 +194,7 @@ def root_partition(host, loop, settle=time.sleep):
     raise NativeUnavailable(f'no partition labelled {ROOT_LABEL} on {loop}')
 
 
-def provision(base_image, manifest, work, log_path, *, disable=(), run=subprocess.run,
+def provision(base_image, manifest, work, log_path, *, disable=(), timeout_scale=1, run=subprocess.run,
               geteuid=os.geteuid, size_gib=GUEST_DISK_GIB, settle=time.sleep,
               leftover=lambda mount: mounts_under(mount, Path('/proc/self/mountinfo').read_text())):
     """Copy the pinned image into `work`, install the harness packages into the copy, return its path.
@@ -202,7 +226,7 @@ def provision(base_image, manifest, work, log_path, *, disable=(), run=subproces
                 # leave the root-owned unshare, chroot and apt tree running.
                 host(['timeout', '--kill-after=30', '1800', 'unshare', '--mount', '--propagation', 'private', 'bash', '-c',
                       chroot_script(partition, mount, manifest, policy,
-                                    disable=disable)], timeout=1800 + 90)
+                                    disable=disable, timeout_scale=timeout_scale)], timeout=1800 + 90)
             finally:
                 host(['sync'], timeout=120, check=False)
                 host(['losetup', '-d', loop], timeout=60)

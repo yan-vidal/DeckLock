@@ -817,3 +817,29 @@ no agent running): without a terminal it fails with "Error creating textual auth
 agent" (exit 127); started from a terminal it would prompt there, away from the window. The
 button now passes --disable-internal-agent, whose real answer is "No authentication agent
 found." with exit 127, the case the fake reproduces; the test failed first on the old argv.
+
+2026-10-10 emulated ARM guests booting into emergency mode (branch ci/arm-boot-hang-evidence):
+the aarch64 `greeter` guest missed its boot deadline twice (run 38083250241 attempt 1 on
+be38b62, run 38096972130 attempt 1 on 1786fe0); both reruns of only that job passed. The first
+reading, recorded in PR #66's description, was a guest frozen in silence: wrong, it came from
+the end of the serial log only. The whole console shows systemd timing out the devices of /boot
+and /boot/efi after 90 s, failing local-fs.target, systemd-sysctl and systemd-journal-flush,
+and printing "You are in emergency mode". sshd never starts there, and test-vm.py did not
+recognize it, so it waited out its 32-minute deadline. The journal.log that setup.sh already
+collects, from 50 passing boots of the same day in all three guests, shows the mechanism: from
+"Switching root." to the device job of /boot being queued takes 15 s as a rule, but 40 to 112 s
+in 11 of them, and systemd-udevd starts only after systemd-sysusers, so no disk can appear
+before that stretch ends. A passing greeter boot had already spent 52 of the 90 s. Both failures
+landing on the greeter guest is chance. The runner scales its own waits by 8 under emulation;
+the guest's systemd timeouts were not scaled. The user chose to scale them over detection alone
+or an automatic boot retry. vm_native.chroot_script writes 90-decklock-emulation.conf drop-ins
+into an emulated guest's disk (DefaultDeviceTimeoutSec and the TimeoutSec of systemd-sysctl,
+systemd-journal-flush and systemd-sysusers, 90 s times the slowdown), nothing for a KVM guest;
+test-vm.py passes the slowdown, records guest_boot_timeout_scale and, after each failed SSH
+probe, reads the console: emergency.target ends the wait at once with the units the console
+names. setup.sh records boot-timeouts.txt and failed-units.txt. Each assertion failed first:
+the detector against a real emergency console and a real booted one (scripts/fixtures), the
+drop-ins through the real chroot script with stubbed tools, the pass-through and the wiring.
+Not established: why the stretch after switch-root is slow in about a quarter of emulated boots
+(no kernel stall warning in the journals, host memory normal; QEMU 8.2.2, multi-threaded TCG),
+and the in-guest fallback, which keeps the stock timeouts.

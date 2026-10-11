@@ -31,6 +31,12 @@ collect_evidence() {
     cp /var/log/cloud-init.log "$out/" 2>/dev/null || true
     stat -c '%a %u %g %d %n' / /home /var/lib > "$out/storage-ancestors.txt" 2>&1 || true
     journalctl -b --no-pager > "$out/journal.log" 2>&1 || true
+    # What this boot ran with and what it lost: an emulated guest gets longer boot timeouts
+    # (vm_native.py), and a unit that failed at boot changes what the suites ran against.
+    { systemctl show -p DefaultDeviceTimeoutUSec
+      systemctl show -p Id -p TimeoutStartUSec systemd-sysctl.service systemd-journal-flush.service systemd-sysusers.service
+    } > "$out/boot-timeouts.txt" 2>&1 || true
+    systemctl --failed --no-legend --plain > "$out/failed-units.txt" 2>&1 || true
     command -v getenforce >/dev/null && getenforce > "$out/selinux.txt" 2>&1 || true
     [[ -r /var/log/audit/audit.log ]] && grep -a 'avc:' /var/log/audit/audit.log > "$out/avc.log" 2>&1 || true
     command -v ausearch >/dev/null && [[ -r /var/log/audit/audit.log ]] && timeout 5 ausearch -m AVC -ts boot > "$out/ausearch.log" 2>&1 || true
